@@ -10,6 +10,7 @@ import { AuthenticatedRequest } from '../middleware/rbac';
 import { campaignMember, campaignDM } from '../middleware/compose';
 import { prisma } from '../config/database';
 import { seedSrdCreatures, getSrdSeedStatus } from '../services/creatureSeed';
+import { normalizeAssetUrl } from '../utils/asset-urls';
 import logger from '../utils/logger';
 
 const router = Router({ mergeParams: true });
@@ -176,7 +177,9 @@ router.post('/', campaignDM, async (req: AuthenticatedRequest, res: Response) =>
         challengeRating: data.challengeRating || null,
         creatureType: data.creatureType || null,
         alignment: data.alignment || null,
-        imageUrl: data.imageUrl || null,
+        // Stored as the canonical /api/assets/tokens/{uuid}, matching characters
+        // and maps. Clients may send either a bare asset id or a full path.
+        imageUrl: normalizeAssetUrl(data.imageUrl || null, 'tokens'),
         statBlock: data.statBlock,
         size: data.size || { width: 1, height: 1 },
         disposition: data.disposition || 'hostile',
@@ -232,7 +235,10 @@ router.put('/:creatureId', campaignDM, async (req: AuthenticatedRequest, res: Re
         ...(data.challengeRating !== undefined && { challengeRating: data.challengeRating }),
         ...(data.creatureType !== undefined && { creatureType: data.creatureType }),
         ...(data.alignment !== undefined && { alignment: data.alignment }),
-        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        // Empty string clears the image; anything else normalises to a full path.
+        ...(data.imageUrl !== undefined && {
+          imageUrl: data.imageUrl ? normalizeAssetUrl(data.imageUrl, 'tokens') : null,
+        }),
         ...(data.statBlock !== undefined && { statBlock: data.statBlock }),
         ...(data.size !== undefined && { size: data.size }),
         ...(data.disposition !== undefined && { disposition: data.disposition }),
@@ -308,7 +314,8 @@ router.post('/:creatureId/duplicate', campaignDM, async (req: AuthenticatedReque
         challengeRating: source.challengeRating,
         creatureType: source.creatureType,
         alignment: source.alignment,
-        imageUrl: source.imageUrl,
+        // Duplicating an older SRD row is a chance to normalise its bare id.
+        imageUrl: normalizeAssetUrl(source.imageUrl, 'tokens'),
         statBlock: source.statBlock as object,
         size: source.size as object,
         disposition: source.disposition,
