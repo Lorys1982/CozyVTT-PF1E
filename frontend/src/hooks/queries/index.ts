@@ -26,6 +26,8 @@ export const queryKeys = {
   characters: ['characters'] as const,
   pendingInvitations: ['invitations', 'pending'] as const,
   assets: (params: AssetListParams) => ['assets', params] as const,
+  characterTemplates: (params: CharacterTemplateListParams) =>
+    ['character-templates', params] as const,
   serverConfig: ['server-config'] as const,
 };
 
@@ -76,5 +78,19 @@ export function useAssetsQuery(params: AssetListParams) {
   return useQuery({
     queryKey: queryKeys.assets(params),
     queryFn: () => api.listAssets(params),
+  });
+}
+
+export interface CharacterTemplateListParams {
+  search?: string;
+  /** A GameSystem value, or 'flexible' for the system-agnostic ones. */
+  gameSystem?: string;
+  mine?: boolean;
+}
+
+export function useCharacterTemplatesQuery(params: CharacterTemplateListParams = {}) {
+  return useQuery({
+    queryKey: queryKeys.characterTemplates(params),
+    queryFn: () => api.listCharacterTemplates({ ...params, limit: 100 }),
   });
 }

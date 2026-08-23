@@ -37,6 +37,7 @@ import {
   AlertCircle,
   Layers,
   Globe,
+  FileText,
   User as UserIcon,
   MapPin,
   FileAudio,
@@ -283,6 +284,7 @@ export default function AdminPage() {
 
   // ---- Global Asset Manager toggle ----
   const [togglingGlobalAssets, setTogglingGlobalAssets] = useState<string | null>(null);
+  const [togglingTemplateEditor, setTogglingTemplateEditor] = useState<string | null>(null);
 
   // ---- Delete user — asset warning ----
   const [deletingUserAssetCount, setDeletingUserAssetCount] = useState<number>(0);
@@ -452,6 +454,25 @@ export default function AdminPage() {
   // ============================================
   // User management actions
   // ============================================
+
+  const handleToggleTemplateEditor = async (u: User) => {
+    setTogglingTemplateEditor(u.id);
+    const next = !u.templateEditor;
+    // Optimistic update
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, templateEditor: next } : x));
+    try {
+      const updated = await adminService.updateUser(u.id, { templateEditor: next });
+      setUsers(prev => prev.map(x => x.id === u.id ? updated : x));
+      showToast(`Template editing ${next ? 'enabled' : 'disabled'} for ${u.displayName}`, 'success');
+    } catch (err: unknown) {
+      // Revert on error
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, templateEditor: !next } : x));
+      const e = err as { response?: { data?: { message?: string } } };
+      showToast(e.response?.data?.message ?? 'Failed to update permission', 'error');
+    } finally {
+      setTogglingTemplateEditor(null);
+    }
+  };
 
   const handleToggleGlobalAssets = async (u: User) => {
     setTogglingGlobalAssets(u.id);
@@ -1174,6 +1195,25 @@ export default function AdminPage() {
                                           : <Globe className="w-3 h-3" />
                                         }
                                         Global Assets
+                                      </button>
+                                    )}
+                                    {/* Template editor toggle — only for non-admin users */}
+                                    {u.platformRole !== PlatformRole.ADMIN && (
+                                      <button
+                                        onClick={() => !isSelf && togglingTemplateEditor !== u.id && handleToggleTemplateEditor(u)}
+                                        disabled={isSelf || togglingTemplateEditor === u.id}
+                                        title="Can edit and delete anyone's character template"
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                                          u.templateEditor
+                                            ? 'bg-spirit-purple/20 text-spirit-purple hover:bg-spirit-purple/30'
+                                            : 'bg-warm-gray/10 text-warm-gray/60 hover:bg-warm-gray/20'
+                                        } ${isSelf ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
+                                      >
+                                        {togglingTemplateEditor === u.id
+                                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                                          : <FileText className="w-3 h-3" />
+                                        }
+                                        Templates
                                       </button>
                                     )}
                                   </div>

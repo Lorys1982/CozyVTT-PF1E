@@ -19,6 +19,8 @@ export interface User {
   displayName: string;
   platformRole: PlatformRole;
   globalAssetManager: boolean;
+  /** May edit or delete anyone's character template, not just their own. */
+  templateEditor: boolean;
   mfaEnabled: boolean;
   avatarUrl: string | null;
   bio: string | null;

@@ -44,6 +44,7 @@ const mockUser: User = {
   displayName: 'Alice',
   platformRole: PlatformRole.USER,
   globalAssetManager: false,
+  templateEditor: false,
   mfaEnabled: false,
   avatarUrl: null,
   bio: null,

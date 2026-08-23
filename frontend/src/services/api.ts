@@ -28,6 +28,7 @@ import type {
   UpdateTokenRequest,
   Token,
   CreatureTemplate,
+  CharacterTemplate,
   TokenTemplate,
   CampaignImportPreview,
   CampaignImportResult,
@@ -690,6 +691,57 @@ class ApiClient {
   // ============================================
   // Creature Library
   // ============================================
+
+  // ── Character templates ──────────────────────────────────────────────────
+  // Server-wide starter sheets any user can publish and copy. Distinct from
+  // GET /api/characters/templates/:system/:name, which serves the hardcoded
+  // presets compiled into the backend.
+
+  async listCharacterTemplates(params?: {
+    search?: string;
+    /** A GameSystem value, or 'flexible' for the system-agnostic ones. */
+    gameSystem?: string;
+    mine?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ templates: CharacterTemplate[]; total: number; limit: number; offset: number }> {
+    const response = await this.client.get('/api/character-templates', { params });
+    return response.data;
+  }
+
+  async getCharacterTemplate(id: string): Promise<CharacterTemplate> {
+    const response = await this.client.get(`/api/character-templates/${id}`);
+    return response.data;
+  }
+
+  async createCharacterTemplate(data: {
+    name: string;
+    description?: string | null;
+    gameSystem?: string | null;
+    tokenImageUrl?: string | null;
+    data?: unknown;
+  }): Promise<CharacterTemplate> {
+    const response = await this.client.post('/api/character-templates', data);
+    return response.data;
+  }
+
+  async updateCharacterTemplate(
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      tokenImageUrl?: string | null;
+      data?: unknown;
+    }
+  ): Promise<CharacterTemplate> {
+    const response = await this.client.put(`/api/character-templates/${id}`, data);
+    return response.data;
+  }
+
+  async deleteCharacterTemplate(id: string): Promise<{ message: string }> {
+    const response = await this.client.delete(`/api/character-templates/${id}`);
+    return response.data;
+  }
 
   async listCreatures(
     campaignId: string,

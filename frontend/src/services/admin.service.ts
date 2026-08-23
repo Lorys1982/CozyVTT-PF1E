@@ -37,7 +37,7 @@ class AdminService {
 
   async updateUser(
     userId: string,
-    data: { platformRole?: string; globalAssetManager?: boolean }
+    data: { platformRole?: string; globalAssetManager?: boolean; templateEditor?: boolean }
   ): Promise<User> {
     const { user } = await api.updateUser(userId, data as Partial<User>);
     return user;
