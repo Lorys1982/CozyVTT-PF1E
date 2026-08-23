@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   coneApex,
   cubeRect,
+  directionOctant,
   dominantAxis,
   lineOrigin,
   snapSpanCentre,
@@ -149,17 +150,98 @@ describe('lineOrigin', () => {
   });
 });
 
-describe('coneApex', () => {
-  it('sits on the nearest grid intersection', () => {
-    expect(coneApex({ x: 137, y: 88 }, GRID)).toEqual({ x: 150, y: 100 });
-    expect(coneApex({ x: 24, y: 26 }, GRID)).toEqual({ x: 0, y: 50 });
+describe('directionOctant', () => {
+  it.each([
+    [0, 0],                    // right
+    [Math.PI / 2, 2],          // down (y grows downwards in map pixels)
+    [Math.PI, 4],              // left
+    [-Math.PI / 2, 6],         // up
+    [Math.PI / 4, 1],          // down-right
+    [-Math.PI / 4, 7],         // up-right
+  ])('classifies %f as octant %i', (angle, expected) => {
+    expect(directionOctant(angle)).toBe(expected);
   });
 
-  it('always lands on grid lines', () => {
-    for (const v of [0, 7, 24, 26, 51, 99, 260]) {
-      const apex = coneApex({ x: v, y: v }, GRID);
+  it('normalises angles outside a single turn', () => {
+    expect(directionOctant(Math.PI * 2)).toBe(0);
+    expect(directionOctant(-Math.PI * 2)).toBe(0);
+  });
+});
+
+describe('coneApex', () => {
+  // A cone leaves its square through a point on one of its edges, so where that
+  // point sits depends on which way the cone is aimed. It used to sit on the
+  // nearest intersection whatever the direction, which put an axis-aligned cone
+  // half a square off centre — the reported bug.
+  describe('pointing along an axis — the midpoint of an edge', () => {
+    it('uses a vertical edge when pointing right', () => {
+      // Cursor at (137, 88): nearest vertical grid line is x=150, and y=88 sits
+      // in the row whose centre is 75.
+      expect(coneApex({ x: 137, y: 88 }, GRID, 0)).toEqual({ x: 150, y: 75 });
+    });
+
+    it('uses a vertical edge when pointing left', () => {
+      expect(coneApex({ x: 137, y: 88 }, GRID, Math.PI)).toEqual({ x: 150, y: 75 });
+    });
+
+    it('uses a horizontal edge when pointing down', () => {
+      expect(coneApex({ x: 137, y: 88 }, GRID, Math.PI / 2)).toEqual({ x: 125, y: 100 });
+    });
+
+    it('uses a horizontal edge when pointing up', () => {
+      expect(coneApex({ x: 137, y: 88 }, GRID, -Math.PI / 2)).toEqual({ x: 125, y: 100 });
+    });
+
+    it('leaves the square symmetrically, whichever axis', () => {
+      for (const angle of [0, Math.PI, Math.PI / 2, -Math.PI / 2]) {
+        const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
+        const onLine = [apex.x, apex.y].filter(onGridLine).length;
+        const onCentre = [apex.x, apex.y].filter((v) => !onGridLine(v)).length;
+
+        // Exactly one axis on a grid line and one at a square centre is what
+        // makes the point an edge midpoint rather than a corner.
+        expect(onLine).toBe(1);
+        expect(onCentre).toBe(1);
+      }
+    });
+  });
+
+  describe('pointing diagonally — the corner', () => {
+    it.each([
+      ['down-right', Math.PI / 4],
+      ['down-left', (3 * Math.PI) / 4],
+      ['up-left', (-3 * Math.PI) / 4],
+      ['up-right', -Math.PI / 4],
+    ])('snaps to an intersection when pointing %s', (_name, angle) => {
+      const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
       expect(onGridLine(apex.x)).toBe(true);
       expect(onGridLine(apex.y)).toBe(true);
+    });
+  });
+
+  describe('the boundary between cardinal and diagonal', () => {
+    // Each octant spans 45°, so the switch happens at 22.5° off an axis.
+    it('counts just inside 22.5 degrees as cardinal', () => {
+      const apex = coneApex({ x: 137, y: 88 }, GRID, (Math.PI / 8) * 0.99);
+      expect(apex).toEqual({ x: 150, y: 75 });
+    });
+
+    it('counts just past 22.5 degrees as diagonal', () => {
+      const apex = coneApex({ x: 137, y: 88 }, GRID, (Math.PI / 8) * 1.01);
+      expect(onGridLine(apex.x)).toBe(true);
+      expect(onGridLine(apex.y)).toBe(true);
+    });
+  });
+
+  it('stays adjacent to the square under the cursor', () => {
+    // Whatever the direction, the apex should be on the hovered square's own
+    // boundary — never snapped away to a different part of the map.
+    for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 3]) {
+      const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
+      expect(apex.x).toBeGreaterThanOrEqual(100);
+      expect(apex.x).toBeLessThanOrEqual(150);
+      expect(apex.y).toBeGreaterThanOrEqual(50);
+      expect(apex.y).toBeLessThanOrEqual(100);
     }
   });
 });

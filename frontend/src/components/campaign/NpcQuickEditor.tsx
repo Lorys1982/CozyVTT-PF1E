@@ -15,7 +15,6 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  Heart,
   Upload,
   Loader2,
   Image as ImageIcon,
@@ -440,7 +439,7 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
             <button
               onClick={handleOpenImagePicker}
               className="relative group flex-shrink-0"
-              title="Change token image"
+              title={token.imageUrl ? 'Change token image' : 'Add a token image'}
             >
               {token.imageUrl ? (
                 <img
@@ -449,8 +448,12 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                   className="w-14 h-14 rounded-full object-cover border-2 border-moss-green/30"
                 />
               ) : (
-                <div className="w-14 h-14 rounded-full bg-moss-green/10 flex items-center justify-center">
-                  <Heart className="w-6 h-6 text-brand-ink/40" />
+                // Dashed outline and an upload icon, matching the empty image
+                // slot in TokenTemplateLibrary. This used to be a heart, which
+                // read as "favourite" and gave no hint that the avatar is a
+                // button that opens the image picker.
+                <div className="w-14 h-14 rounded-full bg-stone-gray/10 border border-dashed border-stone-gray/30 flex items-center justify-center">
+                  <Upload className="w-5 h-5 text-stone-gray/50" />
                 </div>
               )}
               <div className="absolute inset-0 rounded-full bg-forest-shadow/0 group-hover:bg-forest-shadow/40 transition-colors flex items-center justify-center">

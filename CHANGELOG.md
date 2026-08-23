@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-08-22
+
+### Fixed
+
+- **Cone templates now start from the edge of a square, not its corner.** 1.2.0 aligned cube and line templates to the grid but left the cone snapping to the nearest grid intersection, so a cone aimed along an axis sat half a square off centre. Its point now sits where the cone actually leaves its square: the middle of a vertical edge when aimed left or right, the middle of a horizontal edge when aimed up or down, and the corner when aimed diagonally. The cone's 53° spread is unchanged
+- **A token with no image no longer shows a heart icon.** The token edit panel used a heart where the image should be, which read as "favourite" and gave no hint that the avatar is a button. It now shows a dashed circle with an upload icon, matching the empty image slot in the token template editor
+
+### Upgrading from 1.2.0
+
+`docker compose up -d --build`. No migration, no configuration changes — both fixes are presentation only.
+
+---
+
 ## [1.2.0] — 2026-08-22
 
 ### Added

@@ -447,7 +447,7 @@ export function drawAoEOverlay(
     state.config.shape === 'cube' ? cubeRect(cursor, gs, sizeSquares) : null;
 
   if (state.config.shape === 'cone') {
-    ({ x: ox, y: oy } = coneApex(cursor, gs));
+    ({ x: ox, y: oy } = coneApex(cursor, gs, angle));
   } else if (state.config.shape === 'line') {
     ({ x: ox, y: oy } = lineOrigin(cursor, gs, widthSquares, angle));
   } else if (cube) {

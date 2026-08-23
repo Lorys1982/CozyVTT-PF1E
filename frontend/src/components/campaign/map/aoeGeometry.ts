@@ -112,16 +112,58 @@ export function lineOrigin(
 }
 
 /**
+ * Which of the eight 45° sectors a direction falls in.
+ *
+ * 0 = right, 1 = down-right, 2 = down, 3 = down-left, 4 = left, 5 = up-left,
+ * 6 = up, 7 = up-right — with y increasing downwards, as map pixels do. Even
+ * sectors are cardinal, odd ones diagonal, so a direction within 22.5° of an
+ * axis counts as cardinal.
+ */
+export function directionOctant(angleRad: number): number {
+  const octant = Math.round(angleRad / (Math.PI / 4));
+  return ((octant % 8) + 8) % 8;
+}
+
+/**
  * The apex of a cone template.
  *
- * A cone spreads from a point, and its edges are at an angle that will not
- * follow grid lines whatever is done — so the apex simply sits on the nearest
- * grid intersection, which is where a caster on a grid would place it.
+ * A cone emerges from a point on the edge of its square, so where that point
+ * sits depends on which way the cone is aimed:
+ *
+ *  - pointing left or right → the midpoint of a **vertical** edge
+ *  - pointing up or down    → the midpoint of a **horizontal** edge
+ *  - pointing diagonally    → the **corner**, which is the point the cone
+ *                             actually leaves the square through
+ *
+ * Each case makes the cone leave its square symmetrically. The apex used to sit
+ * on the nearest grid intersection whatever the direction, which put a cone
+ * aimed along an axis half a square off centre.
+ *
+ * This looks like `lineOrigin` but deliberately does not share its
+ * `dominantAxis` split: that classifier has only two outcomes, and a cone needs
+ * three. Collapsing them would silently drop the diagonal case.
  */
-export function coneApex(cursor: Pt, gridSize: number): Pt {
+export function coneApex(cursor: Pt, gridSize: number, angleRad: number): Pt {
+  const octant = directionOctant(angleRad);
+
+  // Diagonal — both axes on grid lines, i.e. the corner.
+  if (octant % 2 === 1) {
+    return {
+      x: snapToGridLine(cursor.x, gridSize),
+      y: snapToGridLine(cursor.y, gridSize),
+    };
+  }
+
+  // Cardinal — a grid line along the axis the cone runs, the square centre
+  // across it, which is the midpoint of that edge.
+  const horizontal = octant === 0 || octant === 4;
   return {
-    x: snapToGridLine(cursor.x, gridSize),
-    y: snapToGridLine(cursor.y, gridSize),
+    x: horizontal
+      ? snapToGridLine(cursor.x, gridSize)
+      : snapToSquareCentre(cursor.x, gridSize),
+    y: horizontal
+      ? snapToSquareCentre(cursor.y, gridSize)
+      : snapToGridLine(cursor.y, gridSize),
   };
 }
 
