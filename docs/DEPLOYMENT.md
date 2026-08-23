@@ -614,6 +614,19 @@ For large or multi-server deployments, consider mounting an S3-compatible object
 
 ---
 
+## Per-User Permissions
+
+Beyond the platform role (Admin / User), two permissions are granted individually from **Admin Dashboard → Users**, as pill toggles beside each user's role. Both default to off, including on upgrade, and neither appears for admins, who have both implicitly.
+
+| Permission | Grants |
+|---|---|
+| **Global Assets** | Upload, re-scope and delete instance-wide assets that every user can see |
+| **Templates** | Edit or delete anyone's character template, not just their own — for curating what users have published |
+
+Grant these sparingly: both write content visible to every user on the instance. Revoking either takes effect on the user's next request; they do not need to sign out.
+
+---
+
 ## Database Backups
 
 ### Via Admin Dashboard

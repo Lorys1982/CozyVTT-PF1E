@@ -465,6 +465,16 @@ Imported archives are validated at multiple levels:
 
 ## Managing Your Players
 
+### Preparing Character Sheets Before Players Join
+
+If your players are new to the system — or haven't accepted the invite yet — you can build sheets for them in advance and let them pick one up when they arrive.
+
+Open **Character Templates** from the dashboard and click **New Template**, or build a character normally and use **Save as Template** in the editor. Either way the result is visible to everyone on your instance, and a player copies it with one click: they get a character of their own, fully theirs to edit, and your template is unchanged.
+
+This is worth doing for a one-shot or a new group. Rather than talking four people through character creation at the table, publish four templates beforehand and let each player take one and rename it.
+
+Templates are per game system, so a D&D 5e template is only useful to a D&D 5e character. See [Character Templates](USER_GUIDE.md#character-templates) in the user guide for the full details, including why a template's image has to be a global asset.
+
 ### Viewing the Roster
 
 The Campaign Roster in the left sidebar gives you a real-time view of all players and their characters. During a session, you can see who's connected.

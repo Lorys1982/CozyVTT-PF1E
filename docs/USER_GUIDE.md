@@ -227,6 +227,26 @@ Click **Save** (or use the keyboard shortcut) to save your progress. A timestamp
 
 You can also **Export to JSON** from the editor header at any time to grab a backup copy.
 
+### Character Templates
+
+A template is a starter sheet somebody has already filled in and shared. If you're new to a system — or your DM has prepared something for you — starting from one saves you a blank page.
+
+Open **Character Templates** from the dashboard. Every template on the instance is listed; filter by game system, search by name, or tick **Only mine** to see just your own.
+
+**Using one.** Click **Use** on any template. That creates a character that belongs entirely to you — you can rename it and change anything you like, and the original template is untouched. Whoever published it has no control over your character.
+
+**Publishing one.** There are three ways:
+
+- **New Template** on the templates page, which starts from a blank sheet for the system you pick
+- **Save as Template** in the character editor, which publishes the sheet you're looking at
+- while creating a character, if you want to keep the character and share it at the same time
+
+Templates you publish are visible to everyone on your instance. You can edit or delete your own at any time.
+
+> **A note on template images.** A template's picture has to be a **global** asset, because everyone who can see the template needs to be able to load it — a personal asset would show as broken for everyone but you. If you don't have permission to upload global assets, pick an existing global one or leave the image blank.
+
+> **Template editors.** Admins can grant a user the **template editor** permission, which lets them tidy up or correct anyone's template. Nobody has it by default. If someone edits a template you published, that's why.
+
 ### Assigning a Character to a Campaign
 
 Characters need to be assigned to a campaign before they show up in that campaign's roster. From the Characters page, click the **Assign** option on any character card and pick the campaign.

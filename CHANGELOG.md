@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.2.1] — 2026-08-22
+## [1.2.1] — 2026-08-23
+
+### Added
+
+- **Character templates — shareable starter sheets.** A DM preparing a campaign can now build a sheet for a player who hasn't joined yet, and a player new to a system can start from someone else's work rather than a blank page. Publish a template from the new **Character Templates** page on the dashboard, from an existing character sheet with **Save as Template**, or while creating a character. Every template on the instance is visible to everyone; copying one creates a character that belongs entirely to you, and the original is untouched. You can edit and delete templates you published. A new **template editor** permission, granted per user from the admin panel exactly like Global Assets, lets a trusted user tidy up or correct anyone's — nobody has it until an admin grants it. A template can carry a token image, which must be a global asset: everyone who can see the template needs to be able to load its picture, so the app says so plainly rather than storing an image that would fail for other people
 
 ### Fixed
 
@@ -15,7 +19,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Upgrading from 1.2.0
 
-`docker compose up -d --build`. No migration, no configuration changes — both fixes are presentation only.
+`docker compose up -d --build`. No configuration changes.
+
+This release adds a database table, which the backend container applies on start — you don't run anything by hand. If the migration fails the backend refuses to start rather than serving against a half-updated database, so a broken upgrade is loud rather than silent.
+
+The change is additive and touches no existing data: one new table nothing previously read, and one new permission column that defaults to off. **Nobody gains the template editor permission on upgrade** — an admin grants it per user. Your characters, campaigns, maps and creatures are untouched.
+
+As with any release that migrates, take a database dump first — migrations here are forward-only, so rolling back to 1.2.0 means restoring one:
+
+```bash
+./backend/scripts/backup.sh
+```
 
 ---
 
@@ -55,6 +69,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **`docs/GAME_SYSTEMS.md` now covers creatures**, which it had never mentioned — it documented only the player-character pipeline, leaving the entirely separate creature model undocumented. Adds a section on the shared `NpcStatBlock` shape, the four places creature code branches on game system, and the decision a contributor has to make first: whether their system's creature values are *derived* (D&D 5e) or *printed as final* (Pathfinder 2e). Deriving values a system doesn't derive fabricates numbers that look authoritative. A new optional Step 11 covers adding creature support, and records that returning no roll options is a valid, correct outcome
 - Documented the creature stat block object and its validation bounds in the API reference, including the new `proficiencies`, `attributeModifiers` and `level` fields, and why save and skill keys are deliberately not enumerated
+- **Documented character templates** across the user guide (browsing, copying and the three ways to publish), the DM guide (preparing sheets before players join), the API reference (the five endpoints, the permission matrix and the global-image rule), and the deployment guide, which gained a **Per-User Permissions** section covering both Global Assets and Templates — neither had been described for operators
+- **Corrected the roadmap**, which still listed the global asset manager admin toggle as outstanding long after it shipped
 - **Documented the ruler and AoE Shape tools**, which had never been described in any guide despite being in the map toolbar. Covers how each template snaps to the grid, that a cone's angled edges will still cross squares by nature, and that template sizes follow the map's *feet per square* setting
 - Rewrote the DM guide's NPC roll and creature-library sections: the claim that skills show "only skills the stat block lists explicit bonuses for" no longer held, and there was nothing describing how to give a creature a proficiency. Adds the proficiency-bonus-by-CR table and what differs under Pathfinder 2e
 - Corrected the socket API reference for initiative, which still described the original name-based combatants (`{ name, initiative, hp? }`) years after they became token-based. Documented the `CombatState` payload while there
