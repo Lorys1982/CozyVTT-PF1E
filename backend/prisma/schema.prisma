@@ -91,6 +91,9 @@ model User {
 
   // Permissions
   globalAssetManager Boolean @default(false)
+  // Can edit and delete anyone's character template, not just their own.
+  // Defaults off — an admin grants it, the same way globalAssetManager works.
+  templateEditor     Boolean @default(false)
 
   // MFA
   mfaEnabled     Boolean  @default(false)
@@ -127,6 +130,7 @@ model User {
   passwordResetTokens PasswordResetToken[]
   creatureFavorites   CreatureFavorite[]
   tokenTemplates      TokenTemplate[]
+  characterTemplates  CharacterTemplate[]    @relation("CharacterTemplateAuthor")
 
   @@index([email])
 }
@@ -294,6 +298,46 @@ model Character {
   @@index([userId])
   @@index([campaignId])
   @@index([gameSystem])
+}
+
+/// A shareable starter sheet that anyone on the instance can browse and copy
+/// into a character of their own.
+///
+/// Unlike CreatureTemplate and TokenTemplate, this has no campaignId and no
+/// scope column: every template is visible to every authenticated user, which
+/// is the whole point of the feature. Who may *edit* one is decided at the
+/// route (author, admin, or a user with User.templateEditor).
+///
+/// Not to be confused with the hardcoded starter presets in
+/// backend/src/utils/character-templates/ — those are source constants served
+/// by GET /api/characters/templates/:system/:name, not rows.
+model CharacterTemplate {
+  id String @id @default(uuid())
+
+  name        String
+  description String? @db.Text
+
+  // null = flexible / system-agnostic, matching Character.gameSystem
+  gameSystem GameSystem?
+
+  /// Must reference a GLOBAL-scoped asset. A template is visible to everyone,
+  /// so a USER-scoped image would 403 for every reader but its owner.
+  tokenImageUrl String?
+
+  /// The sheet itself — same shape as Character.data for the same gameSystem.
+  data Json
+
+  /// Nullable with SetNull: deleting the author must not destroy a template
+  /// other people are still copying from.
+  createdById String?
+  createdBy   User?   @relation("CharacterTemplateAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([gameSystem])
+  @@index([createdById])
+  @@index([name])
 }
 
 // ============================================

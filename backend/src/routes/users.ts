@@ -92,7 +92,15 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
     const { id } = req.params;
     const requestingUserId = req.session.userId;
     const isAdmin = req.session.platformRole === 'ADMIN';
-    const { displayName, email, avatarUrl, platformRole, bio, globalAssetManager } = req.body;
+    const {
+      displayName,
+      email,
+      avatarUrl,
+      platformRole,
+      bio,
+      globalAssetManager,
+      templateEditor,
+    } = req.body;
 
     // Check authorization: user can only update their own profile unless admin
     if (id !== requestingUserId && !isAdmin) {
@@ -194,6 +202,25 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
       }
 
       updateData.globalAssetManager = globalAssetManager;
+    }
+
+    // Only admins can grant/revoke templateEditor
+    if (templateEditor !== undefined) {
+      if (!isAdmin) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Only admins can update the template editor permission',
+        });
+      }
+
+      if (typeof templateEditor !== 'boolean') {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'templateEditor must be a boolean',
+        });
+      }
+
+      updateData.templateEditor = templateEditor;
     }
 
     // Perform update
