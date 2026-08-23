@@ -8,8 +8,9 @@ import { ZoomIn, ZoomOut, Maximize2, Grid3x3, Palette, Ghost, Ruler, Zap } from 
 import { useCampaign } from '@/contexts/CampaignContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGameStore, useTokenList } from '@/stores/gameStore';
+import { useGameStore, useTokenList, useCurrentTurnTokenId, useMapPeekTokenId } from '@/stores/gameStore';
 import { useMapControls } from '@/hooks/useMapControls';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type {
   Token,
   TokenMoveStartEvent,
@@ -21,6 +22,7 @@ import type {
   SpiritLayerTokenToggledBroadcast,
   VibeUpdatedBroadcast,
   Character,
+  MapPingedBroadcast,
 } from '@/types';
 import { TokenLayer, TokenType } from '@/types';
 import type { WallSegment, FogState, WallType, LightSource } from '@/types/walls';
@@ -41,11 +43,16 @@ import {
   drawPolygonOverlay,
   drawRuler,
   drawAoEOverlay,
-  drawFogBrushCursor,
+  drawFogSelection,
+  drawPings,
+  PING_DURATION_MS,
+  type ActivePing,
   type Viewport,
 } from './map/layers';
 import { createVisionCache, type VisionSource } from './map/vision';
-import { useTokenAnimation, useFogRevealAnimation } from './map/useMapAnimations';
+import { fogRectFromDrag, fogCellsInRect } from './map/fogSelection';
+import { useTokenAnimation, useFogRevealAnimation, useCanvasTicker, pulsePhaseAt } from './map/useMapAnimations';
+import { playerColor } from '@/utils/playerColor';
 import { useRenderLoop, type MapLayer } from './map/useRenderLoop';
 import api from '@/services/api';
 import CharacterSheetViewerModal from '@/components/character/CharacterSheetViewerModal';
@@ -93,6 +100,13 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // socket handlers write there directly (outside React), and this
   // subscription is what re-renders the canvas per token change.
   const tokens = useTokenList();
+  // Whose turn it is, for the active-combatant ring. Narrow selector: this
+  // changes on turn advance only, not when a combatant's HP ticks.
+  const currentTurnTokenId = useCurrentTurnTokenId();
+  // Token being pointed at from the initiative tracker. Null while the map is
+  // the one pointing — the blue hover outline already marks that case.
+  const peekTokenId = useMapPeekTokenId();
+  const prefersReducedMotion = useReducedMotion();
   const { socket } = useWebSocket();
   const { user } = useAuth();
   const isDM = userRole === 'DM';
@@ -236,11 +250,13 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // Drag-to-move state for lights in select mode
   const draggingLightRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
 
-  // Fog brush tool state (DM only)
+  // Fog selection tool state (DM only)
   const [fogMode, setFogMode] = useState<FogToolMode>(null);
-  const [brushRadius, setBrushRadius] = useState(64); // map-space pixels
-  const fogPendingCellsRef = useRef<Set<number>>(new Set());
-  const fogFlushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Fog selection drag: anchor is fixed on mousedown, current follows the
+  // cursor. Both in map pixels — the fog raster is top-left origin like map
+  // pixels, so the box never touches the bottom-left grid convention.
+  const fogDragAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const [fogDragCurrent, setFogDragCurrent] = useState<{ x: number; y: number } | null>(null);
 
   // Token socket handlers read/write live token state synchronously via
   // useGameStore.getState() — no stale-closure ref bookkeeping needed.
@@ -275,6 +291,22 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     markDirty('tokens');
     if (currentMap?.lightingEnabled) markDirty('overlay');
   });
+
+  // Turn-highlight pulse. Runs only while a combatant is actually acting, and
+  // not at all under reduced motion — in which case the ring is still drawn,
+  // just held at mid-breath.
+  useCanvasTicker(
+    currentTurnTokenId !== null && !prefersReducedMotion,
+    () => markDirty('tokens')
+  );
+
+  // Live map pings. Transient and map-local, so they stay component state
+  // rather than going in the game store — nothing outside the canvas reads them.
+  const [pings, setPings] = useState<ActivePing[]>([]);
+
+  // Ping animation repaints the overlay layer (where they're drawn) and keeps
+  // running under reduced motion: the rings hold still but still need to fade.
+  useCanvasTicker(pings.length > 0, () => markDirty('overlay'));
 
   // Map controls (only initialize if we have a map)
   const mapControls = useMapControls({
@@ -418,56 +450,47 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   };
 
   /**
-   * Return all fog cell indices whose center falls within brushRadius of (mapX, mapY).
+   * Apply a set of fog cells: optimistic local update plus one server op.
+   *
+   * A rectangle drag produces exactly one call here, which is why the old
+   * pending-cells buffer and its 80ms flush interval are gone — those existed
+   * only to batch the continuous stream a brush stroke produced.
    */
-  const getCellsUnderBrush = (mapX: number, mapY: number, fog: FogState): number[] => {
-    const { fogCols, fogRows, cellPx } = fog;
-    const r = brushRadius;
-    const cells: number[] = [];
-    const minCol = Math.max(0, Math.floor((mapX - r) / cellPx));
-    const maxCol = Math.min(fogCols - 1, Math.floor((mapX + r) / cellPx));
-    const minRow = Math.max(0, Math.floor((mapY - r) / cellPx));
-    const maxRow = Math.min(fogRows - 1, Math.floor((mapY + r) / cellPx));
-    for (let row = minRow; row <= maxRow; row++) {
-      for (let col = minCol; col <= maxCol; col++) {
-        const cx = (col + 0.5) * cellPx;
-        const cy = (row + 0.5) * cellPx;
-        if ((cx - mapX) ** 2 + (cy - mapY) ** 2 <= r * r) {
-          cells.push(row * fogCols + col);
-        }
-      }
-    }
-    return cells;
-  };
+  const applyFogCells = useCallback((cells: number[]) => {
+    if (!currentMap || !fogMode || cells.length === 0) return;
 
-  /**
-   * Flush pending fog cells to the server and apply optimistically.
-   */
-  const flushFogBrush = useCallback(() => {
-    if (!currentMap || !fogMode || fogPendingCellsRef.current.size === 0) return;
-    const cells = Array.from(fogPendingCellsRef.current);
-    fogPendingCellsRef.current.clear();
+    const reveal = fogMode === 'fog-reveal';
+    const operation = { op: reveal ? 'reveal' : 'hide', cells } as const;
 
-    const operation = { op: fogMode === 'fog-reveal' ? 'reveal' : 'hide' as const, cells };
-
-    // Optimistic update
     setFogState((prev) => {
       if (!prev) return prev;
       const revealed = [...prev.revealed];
       for (const idx of cells) {
-        if (idx >= 0 && idx < revealed.length) {
-          revealed[idx] = fogMode === 'fog-reveal';
-        }
+        if (idx >= 0 && idx < revealed.length) revealed[idx] = reveal;
       }
       return { ...prev, revealed };
     });
 
-    // Emit to server
-    const socketInstance = socket?.getSocket();
-    if (socketInstance && currentMap) {
-      socketInstance.emit('fog:operation', { mapId: currentMap.id, operation });
-    }
+    socket?.getSocket()?.emit('fog:operation', { mapId: currentMap.id, operation });
   }, [currentMap, fogMode, socket]);
+
+  /** Finish a fog drag: compute the snapped rectangle once and apply it. */
+  const commitFogDrag = useCallback((endX: number, endY: number) => {
+    const anchor = fogDragAnchorRef.current;
+    fogDragAnchorRef.current = null;
+    setFogDragCurrent(null);
+    if (!anchor || !fogState) return;
+
+    const rect = fogRectFromDrag(fogState, anchor.x, anchor.y, endX, endY);
+    if (!rect) return; // Entirely off the map
+    applyFogCells(fogCellsInRect(fogState, rect));
+  }, [fogState, applyFogCells]);
+
+  /** Abandon a drag without changing anything (Escape, right-click, map change). */
+  const cancelFogDrag = useCallback(() => {
+    fogDragAnchorRef.current = null;
+    setFogDragCurrent(null);
+  }, []);
 
   // Helper: change a door's type and broadcast. Uses wallSegmentsRef to avoid stale closure
   // (changeDoorType is memoised with [currentMap, socket, replaceWallHistory] deps).
@@ -706,9 +729,15 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         console.log('[MapCanvas] Processing token:', token.name, 'imageUrl:', token.imageUrl);
         if (!token.imageUrl) continue;
 
-        // Check if already loaded
-        if (tokenImages.has(token.id)) {
-          newTokenImages.set(token.id, tokenImages.get(token.id)!);
+        // Reuse the cached element only when it was loaded from the SAME url.
+        // Keying on token id alone meant a token whose image was changed kept
+        // rendering the old picture until the page was reloaded — for every
+        // client, since they all cache the same way.
+        // getAttribute('src') returns the literal value set below, not the
+        // resolved absolute URL the .src property would give.
+        const cached = tokenImages.get(token.id);
+        if (cached && cached.getAttribute('src') === token.imageUrl) {
+          newTokenImages.set(token.id, cached);
           continue;
         }
 
@@ -1076,11 +1105,92 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   }, [socket, currentMap?.id]);  
 
   // ============================================
+  // Map pings — receive, name, and expire
+  // ============================================
+
+  /**
+   * Resolve a pinger's display name from state the client already holds — the
+   * ping event carries only a user id. The campaign owner gets a DM membership
+   * row on creation, so the roster covers everyone; an unresolved id just
+   * draws the ping without a label rather than failing.
+   */
+  const resolvePingerName = useCallback((userId: string): string => {
+    if (userId === user?.id) return user?.displayName ?? 'You';
+    return campaign?.memberships?.find((m) => m.userId === userId)?.user?.displayName ?? '';
+  }, [user?.id, user?.displayName, campaign?.memberships]);
+
+  useEffect(() => {
+    const socketInstance = socket?.getSocket();
+    if (!socketInstance) return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    const handlePinged = (data: MapPingedBroadcast) => {
+      // Ignore pings for a map this client isn't looking at.
+      if (!currentMap || data.mapId !== currentMap.id) return;
+
+      const id = `${data.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const ping: ActivePing = {
+        id,
+        x: data.x,
+        y: data.y,
+        name: resolvePingerName(data.userId),
+        color: playerColor(data.userId),
+        startedAt: Date.now(),
+      };
+
+      // Cap the list as a client-side backstop to the server's rate limiter.
+      setPings((prev) => [...prev.slice(-19), ping]);
+      timers.push(setTimeout(() => {
+        setPings((prev) => prev.filter((p) => p.id !== id));
+      }, PING_DURATION_MS));
+    };
+
+    socketInstance.on('map.pinged', handlePinged);
+    return () => {
+      socketInstance.off('map.pinged', handlePinged);
+      timers.forEach(clearTimeout);
+    };
+  }, [socket, currentMap?.id, resolvePingerName]);
+
+  // Switching maps drops any pings still in flight on the old one.
+  useEffect(() => {
+    setPings([]);
+  }, [currentMap?.id]);
+
+  // ============================================
   // Keyboard: Escape, Ctrl+Z (undo), Ctrl+Y / Ctrl+Shift+Z (redo)
   // ============================================
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // ── Tab: ping at the cursor ──────────────────────────────────────
+      // Tab is the keyboard-navigation key and this listener is on `window`,
+      // so it is only safe to claim under strict guards: the pointer must be
+      // over the map, and focus must not be on anything the user could be
+      // navigating from or typing into. Click around the map and Tab pings;
+      // tab to any control and Tab keeps navigating as normal.
+      if (e.key === 'Tab' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const at = hoverMapPxRef.current;
+        if (!at || !currentMap) return;
+
+        const el = document.activeElement as HTMLElement | null;
+        const onFormControl =
+          !!el &&
+          (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(el.tagName) ||
+            el.isContentEditable);
+        if (onFormControl) return;
+
+        e.preventDefault();
+        socket?.emitMapPing({ mapId: currentMap.id, x: at.x, y: at.y });
+        return;
+      }
+
       if (e.key === 'Escape') {
+        // A fog box being dragged is abandoned before any other Escape action
+        if (fogDragAnchorRef.current) {
+          cancelFogDrag();
+          return;
+        }
         // Polygon mode: clear in-progress polygon first
         if (polygonPoints.length > 0) {
           setPolygonPoints([]);
@@ -1176,28 +1286,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     }
   }, [wallMode]);
 
-  // ============================================
-  // Fog Brush Flush Timer
-  // Batches cell updates and sends every 80ms
-  // ============================================
+  // Leaving fog mode, or switching maps, drops any drag in progress.
   useEffect(() => {
-    if (!fogMode) {
-      if (fogFlushTimerRef.current) {
-        clearInterval(fogFlushTimerRef.current);
-        fogFlushTimerRef.current = null;
-      }
-      fogPendingCellsRef.current.clear();
-      return;
-    }
-
-    fogFlushTimerRef.current = setInterval(flushFogBrush, 80);
-    return () => {
-      if (fogFlushTimerRef.current) {
-        clearInterval(fogFlushTimerRef.current);
-        fogFlushTimerRef.current = null;
-      }
-    };
-  }, [fogMode, flushFogBrush]);
+    cancelFogDrag();
+  }, [fogMode, currentMap?.id, cancelFogDrag]);
 
   // ============================================
   // Canvas Rendering
@@ -1329,10 +1421,14 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       spiritAccentColor: getSpiritAccentColor(campaign?.spiritLayerStyle),
       characterHpCache,
       isOwnToken,
+      currentTurnTokenId,
+      // Held at mid-breath under reduced motion, where no pulse loop runs.
+      pulsePhase: prefersReducedMotion ? 0.5 : pulsePhaseAt(Date.now()),
+      peekTokenId,
     }, viewport);
 
     ctx.restore();
-  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, user?.id, campaign?.characters, campaign?.spiritLayerStyle, tokens, tokenImages, animatingTokens, draggedToken, dragOffset, hoverCoords, hoverToken, revealedCells, dmShowSpiritTokens, dmViewBothPlanes, characterHpCache]);
+  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, user?.id, campaign?.characters, campaign?.spiritLayerStyle, tokens, tokenImages, animatingTokens, draggedToken, dragOffset, hoverCoords, hoverToken, revealedCells, dmShowSpiritTokens, dmViewBothPlanes, characterHpCache, currentTurnTokenId, prefersReducedMotion, peekTokenId]);
 
   /**
    * Draw the OVERLAY layer (top canvas): dynamic-lighting darkness, DM light
@@ -1472,22 +1568,33 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         config: aoeConfig,
         origin: aoeOrigin,
         hoverCoords,
+        hoverMapPx: hoverMapPxRef.current,
         feetPerSquare: currentMap.feetPerSquare ?? 5,
       }, viewport);
     }
 
-    // Restore context state (back to screen-space)
-    ctx.restore();
-
-    // 11. Fog brush cursor (screen-space, zoom-invariant)
-    if (fogMode && hoverCoords) {
-      drawFogBrushCursor(ctx, {
+    // 11. Fog selection box — world space, so the snapped rectangle stays
+    //     locked to the grid through pan and zoom.
+    if (fogMode && isDM && fogState) {
+      drawFogSelection(ctx, {
         mode: fogMode,
-        hoverCoords,
-        brushRadius,
+        fog: fogState,
+        anchor: fogDragAnchorRef.current,
+        cursor: fogDragCurrent,
       }, viewport);
     }
-  }, [currentMap, imageLoaded, mapImage, mapControls.zoom, mapControls.panOffset, userRole, user?.id, campaign?.characters, tokens, dmPreviewPlayerView, lightSources, selectedLightId, lightMode, wallSegments, wallColor, hoveredWallId, selectedWallId, hoveredDoorId, wallMode, selectedEndpoint, wallInProgress, wallType, snapToGrid, brushSize, splitHoverPoint, polygonPoints, showRuler, rulerColor, effectiveRulerOrigin, showAoE, aoeConfig, aoeOrigin, hoverCoords, fogMode, brushRadius]);
+
+    // 12. Map pings — drawn last in world space, above the lighting darkness
+    //     so a ping into an unlit corner is still visible. (The turn ring
+    //     makes the opposite trade on purpose: it lives on the token layer
+    //     so a hidden token's ring stays hidden.)
+    if (pings.length > 0) {
+      drawPings(ctx, { pings, now: Date.now(), reducedMotion: prefersReducedMotion }, viewport);
+    }
+
+    // Restore context state (back to screen-space)
+    ctx.restore();
+  }, [currentMap, imageLoaded, mapImage, mapControls.zoom, mapControls.panOffset, userRole, user?.id, campaign?.characters, tokens, dmPreviewPlayerView, lightSources, selectedLightId, lightMode, wallSegments, wallColor, hoveredWallId, selectedWallId, hoveredDoorId, wallMode, selectedEndpoint, wallInProgress, wallType, snapToGrid, brushSize, splitHoverPoint, polygonPoints, showRuler, rulerColor, effectiveRulerOrigin, showAoE, aoeConfig, aoeOrigin, hoverCoords, fogMode, isDM, fogState, fogDragCurrent, pings, prefersReducedMotion]);
 
   // ── Layer draw dispatch + dirty-flag scheduling ──────────
   // A single rAF coalesces every repaint request; only the dirty layers
@@ -1522,7 +1629,13 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   useEffect(() => {
     markDirty('tokens');
     if (currentMap?.lightingEnabled) markDirty('overlay');
-  }, [markDirty, tokens, tokenImages, animatingTokens, hoverToken, characterHpCache, dmShowSpiritTokens, currentMap?.lightingEnabled]);
+  }, [markDirty, tokens, tokenImages, animatingTokens, hoverToken, characterHpCache, dmShowSpiritTokens, currentMap?.lightingEnabled, currentTurnTokenId, peekTokenId]);
+
+  // Publish this map's own token hover so the initiative tracker can tint the
+  // matching row — the other half of the cross-highlight.
+  useEffect(() => {
+    useGameStore.getState().setPeekToken(hoverToken?.id ?? null, 'map');
+  }, [hoverToken]);
 
   // Cursor position drives the token drag ghost (tokens) and, only when a
   // cursor-tracking overlay tool is active, its preview (overlay). Gating the
@@ -1532,10 +1645,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     if (wallMode || showRuler || showAoE || fogMode) markDirty('overlay');
   }, [markDirty, hoverCoords, draggedToken, dragOffset, wallMode, showRuler, showAoE, fogMode]);
 
-  // Overlay content — walls, lights, DM tools, measurement, fog cursor.
+  // Overlay content — walls, lights, DM tools, measurement, pings, fog cursor.
   useEffect(() => {
     markDirty('overlay');
-  }, [markDirty, wallSegments, wallMode, wallInProgress, hoveredWallId, selectedWallId, hoveredDoorId, splitHoverPoint, selectedEndpoint, wallType, snapToGrid, brushSize, lightSources, selectedLightId, lightMode, dmPreviewPlayerView, showRuler, rulerOrigin, rulerColor, effectiveRulerOrigin, showAoE, aoeConfig, aoeOrigin, fogMode, brushRadius]);
+  }, [markDirty, wallSegments, wallMode, wallInProgress, hoveredWallId, selectedWallId, hoveredDoorId, splitHoverPoint, selectedEndpoint, wallType, snapToGrid, brushSize, lightSources, selectedLightId, lightMode, dmPreviewPlayerView, showRuler, rulerOrigin, rulerColor, effectiveRulerOrigin, showAoE, aoeConfig, aoeOrigin, fogMode, fogDragCurrent, fogState, pings]);
 
   // ============================================
   // Token Hit Testing
@@ -1636,6 +1749,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     // Right-button while a tool is active: start panning (left-click is reserved for tools).
     // In normal pan mode, right-click is the context menu — handled by handleContextMenu.
     if (e.button === 2 && (wallMode || fogMode || lightMode) && isDM) {
+      cancelFogDrag(); // Panning away mid-drag must not reveal anything
       rightPanActiveRef.current = true;
       mapControls.startDrag(e);
       return;
@@ -1915,12 +2029,12 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       }
     }
 
-    // Fog brush mode: begin painting on mousedown
+    // Fog selection: anchor the box on mousedown
     if (fogMode && isDM && fogState) {
-      e.preventDefault(); // Prevent native drag — keeps mousemove firing during paint stroke
+      e.preventDefault(); // Prevent native drag — keeps mousemove firing during the drag
       const mapPx = screenToMapPx(screenX, screenY);
-      const cells = getCellsUnderBrush(mapPx.x, mapPx.y, fogState);
-      cells.forEach((c) => fogPendingCellsRef.current.add(c));
+      fogDragAnchorRef.current = mapPx;
+      setFogDragCurrent(mapPx);
       return;
     }
 
@@ -2166,11 +2280,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       }
     }
 
-    // Fog brush: collect cells while mouse button is held (e.buttons & 1 = left button)
-    if (fogMode && isDM && fogState && (e.buttons & 1)) {
-      const mapPx = screenToMapPx(screenX, screenY);
-      const cells = getCellsUnderBrush(mapPx.x, mapPx.y, fogState);
-      cells.forEach((c) => fogPendingCellsRef.current.add(c));
+    // Fog selection: track the cursor. Also runs with no button held, so the
+    // idle single-cell outline follows the mouse before a drag starts.
+    if (fogMode && isDM && fogState) {
+      setFogDragCurrent(screenToMapPx(screenX, screenY));
       markDirty('overlay');
       return;
     }
@@ -2254,9 +2367,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         }
       }
     }
-    // Flush fog brush immediately on mouse release
-    if (fogMode && fogPendingCellsRef.current.size > 0) {
-      flushFogBrush();
+    // Commit the fog selection box on mouse release — one operation per drag.
+    if (fogMode && fogDragAnchorRef.current) {
+      const end = fogDragCurrent ?? fogDragAnchorRef.current;
+      commitFogDrag(end.x, end.y);
     }
     // Commit wall erase brush
     if (wallMode === 'wall-erase' && wallEraseBrushActiveRef.current) {
@@ -2781,8 +2895,6 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
                 setSelectedWallId(null);
               }
             }}
-            brushRadius={brushRadius}
-            onBrushRadiusChange={setBrushRadius}
             onRevealAll={() => {
               const socketInstance = socket?.getSocket();
               if (socketInstance && currentMap) {

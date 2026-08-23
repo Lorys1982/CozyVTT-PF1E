@@ -18,7 +18,6 @@ import {
   Heart,
   Upload,
   Loader2,
-  Check,
   Image as ImageIcon,
   Save,
 } from 'lucide-react';
@@ -29,6 +28,7 @@ import type { Token, TokenHp, NpcStatBlock, Asset } from '@/types';
 import { TokenType, TokenDisposition, AssetType, AssetScope } from '@/types';
 import { StatBlockViewer, StatBlockEditor } from './npc-stat-blocks';
 import Button from '@/components/ui/Button';
+import AssetGrid from '@/components/assets/AssetGrid';
 
 // ============================================
 // Constants
@@ -446,15 +446,15 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                 <img
                   src={token.imageUrl}
                   alt={token.name}
-                  className="w-10 h-10 rounded-full object-cover border-2 border-moss-green/30"
+                  className="w-14 h-14 rounded-full object-cover border-2 border-moss-green/30"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-moss-green/10 flex items-center justify-center">
-                  <Heart className="w-5 h-5 text-brand-ink/40" />
+                <div className="w-14 h-14 rounded-full bg-moss-green/10 flex items-center justify-center">
+                  <Heart className="w-6 h-6 text-brand-ink/40" />
                 </div>
               )}
-              <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                <ImageIcon className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="absolute inset-0 rounded-full bg-forest-shadow/0 group-hover:bg-forest-shadow/40 transition-colors flex items-center justify-center">
+                <ImageIcon className="w-5 h-5 text-paper-white opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             </button>
 
@@ -464,7 +464,10 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={handleNameBlur}
-              className="flex-1 text-base font-bold text-brand-ink bg-transparent border-b border-transparent hover:border-moss-green/30 focus:border-moss-green focus:outline-none px-0"
+              // min-w-0 is load-bearing: a flex child defaults to min-width:auto,
+              // and an <input>'s intrinsic minimum is wide enough that a long
+              // token name pushed the badge and close button off the panel edge.
+              className="flex-1 min-w-0 text-base font-bold text-brand-ink bg-transparent border-b border-transparent hover:border-moss-green/30 focus:border-moss-green focus:outline-none px-0"
             />
 
             {/* Badge */}
@@ -521,47 +524,32 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                     Loading assets...
                   </div>
                 ) : (
-                  <div className="grid grid-cols-5 gap-1.5 max-h-40 overflow-y-auto">
-                    {/* No-image (placeholder) option */}
-                    <button
-                      onClick={handleClearImage}
-                      title="Use colored-letter placeholder"
-                      className={`relative rounded-cozy overflow-hidden border-2 aspect-square transition-all flex items-center justify-center ${
-                        !token.imageUrl
-                          ? 'border-moss-green ring-1 ring-moss-green/30 bg-ink-muted/25'
-                          : 'border-transparent hover:border-moss-green/40 bg-ink-muted/20'
-                      }`}
-                    >
-                      <span className="text-sm font-bold text-ink-secondary">?</span>
-                      <span className="absolute bottom-0 text-[7px] text-ink-muted">None</span>
-                    </button>
-                    {assets.map((asset) => {
-                      const isSelected = token.imageUrl?.includes(asset.id);
-                      return (
-                        <button
-                          key={asset.id}
-                          onClick={() => handleSelectImage(asset.id)}
-                          title={asset.name || asset.originalName}
-                          className={`relative rounded-cozy overflow-hidden border-2 aspect-square transition-all ${
-                            isSelected
-                              ? 'border-moss-green ring-1 ring-moss-green/30'
-                              : 'border-transparent hover:border-moss-green/40'
-                          }`}
-                        >
-                          <img
-                            src={api.getAssetUrl(asset.id, 'tokens')}
-                            alt={asset.name}
-                            className="w-full h-full object-cover"
-                          />
-                          {isSelected && (
-                            <div className="absolute inset-0 bg-moss-green/25 flex items-center justify-center">
-                              <Check className="w-3 h-3 text-brand-ink drop-shadow" />
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <AssetGrid
+                    type={AssetType.TOKEN}
+                    assets={assets}
+                    // imageUrl may hold a bare id or a full /api/assets path,
+                    // so match on containment rather than equality.
+                    selectedId={assets.find((a) => token.imageUrl?.includes(a.id))?.id ?? null}
+                    onSelect={(asset) => (asset ? handleSelectImage(asset.id) : handleClearImage())}
+                    columns={5}
+                    gapClass="gap-1.5"
+                    maxHeightClass="max-h-40"
+                    leadingItem={
+                      <button
+                        type="button"
+                        onClick={handleClearImage}
+                        title="Use colored-letter placeholder"
+                        className={`relative rounded-cozy overflow-hidden border-2 aspect-square transition-all flex items-center justify-center ${
+                          !token.imageUrl
+                            ? 'border-moss-green ring-1 ring-moss-green/30 bg-ink-muted/25'
+                            : 'border-transparent hover:border-moss-green/40 bg-ink-muted/20'
+                        }`}
+                      >
+                        <span className="text-sm font-bold text-ink-secondary">?</span>
+                        <span className="absolute bottom-0 text-[7px] text-ink-muted">None</span>
+                      </button>
+                    }
+                  />
                 )}
 
                 {/* Save to creature template option */}
@@ -780,6 +768,7 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                       <StatBlockEditor
                         statBlock={statBlock}
                         onChange={handleStatBlockChange}
+                        gameSystem={campaign?.gameSystem ?? null}
                       />
                     </div>
                   ) : (

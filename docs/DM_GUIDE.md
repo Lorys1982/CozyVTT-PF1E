@@ -17,11 +17,12 @@ This guide focuses on DM-specific features. For general platform features (chara
 7. [Managing Your Players](#managing-your-players)
 8. [Running a Session](#running-a-session)
 9. [Combat and Initiative](#combat-and-initiative)
-10. [Walls & Dynamic Lighting](#walls--dynamic-lighting)
-11. [The Spirit Layer](#the-spirit-layer)
-12. [Atmosphere Controls](#atmosphere-controls)
-13. [Session State and Continuity](#session-state-and-continuity)
-14. [Tips and Best Practices](#tips-and-best-practices)
+10. [Fog of War](#fog-of-war)
+11. [Walls & Dynamic Lighting](#walls--dynamic-lighting)
+12. [The Spirit Layer](#the-spirit-layer)
+13. [Atmosphere Controls](#atmosphere-controls)
+14. [Session State and Continuity](#session-state-and-continuity)
+15. [Tips and Best Practices](#tips-and-best-practices)
 
 ---
 
@@ -180,9 +181,11 @@ Click any token on the map to open the **Quick Editor**. From here you can:
 
 1. Click the token on the map to open the Quick Editor
 2. Click the token avatar (top-left of the editor) — a hover overlay with an image icon appears
-3. The **Image Picker** opens, showing all TOKEN-type assets from your campaign
+3. The **Image Picker** opens, showing every token image you have access to — platform-wide assets, your own uploads, and assets from campaigns you're a member of
 4. Select an image, or click **Upload New** to upload a fresh asset
 5. Click **None** to remove the image and revert to a colored-letter placeholder
+
+The map updates immediately for everyone at the table — no one needs to refresh. This changes only that one token; to change the image every future placement uses, edit the creature template instead (see [Creature Token Images](#creature-token-images)).
 
 #### Saving an Image to a Creature Template
 
@@ -203,13 +206,22 @@ After setting a token's image, you can save it back to the creature template so 
 Right-click any NPC token on the map (DM only) and choose **Roll...** to open the NPC roll picker. It surfaces every rollable option from the token's stat block:
 
 - **Ability checks** — STR, DEX, CON, INT, WIS, CHA (1d20 + ability modifier)
-- **Saving throws** — all six saves, with proficient saves marked
-- **Skills** — only skills the stat block lists explicit bonuses for
+- **Saving throws** — all six saves. A proficient save is marked ●, an expert one ◆
+- **Skills** — the skills the stat block records a bonus for, each labelled with the ability it uses. Anything else is covered by the ability checks above
 - **Combat** — attack rolls (`+N to hit` parsed from action descriptions) and damage rolls (every `XdY+Z` expression extracted from each action)
 
 For d20 systems (D&D 5e, PF2e) the picker also has an **Advantage / Disadvantage** selector that rewrites the dice expression before rolling (`2d20kh1` / `2d20kl1`). Pathfinder 2e shows the same selector labeled **Fortune / Misfortune**.
 
-If a token doesn't have a stat block, or you're running a non-d20 system, there's a **Custom Roll** input at the bottom of the picker — type any valid dice expression (e.g. `3d8+2`) and optional label, then roll. The result is broadcast to chat with the token name as context (e.g. *"Goblin: Scimitar Damage = 5"*).
+**What each system offers.** The rolls on the menu depend on your campaign's game system, because not every system has something meaningful to compute from a stat block:
+
+| System | Stat-block rolls |
+|---|---|
+| D&D 5e | Full — abilities, saves, skills and combat, with bonuses derived from ability scores and Challenge Rating |
+| Pathfinder 2e | Full — using the modifiers printed on the stat block, with Fortitude/Reflex/Will saves |
+| Call of Cthulhu 7e | Custom Roll only — a percentile system has no d20 rolls to offer |
+| Shadowrun 6e | Custom Roll only — a dice-pool system has no d20 rolls to offer |
+
+If a token doesn't have a stat block, or you're running one of the systems above that offers none, there's a **Custom Roll** input at the bottom of the picker — type any valid dice expression (e.g. `3d8+2`) and optional label, then roll. The result is broadcast to chat with the token name as context (e.g. *"Goblin: Scimitar Damage = 5"*).
 
 *Screenshot pending — NPC roll picker with stat-block-derived options.*
 
@@ -231,8 +243,9 @@ Click the **Creatures** button in the campaign header to open the Creature Libra
 
 ### SRD Creature Seeding
 
-The first time you open the Creature Library in a new campaign, it may be empty. Click **Import SRD Creatures** to fetch the full D&D 5e SRD bestiary from Open5e. This is a one-time operation that populates the library with hundreds of ready-to-use creatures.
+The first time you open the Creature Library in a new campaign, it may be empty. Click **Import D&D 5e SRD** to fetch the full D&D 5e SRD bestiary from Open5e. This is a one-time operation that populates the library with hundreds of ready-to-use creatures.
 
+- The button names the system it imports because it always seeds **D&D 5e** content, whatever system your campaign uses. It stays available in any campaign — a D&D stat block is a reasonable starting point for homebrew — but you'll be importing D&D monsters
 - Seeding takes a few seconds — a progress indicator shows while it runs
 - SRD creatures are **global** (shared across all campaigns on the instance) and **read-only**
 - You can duplicate any SRD creature to create an editable custom version
@@ -245,7 +258,10 @@ The library supports:
 - **Search** — Type in the search bar to filter by creature name
 - **Source filter** — Filter by `srd` (imported) or `custom` (your creations)
 - **Challenge Rating filter** — Narrow down by CR
+- **Game system filter** — Defaults to your campaign's own system, so a Call of Cthulhu table isn't scrolling past 300 D&D monsters. Switch it to **All game systems** to browse everything — useful when you want to adapt a stat block from another system. Creatures saved without a system recorded always appear, whichever way this is set
 - **Pagination** — Results load in pages; scroll down and click "Load More" to fetch additional creatures
+
+> **Library looks empty in a non-D&D campaign?** Only D&D 5e ships SRD content, and the library defaults to your campaign's system. The empty state offers a one-click switch to **All game systems**.
 
 ### Favorites
 
@@ -273,20 +289,88 @@ Click **+ New Creature** at the top of the Creature Library to create a custom c
 - **Name** — Required
 - **Stat Block** — The creature's combat stats (AC, speed, ability scores, attacks, etc.)
 - **HP Max** — Hit points given to tokens placed from this creature
-- **Challenge Rating** — Optional, used for filtering
+- **Challenge Rating** — Chosen from a list. Used for filtering, and in D&D 5e it also sets the creature's proficiency bonus — see [Saving Throws and Skills](#saving-throws-and-skills) below
+- **Saving Throws & Skills** — Tick which ones the creature is proficient or expert in; the bonuses are worked out for you
 - **Creature Type** — Optional (e.g., beast, undead, fiend)
-- **Image** — Optional; choose from your TOKEN assets
+- **Token Image** — Optional. Click **Browse Assets** to pick from token images already in your asset library, or **Upload New** to add one. See [Creature Token Images](#creature-token-images) below
 - **Size** — Grid size (default 1×1)
 - **Disposition** — Hostile, friendly, or neutral
 - **Display Mode** — Pog, top-down, or full-art
 
 Custom creatures are scoped to your campaign and fully editable.
 
+### Saving Throws and Skills
+
+Rather than typing a number for each save and skill, you tick what the creature is
+good at and CozyVTT works out the bonus. This applies everywhere a stat block is
+edited: the Creature Library, the Token Template editor, and the Quick Editor on a
+token already on the map.
+
+**In D&D 5e**, each row has two checkboxes:
+
+- **P (Proficient)** — adds the creature's proficiency bonus
+- **E (Expertise)** — doubles it. Available only once Proficient is ticked
+
+The bonus shown beside each row is the total that gets rolled, and it is the
+ability modifier plus whatever proficiency you've ticked. A commoner with Wisdom
+14 who is proficient in Perception shows **+4** — +2 from Wisdom, +2 from
+proficiency. Make her an expert and it becomes +6.
+
+**Where the proficiency bonus comes from.** It's derived from Challenge Rating,
+on exactly the same scale a player character's comes from level — a CR 7 monster
+gets the same +3 a 7th-level character does. It's shown at the top of the section
+with its source ("From CR 1/4"), and changing the CR or an ability score updates
+every derived bonus immediately.
+
+| Challenge Rating | Proficiency Bonus |
+|---|---|
+| 0 – 4 (including 1/8, 1/4, 1/2) | +2 |
+| 5 – 8 | +3 |
+| 9 – 12 | +4 |
+| 13 – 16 | +5 |
+| 17 – 20 | +6 |
+| 21 – 24 | +7 |
+| 25 – 28 | +8 |
+| 29 – 30 | +9 |
+
+**Overriding a value.** Homebrew doesn't always follow the table, and a few
+published creatures don't either. Click the **pencil** on any row to type a value
+directly; the **↺** button puts it back to the derived one. If an override is far
+outside what the creature's abilities and CR could support, it's marked with a
+warning triangle — the value is still saved, it's just flagged so a typo doesn't
+pass unnoticed. You can also override the proficiency bonus itself.
+
+**Existing creatures keep their numbers.** SRD creatures and anything you made
+earlier are read, not rewritten. CozyVTT works backwards from the printed bonus to
+show the right checkboxes — an SRD Goblin opens already showing Stealth as
+expertise, still at its printed +6. Where a printed value doesn't fit the rules
+(the Night Hag is one), it's kept exactly as published and shown as an override.
+
+**In Pathfinder 2e** this section looks different, because PF2e works
+differently: creature stat blocks print final modifiers rather than deriving them
+from proficiency ranks. You'll see **Fortitude, Reflex and Will** instead of six
+ability saves, a **Level** instead of a Challenge Rating, and you enter each
+modifier directly. CozyVTT warns if a number looks far off for the creature's
+level, but never changes it.
+
 ### Editing Custom Creatures
 
-Click the **pencil icon** next to any custom creature in the library to open it for editing. You can update any field — name, stat block, image, disposition, display mode, and all advanced stats (traits, actions, legendary actions, etc.).
+Click the **pencil icon** next to any custom creature in the library to open it for editing. You can update any field — name, stat block, saving throws and skills, image, disposition, display mode, and all advanced stats (traits, actions, legendary actions, etc.).
 
 SRD creatures cannot be edited directly. Duplicate them first, then edit the copy.
+
+### Creature Token Images
+
+The **Token Image** field in the creature editor gives you two ways to set a picture:
+
+- **Browse Assets** — opens a grid of the token images already available to you. Use the search box to filter by name, then click one to select it. Click it again to deselect.
+- **Upload New** — adds a new image. The upload dialog opens pre-set to a **token** asset scoped to **this campaign**, which is what you usually want: everyone in the campaign can then use it, and it appears in Browse Assets from then on. You can change the type or scope in the dialog if you need to.
+
+The grid only ever shows images you have access to: platform-wide assets, your own personal uploads, and assets belonging to campaigns you're a member of. Uploads are validated by their actual file contents rather than their file extension, so renaming a document to `.png` won't get it through.
+
+*Screenshot pending — Creature editor with the token image picker expanded.*
+
+Whatever you choose here becomes the default image for every token placed from that creature. To change the image on a single token that's already on the map without touching the template, use the Quick Editor instead — see [Changing a Token's Image](#changing-a-tokens-image).
 
 ### Duplicating SRD Creatures
 
@@ -322,7 +406,7 @@ Expand a template in the library and click **Place on Map** to create a new toke
 
 Click **Edit** on any template to modify its properties. Click **Delete** to remove it permanently.
 
-For **NPC-type templates**, the edit form includes the full stat block editor — AC, ability scores, saves, skills, traits, actions, bonus actions, reactions, and legendary actions — so you can build a complete monster once and reuse it across maps and campaigns. The right-click NPC roll picker (see [Rolling for NPC Tokens](#rolling-for-npc-tokens)) reads from the same stat block, so a template with a well-filled-in action list gets clickable attack and damage rolls automatically.
+For **NPC-type templates**, the edit form includes the full stat block editor — AC, ability scores, saves, skills, traits, actions, bonus actions, reactions, and legendary actions — so you can build a complete monster once and reuse it across maps and campaigns. Saves and skills work exactly as they do in the Creature Library: tick what the creature is proficient in and the bonus is derived from its ability scores and Challenge Rating (see [Saving Throws and Skills](#saving-throws-and-skills)). The right-click NPC roll picker (see [Rolling for NPC Tokens](#rolling-for-npc-tokens)) reads from the same stat block, so a template with a well-filled-in action list gets clickable attack and damage rolls automatically.
 
 ### Copying Templates to Another Campaign
 
@@ -397,6 +481,23 @@ Players assign their own characters to your campaign when they accept an invitat
 
 ## Running a Session
 
+### Measuring and Area Templates
+
+Two tools in the map toolbar help you work out what a spell or a move actually reaches. Both are previews for you — they aren't saved to the map and players don't see them.
+
+**Ruler** (the ruler icon) — click a start point, then move the cursor to measure the distance between two squares in feet, using the map's own scale.
+
+**AoE Shape** (the lightning icon) — overlays a spell area on the map. Pick **Circle**, **Cone**, **Line** or **Cube**, set the size in feet (or use a preset), and move the cursor to position it. Click the map to pin the shape in place; with an origin pinned, moving the cursor aims cone and line templates. Press **Esc** to dismiss.
+
+Templates snap to your map's grid, so a shape covers whole squares rather than straddling them:
+
+- **Cube** — always axis-aligned, covering exactly the squares it should. A 10 ft cube on a 5 ft grid covers 2×2 squares; a 15 ft cube covers 3×3. It doesn't rotate, because a tilted square can't line up with a square grid
+- **Line** — starts on a grid line and is centred across its width, so a 20 ft × 5 ft line laid horizontally or vertically covers exactly 4×1 squares
+- **Cone** — its point sits on a grid intersection. The spreading edges are at an angle, so they'll still cut across squares — that's the shape, not a bug. Judge affected squares by how much of each is covered, as you would at the table
+- **Circle** — centred on the square under the cursor
+
+> Sizes use the map's **feet per square** setting (Map Settings), which defaults to 5 ft. If your templates look twice or half the size you expect, check that value first.
+
 ### Starting a Session
 
 When your players are ready, click **Start Session** in the right sidebar's **Session** tab. This:
@@ -453,12 +554,12 @@ When combat begins, click **Start Initiative** in the right sidebar's **Initiati
 
 ### Adding Combatants
 
-Click **+ Add** to add a combatant manually. Enter:
-- **Name** — Character or monster name
-- **Initiative** — The initiative roll result
-- **HP** — Starting hit points
+Combatants are the tokens already on your map — you don't type names in by hand. There are two ways to add one:
 
-You can also use the **Roll Initiative** button to auto-roll for NPCs you've added.
+- Click **+ Add** in the Initiative tab and pick a token from the list.
+- Right-click a token on the map and choose **Add to Initiative**.
+
+Each combatant carries its token's name, portrait and HP across automatically. Set an initiative value by clicking the number beside a combatant, or use the dice button on a row to roll one. Initiative values are saved on the token, so they survive ending and restarting combat.
 
 *GIF pending — Adding combatants and setting initiative order.*
 
@@ -466,7 +567,35 @@ You can also use the **Roll Initiative** button to auto-roll for NPCs you've add
 
 Combatants are sorted by initiative automatically. You can drag and drop to reorder if there are ties or special circumstances.
 
-Click **Next Turn** to advance to the next combatant in the order. The active combatant is highlighted for all players to see.
+Click **Next Turn** to advance to the next combatant in the order.
+
+The active combatant is highlighted in two places, for everyone at the table:
+
+- **In the tracker** — the row is tinted and marked with *"[Name]'s turn"*.
+- **On the map** — a pulsing gold ring is drawn around the acting token. This is the quickest way to tell which of five identical goblins is up.
+
+The ring uses a gold band edged in black so it stays visible over any map image, light or dark. It follows the normal visibility rules: if a token is hidden from players or sitting in unexplored fog, players see no ring — so an ambusher waiting in the dark stays secret even when their turn comes around. You'll still see the ring on your own screen.
+
+Players who have the operating system's *reduce motion* setting turned on get the same ring without the pulse.
+
+### Finding a Combatant on the Map
+
+Turn order and map don't always line up in your head — especially with a row of identical monsters. Hover to connect the two:
+
+- **Hover a row in the tracker** → that token lights up on the map: a thin white ring and a slight brightening. It's quieter than the gold turn ring, and a token can show both at once.
+- **Hover a token on the map** → its row in the tracker tints to match.
+
+This works for players too, and it's read-only — hovering never selects, moves or changes anything. Like the turn ring, it respects visibility: hovering the row of a hidden or fogged creature lights it up on your screen but not on your players'.
+
+### Pinging a Location
+
+Put the cursor where you mean and press **Tab**. A dot with radiating rings appears there for everyone, in your colour with your name beside it — far quicker than describing a spot out loud.
+
+- The cursor has to be over the map; Tab does nothing over the sidebar or chat.
+- Tab still behaves normally when you're typing or navigating with the keyboard, so it won't interfere with the rest of the interface.
+- Everyone can ping, and each person's colour is assigned automatically and stays consistent.
+- Pings are drawn above dynamic lighting on purpose, so you can point into an unlit area and players will still see the mark — pointing at somewhere dark is exactly when you need it. Note this means a ping does **not** respect fog: it marks a spot, so don't use it to gesture at something your players aren't meant to know about yet.
+- Rapid repeat pings are rate-limited server-side and quietly dropped.
 
 ### Updating HP
 
@@ -479,6 +608,42 @@ Click the remove button next to any combatant to pull them from the tracker (whe
 ### Ending Combat
 
 Click **End Initiative** to close combat and hide the tracker. The order is preserved in case you need to resume.
+
+---
+
+## Fog of War
+
+Fog of war covers your map and lets you reveal it a piece at a time, so players discover a dungeon room by room instead of seeing the whole floor plan at once. You control it by hand — nothing is revealed until you say so.
+
+> 💡 **Fog of war and dynamic lighting are two different things.** Fog is manual: you decide what has been revealed, and it stays revealed. Dynamic lighting (the next section) is automatic and depends on where each character is standing and what walls block their view. You can use either on its own, or both together.
+
+### Revealing and Hiding
+
+Click the **Fog** button in the campaign header to open the **Fog of War** panel, then pick a mode:
+
+- **Reveal** — drag a box over the map to show that area to players
+- **Hide** — drag a box to cover an area back up
+
+**Drag a box over the area you want.** The selection snaps to whole grid squares as you drag, and the size is shown in the middle of the box as you go — so you can drag exactly `4 × 7` and get exactly those 28 squares. Release to apply.
+
+To toggle a single square, just click it without dragging. Before you start a drag, the square under your cursor is outlined, so you always know which one a click would take.
+
+*GIF pending — Dragging a fog reveal box across a corridor.*
+
+Some details worth knowing:
+
+- **Drag in any direction.** Right-to-left and bottom-to-top work exactly like dragging forward.
+- **Cancel a drag** with **Esc**, or by right-dragging (which pans the map instead). Neither reveals anything.
+- **Dragging off the edge is fine** — the box clamps to the map.
+- Only the DM sees the fog controls and the selection box. Players just see areas appear.
+
+### Revealing or Hiding Everything
+
+The panel's **Reveal all** and **Hide all** buttons apply to the entire map. Both ask for a second click to confirm, since they are hard to undo by hand — **Hide all** is the quick way to reset a map you have finished exploring, ready for next time.
+
+### Fog and Tokens
+
+A token standing in an unrevealed area is hidden from players entirely, even if the token itself is set to visible. That is what makes fog useful for staging: you can place a room full of monsters in advance and your players will not see them until you reveal the square they are standing in.
 
 ---
 

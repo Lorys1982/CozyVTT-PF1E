@@ -313,7 +313,12 @@ export default function TokenTemplateLibrary({ isOpen, onClose }: TokenTemplateL
 
             {/* Create / Edit Form */}
             {showForm && (
+              // Keyed so switching straight from one template to another
+              // remounts the form — handleEdit leaves showForm true, so
+              // otherwise the previous template's field state carried over and
+              // saving wrote it onto the newly selected template.
               <TemplateForm
+                key={editingTemplate?.id ?? 'new'}
                 campaignId={campaign?.id || ''}
                 editingTemplate={editingTemplate}
                 onCreated={(t) => {
@@ -503,6 +508,9 @@ interface TemplateFormProps {
 function TemplateForm({ campaignId, editingTemplate, onCreated, onEdited, onCancel }: TemplateFormProps) {
   const isEdit = !!editingTemplate;
   const { data: serverConfig } = useServerConfigQuery();
+  // The stat block editor interprets a template differently per game system,
+  // so this form needs the campaign's system as well as its id.
+  const { campaign } = useCampaign();
 
   const [name, setName] = useState(editingTemplate?.name ?? '');
   const [type, setType] = useState<string>(editingTemplate?.type ?? 'object');
@@ -611,7 +619,12 @@ function TemplateForm({ campaignId, editingTemplate, onCreated, onEdited, onCanc
         <div className="flex items-center gap-2">
           {imageUrl ? (
             <img
-              src={imageUrl.startsWith('http') || imageUrl.startsWith('/') ? imageUrl : `/api/assets/${imageUrl}/file`}
+              // imageUrl may be a bare asset id or an /api/assets path — both
+              // resolve through the tokens serving route. (There is no
+              // /api/assets/:id/file endpoint; this used to point at one.)
+              src={imageUrl.startsWith('http') || imageUrl.startsWith('/')
+                ? imageUrl
+                : api.getAssetUrl(imageUrl, 'tokens')}
               alt="Token" className="w-10 h-10 rounded-full object-cover border border-moss-green/20"
             />
           ) : (
@@ -695,7 +708,11 @@ function TemplateForm({ campaignId, editingTemplate, onCreated, onEdited, onCanc
           </button>
           {showStatBlock && statBlock && (
             <div className="pl-1 pt-1">
-              <StatBlockEditor statBlock={statBlock} onChange={setStatBlock} />
+              <StatBlockEditor
+                statBlock={statBlock}
+                onChange={setStatBlock}
+                gameSystem={campaign?.gameSystem ?? null}
+              />
               <button
                 type="button"
                 onClick={() => { setStatBlock(null); setShowStatBlock(false); }}

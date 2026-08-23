@@ -402,7 +402,7 @@ Upload a `.cozyvtt` archive and return its manifest preview without creating any
   "preview": {
     "formatVersion": 1,
     "exportedAt": "2026-04-18T12:00:00.000Z",
-    "exportedFrom": "CozyVTT v1.1.2",
+    "exportedFrom": "CozyVTT v1.2.0",
     "campaignName": "The Lost Mines",
     "gameSystem": "DND_5E",
     "mapCount": 5,
@@ -602,7 +602,7 @@ Place a new token on a map (DM only).
 Additional fields:
 - `imageUrl` — Token image URL (use `/api/assets/tokens/:id` format). Set to `""` to clear.
 - `displayMode` — `"pog"`, `"top-down"`, or `"full-art"`
-- `statBlock` — Game-system-agnostic NPC stat block (AC, HP, attacks, etc.)
+- `statBlock` — NPC stat block (AC, HP, attacks, saves, skills). One shape shared across game systems — see [The `statBlock` object](#the-statblock-object)
 - `creatureTemplateId` — Links the token to a creature template for library integration
 
 ---
@@ -610,6 +610,11 @@ Additional fields:
 ## Creature Endpoints
 
 All creature endpoints are mounted under `/api/campaigns/:campaignId/creatures`.
+
+**`imageUrl` on create, update and duplicate** accepts either a bare asset id or a full
+`/api/assets/tokens/:id` path, and is stored normalised to the full path — the same treatment
+characters, maps and map tokens already receive. Send `""` to clear it. Rows written before this
+normalisation may still hold a bare id, so clients should tolerate both when reading.
 
 ### `GET /api/campaigns/:id/creatures`
 
@@ -663,6 +668,70 @@ Create a new custom creature template (DM only).
 ### `PUT /api/campaigns/:id/creatures/:creatureId`
 
 Update a custom creature template (DM only). Cannot edit SRD creatures — returns `403`.
+
+Accepts any subset of the create fields; an empty body returns `400`.
+
+---
+
+### The `statBlock` object
+
+One shape shared by every game system, with system-specific fields left optional.
+Used by creature templates, token templates and map tokens alike. Validated on
+every write — see [Stat block validation](#stat-block-validation).
+
+| Field | Type | Notes |
+|---|---|---|
+| `ac` | number | Required. 0–99 |
+| `speed` | string | Required |
+| `abilities` | object | Required. `str`/`dex`/`con`/`int`/`wis`/`cha`, each 0–30. Ability **scores** (D&D 5e's model) |
+| `hpMax`, `hitDice` | number, string | Optional |
+| `attributeModifiers` | object | Optional. Same six keys, each −10 to +20. Ability **modifiers**, for systems that print modifiers instead of scores (Pathfinder 2e) |
+| `challengeRating` | string | Optional. `"0"`, `"1/8"`, `"1/4"`, `"1/2"`, `"1"`–`"30"`. In D&D 5e this determines the proficiency bonus |
+| `level` | number | Optional, −1 to 30. Creature level, for systems that rate by level rather than CR |
+| `savingThrows` | object | Optional. Keys to **final totals**, each −50 to +50 |
+| `skills` | object | Optional. Same shape as `savingThrows` |
+| `proficiencies` | object | Optional. Why each total is what it is — see below |
+| `gameSystem` | string | Optional |
+
+`savingThrows` and `skills` keys are **not enumerated**, because the stat block is
+shared across systems: D&D 5e uses the six ability keys (`str`…`cha`), Pathfinder
+2e uses `fortitude`/`reflex`/`will`, and skills may be canonical camelCase
+(`sleightOfHand`) or a custom name. Which keys are *offered* is a client concern.
+
+**`proficiencies`** — all optional:
+
+```json
+{
+  "proficiencies": {
+    "bonusOverride": 4,
+    "saves":  { "wis": "proficient" },
+    "skills": { "perception": "expertise", "stealth": "custom" }
+  }
+}
+```
+
+- Levels are `"none"`, `"proficient"`, `"expertise"` or `"custom"`.
+- `bonusOverride` (0–9) replaces the proficiency bonus that would be derived from
+  Challenge Rating.
+- `"custom"` marks a total that is set explicitly rather than derived.
+
+The totals in `savingThrows` and `skills` remain the values that are displayed and
+rolled; `proficiencies` records the reasoning behind them. **The whole object is
+optional and stat blocks written before it existed are fully valid** — absent
+metadata means the stored totals are taken as given.
+
+### Stat block validation
+
+Enforced on every creature, token-template and campaign-import write:
+
+- Save and skill bonuses: integers, −50 to +50, at most 60 entries per record.
+  The range is a cross-system backstop against absurd data, not a rules check —
+  Pathfinder 2e modifiers legitimately exceed +30 at high level, so a bound
+  fitted to D&D 5e would reject real creatures.
+- Ability scores: integers 0–30. Attribute modifiers: −10 to +20.
+- Unknown top-level keys are preserved, so older stat blocks survive a round trip.
+
+Failures return `400` with `{ "error": "Validation Error", "message": "..." }`.
 
 ---
 
@@ -1150,15 +1219,18 @@ Server → Client: emit('authenticated')   ← connection ready
 | `atmosphere.audio.set` | `{ assetId, volume, loop }` | DM — set ambient audio |
 | `vibe.update` | `{ periodId }` | DM — update vibe tracker |
 | `character.hp.update` | `{ tokenId, current, maximum, temp? }` | Update a token's HP |
-| `initiative.add` | `{ name, initiative, hp? }` | Add combatant |
-| `initiative.remove` | `{ entryId }` | Remove combatant |
-| `initiative.set` | `{ entryId, initiative }` | Set initiative value |
-| `initiative.roll` | `{ entryId }` | Auto-roll initiative |
-| `initiative.reorder` | `{ orderedIds }` | Reorder combatants |
-| `initiative.start` | — | Start combat |
-| `initiative.next` | — | Advance to next turn |
-| `initiative.end` | — | End combat |
-| `initiative.request_state` | — | Request current initiative state |
+| `initiative.add` | `{ tokenId, mapId }` | DM — add a map token as a combatant |
+| `initiative.remove` | `{ tokenId }` | DM — remove combatant |
+| `initiative.set` | `{ tokenId, mapId, value }` | DM — set initiative value (persisted on the token) |
+| `initiative.roll` | `{ tokenId, mapId, expression, characterName? }` | DM — roll initiative; also emits `dice.rolled` |
+| `initiative.reorder` | `{ orderedTokenIds }` | DM — reorder combatants |
+| `initiative.start` | — | DM — start combat |
+| `initiative.next` | — | DM — advance to next turn |
+| `initiative.end` | — | DM — end combat |
+| `initiative.request_state` | — | Request current initiative state (any role) |
+| `map.ping` | `{ mapId, x, y }` | Point at a map location (any role). Coordinates are map pixels, not grid cells. Rate limited to 10 per 10s per user; excess is dropped silently |
+| `fog:operation` | `{ mapId, operation }` | DM — apply a fog operation (see below). Throttled to 10/second per socket; excess dropped silently |
+| `fog:request_state` | `{ mapId }` | Request current fog state (any role) |
 | `light:add` | `{ mapId, light: LightSource }` | DM — place a light source |
 | `light:update` | `{ mapId, light: LightSource }` | DM — update light properties |
 | `light:remove` | `{ mapId, lightId }` | DM — delete a light source |
@@ -1194,12 +1266,76 @@ Server → Client: emit('authenticated')   ← connection ready
 | `vibe.updated` | `{ periodId, period }` | All campaign members |
 | `character.hp.updated` | `{ tokenId, current, maximum, temp }` | All campaign members |
 | `initiative.state` | Full `CombatState` object | All campaign members |
+| `map.pinged` | `{ mapId, x, y, userId }` | All campaign members (including the sender) |
+| `fog:updated` | `{ mapId, fogState }` | DM only — the full fog grid |
+| `fog:cells` | `{ mapId, revealedCells, fogCols, fogRows, cellPx }` | Players only — revealed cell indices, never the unrevealed ones |
 | `light:added` | `{ mapId, light: LightSource }` | All campaign members |
 | `light:updated` | `{ mapId, light: LightSource }` | All campaign members |
 | `light:removed` | `{ mapId, lightId }` | All campaign members |
 | `lights:replaced` | `{ mapId, lights: LightSource[] }` | All campaign members |
 | `pong` | — | Pinging client |
 | `error` | `{ message }` | Sending client |
+
+#### CombatState Object
+
+Held in memory per campaign and re-broadcast in full on every mutation — clients replace their copy
+rather than patching it. Not persisted: combat resets when the server restarts, though the per-token
+`initiative` values survive in the map's token data.
+
+```json
+{
+  "active": true,
+  "round": 2,
+  "currentTokenId": "uuid",
+  "combatants": [
+    {
+      "tokenId": "uuid",
+      "name": "Goblin",
+      "imageUrl": "/uploads/tokens/goblin.png",
+      "initiative": 14,
+      "hp": { "current": 5, "max": 7, "temp": 0 },
+      "type": "npc",
+      "disposition": "hostile"
+    }
+  ]
+}
+```
+
+`currentTokenId` identifies the acting combatant; clients use it to highlight both the tracker row
+and the token on the map. It is `null` before combat starts.
+
+#### Fog Operation
+
+```json
+{ "op": "reveal", "cells": [43, 44, 63, 64] }
+{ "op": "hide",   "cells": [43, 44] }
+{ "op": "reveal_all" }
+{ "op": "hide_all" }
+```
+
+`cells` are indices into the fog grid, row-major from the **top-left**: `row * fogCols + col`. One
+fog cell is one grid square — `cellPx` equals the map's `gridSize`, `fogCols` its width in squares
+and `fogRows` its height — so a fog cell and a visible grid square are always the same thing. Note
+this is the opposite Y convention from token grid coordinates, which are bottom-left origin; the
+frontend converts between them in `map/coords.ts`.
+
+Indices outside the grid are ignored rather than rejected, so a client that miscalculates cannot
+corrupt the fog array. If the stored fog no longer matches the map's dimensions (the grid size or
+map size changed), the server rebuilds it fully hidden rather than trying to remap it.
+
+The two outbound events are deliberately asymmetric: the DM receives the whole grid, while players
+receive only the list of cells that *are* revealed. An unrevealed cell is never sent to a player, so
+the client cannot leak what it has not been told.
+
+#### Map Ping
+
+Nothing is persisted — the ping is broadcast and forgotten, and each client expires its own copy
+after ~1.6s. Only the sender's `userId` is on the wire: clients already hold the campaign roster, so
+they resolve the display name and derive the identity colour locally rather than costing a database
+round-trip on a gesture people will repeat.
+
+Pings are **not** filtered by visibility. Unlike token rendering, a ping marks a location the sender
+deliberately chose to point at, so it renders for every member regardless of fog or lighting.
 
 #### LightSource Object
 

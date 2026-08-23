@@ -1,13 +1,15 @@
 // ============================================
 // Interaction overlays — DM wall-tool previews (draw/split/erase/
-// brush/polygon), the ruler, AoE templates, and the fog brush cursor.
+// brush/polygon), the ruler, AoE templates, and the fog selection box.
 // Pure: no React, no component closures. Snap helpers arrive as
 // callbacks because snapping depends on live tool flags.
 // ============================================
 
-import type { WallSegment, WallType } from '@/types/walls';
+import type { FogState, WallSegment, WallType } from '@/types/walls';
 import { calcGridDistance } from '@/utils/geometry';
 import type { Viewport } from './types';
+import { mapPxToFogCell } from '../coords';
+import { fogRectFromDrag, fogRectToPx, fogRectSize } from '../fogSelection';
 
 type Pt = { x: number; y: number };
 
@@ -365,6 +367,8 @@ export function drawRuler(
   ctx.restore();
 }
 
+import { coneApex, cubeRect, lineOrigin, squaresFor } from '../aoeGeometry';
+
 export type AoEShape = 'sphere' | 'cylinder' | 'cone' | 'line' | 'cube';
 
 export interface AoEConfig {
@@ -379,6 +383,13 @@ export interface AoEOverlayState {
   origin: Pt | null;
   /** Grid coords of the cursor (aim direction + fallback origin). */
   hoverCoords: Pt | null;
+  /**
+   * Cursor in map pixels. Templates snap from this rather than from
+   * `hoverCoords`, because whole-square coordinates cannot express the
+   * difference between a grid line and a square centre — which is exactly the
+   * distinction that decides whether a shape lands on the grid.
+   */
+  hoverMapPx: Pt | null;
   feetPerSquare: number;
 }
 
@@ -391,21 +402,58 @@ export function drawAoEOverlay(
   const { zoom, gridSize: gs, mapHeight: mh } = viewport;
   const fps = state.feetPerSquare;
 
-  const origin = state.origin ?? state.hoverCoords;
-  if (!origin) return;
+  const gridOrigin = state.origin ?? state.hoverCoords;
+  if (!gridOrigin) return;
 
-  const ox = origin.x * gs + gs / 2;
-  const oy = (mh - 1 - origin.y) * gs + gs / 2;
+  // Where the template is anchored, before snapping. A committed origin is a
+  // whole-square coordinate, so it resolves to that square's centre; while the
+  // template still follows the cursor, the precise pointer position is used so
+  // snapping can distinguish a grid line from a square centre.
+  const rawX = state.origin
+    ? state.origin.x * gs + gs / 2
+    : (state.hoverMapPx?.x ?? gridOrigin.x * gs + gs / 2);
+  const rawY = state.origin
+    ? (mh - 1 - state.origin.y) * gs + gs / 2
+    : (state.hoverMapPx?.y ?? (mh - 1 - gridOrigin.y) * gs + gs / 2);
 
+  const sizeSquares = squaresFor(state.config.sizeFt, fps);
+  const widthSquares = squaresFor(state.config.widthFt ?? 5, fps);
+  const sizeInPx = sizeSquares * gs;
+  const widthInPx = widthSquares * gs;
+
+  // Aim direction, measured from the unsnapped anchor so the template does not
+  // jitter as the snapped origin steps between grid points.
   let angle = 0;
   if (state.hoverCoords && state.origin) {
-    const mx = state.hoverCoords.x * gs + gs / 2;
-    const my = (mh - 1 - state.hoverCoords.y) * gs + gs / 2;
-    angle = Math.atan2(my - oy, mx - ox);
+    const mx = state.hoverMapPx?.x ?? state.hoverCoords.x * gs + gs / 2;
+    const my = state.hoverMapPx?.y ?? (mh - 1 - state.hoverCoords.y) * gs + gs / 2;
+    angle = Math.atan2(my - rawY, mx - rawX);
   }
 
-  const sizeInPx = (state.config.sizeFt / fps) * gs;
-  const widthInPx = ((state.config.widthFt ?? 5) / fps) * gs;
+  // Each shape snaps by the rule that puts its edges on grid lines — see
+  // aoeGeometry.ts. Without this every template sat half a square off.
+  //
+  // Sphere and cylinder are deliberately left on the square centre they have
+  // always used: a circle never tiles squares whatever it is centred on, and
+  // that placement was not what was reported as misaligned.
+  const cursor = { x: rawX, y: rawY };
+  let ox = rawX;
+  let oy = rawY;
+
+  // The cube's rectangle is computed once and reused for both the outline and
+  // the label anchor below — deriving them separately let the label drift off
+  // the snapped shape by up to half a square.
+  const cube =
+    state.config.shape === 'cube' ? cubeRect(cursor, gs, sizeSquares) : null;
+
+  if (state.config.shape === 'cone') {
+    ({ x: ox, y: oy } = coneApex(cursor, gs));
+  } else if (state.config.shape === 'line') {
+    ({ x: ox, y: oy } = lineOrigin(cursor, gs, widthSquares, angle));
+  } else if (cube) {
+    ox = cube.x + cube.size / 2;
+    oy = cube.y + cube.size / 2;
+  }
 
   ctx.save();
   ctx.fillStyle = 'rgba(147, 51, 234, 0.25)';
@@ -447,16 +495,11 @@ export function drawAoEOverlay(
     }
 
     case 'cube': {
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const perpCos = Math.cos(angle + Math.PI / 2);
-      const perpSin = Math.sin(angle + Math.PI / 2);
-      const hs = sizeInPx / 2;
-      ctx.moveTo(ox + perpCos * hs,                      oy + perpSin * hs);
-      ctx.lineTo(ox + cos * sizeInPx + perpCos * hs,     oy + sin * sizeInPx + perpSin * hs);
-      ctx.lineTo(ox + cos * sizeInPx - perpCos * hs,     oy + sin * sizeInPx - perpSin * hs);
-      ctx.lineTo(ox - perpCos * hs,                      oy - perpSin * hs);
-      ctx.closePath();
+      // Axis-aligned and snapped to whole squares. It used to be a rotatable
+      // rectangle anchored at a square centre, which could not line up with the
+      // grid at any angle — a 10 ft cube on a 5 ft grid straddled four squares
+      // instead of covering two.
+      if (cube) ctx.rect(cube.x, cube.y, cube.size, cube.size);
       break;
     }
   }
@@ -483,34 +526,95 @@ export function drawAoEOverlay(
   ctx.restore();
 }
 
-export interface FogBrushCursorState {
+export interface FogSelectionState {
   mode: 'fog-reveal' | 'fog-hide';
-  /** Grid coords of the cursor. */
-  hoverCoords: Pt;
-  /** Brush radius in map-space pixels. */
-  brushRadius: number;
+  fog: FogState;
+  /** Drag anchor in map pixels, or null when only hovering. */
+  anchor: Pt | null;
+  /** Current cursor in map pixels. */
+  cursor: Pt | null;
 }
 
+const FOG_REVEAL_TINT = '163, 230, 53';  // lime
+const FOG_HIDE_TINT = '249, 115, 22';    // orange
+
 /**
- * Fog brush cursor. Drawn in SCREEN space (zoom-invariant) — the caller
- * must invoke this AFTER restoring the world transform.
+ * Fog selection preview — the snapped rectangle being dragged, or the single
+ * cell under the cursor when idle.
+ *
+ * Drawn in WORLD space, unlike the circular brush cursor this replaces: a
+ * grid-snapped rectangle has to stay locked to the grid while the DM pans and
+ * zooms, so the caller must invoke this BEFORE restoring the world transform.
  */
-export function drawFogBrushCursor(
+export function drawFogSelection(
   ctx: CanvasRenderingContext2D,
-  state: FogBrushCursorState,
+  state: FogSelectionState,
   viewport: Viewport
 ): void {
-  const screenX = state.hoverCoords.x * viewport.zoom * viewport.gridSize + viewport.panOffset.x;
-  const screenY = (viewport.mapHeight - 1 - state.hoverCoords.y) * viewport.zoom * viewport.gridSize + viewport.panOffset.y;
-  const screenRadius = state.brushRadius * viewport.zoom;
+  const { zoom } = viewport;
+  const { cursor, anchor, fog } = state;
+  if (!cursor) return;
+
+  const tint = state.mode === 'fog-reveal' ? FOG_REVEAL_TINT : FOG_HIDE_TINT;
+
+  // Idle: outline just the cell a click would toggle, so the DM can see
+  // exactly which square is in play before committing to a drag.
+  if (!anchor) {
+    const cell = mapPxToFogCell(cursor.x, cursor.y, fog);
+    if (!cell) return;
+    ctx.save();
+    ctx.strokeStyle = `rgba(${tint}, 0.9)`;
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([4 / zoom, 4 / zoom]);
+    ctx.strokeRect(cell.col * fog.cellPx, cell.row * fog.cellPx, fog.cellPx, fog.cellPx);
+    ctx.setLineDash([]);
+    ctx.restore();
+    return;
+  }
+
+  const rect = fogRectFromDrag(fog, anchor.x, anchor.y, cursor.x, cursor.y);
+  if (!rect) return;
+
+  const { x, y, w, h } = fogRectToPx(fog, rect);
+  const { cols, rows } = fogRectSize(rect);
+
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset to screen-space
-  ctx.strokeStyle = state.mode === 'fog-reveal' ? 'rgba(163, 230, 53, 0.8)' : 'rgba(249, 115, 22, 0.8)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
-  ctx.stroke();
+
+  ctx.fillStyle = `rgba(${tint}, 0.22)`;
+  ctx.fillRect(x, y, w, h);
+
+  ctx.strokeStyle = `rgba(${tint}, 0.95)`;
+  ctx.lineWidth = 2 / zoom;
+  ctx.setLineDash([6 / zoom, 4 / zoom]);
+  ctx.strokeRect(x, y, w, h);
   ctx.setLineDash([]);
+
+  // Size readout on an opaque pill — the text contrasts against its own
+  // background rather than the map, same technique as the ruler.
+  const label = `${cols} × ${rows}`;
+  const fontSize = Math.max(11, 13 / zoom);
+  ctx.font = `bold ${fontSize}px 'Inter', system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const pad = 5 / zoom;
+  const textW = ctx.measureText(label).width;
+  const pillW = textW + pad * 2;
+  const pillH = fontSize + pad * 2;
+  const pillX = x + w / 2 - pillW / 2;
+  const pillY = y + h / 2 - pillH / 2;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(pillX, pillY, pillW, pillH, 4 / zoom);
+  } else {
+    ctx.rect(pillX, pillY, pillW, pillH);
+  }
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, x + w / 2, y + h / 2);
+
   ctx.restore();
 }

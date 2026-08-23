@@ -10,6 +10,9 @@ import { AuthenticatedRequest } from '../middleware/rbac';
 import { campaignMember, campaignDM } from '../middleware/compose';
 import { prisma } from '../config/database';
 import { seedSrdCreatures, getSrdSeedStatus } from '../services/creatureSeed';
+import { normalizeAssetUrl } from '../utils/asset-urls';
+import { CreateCreatureSchema, UpdateCreatureSchema } from '../validators/creatures';
+import { toJson } from '../utils/prisma-json';
 import logger from '../utils/logger';
 
 const router = Router({ mergeParams: true });
@@ -82,13 +85,21 @@ router.get('/', campaignMember, async (req: AuthenticatedRequest, res: Response)
     const take = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 50));
     const skip = Math.max(0, parseInt(offset as string, 10) || 0);
 
-    // Build where clause: include SRD (campaignId null) + this campaign's customs
-    const where: Record<string, unknown> = {
-      OR: [
-        { campaignId: null },
-        { campaignId },
-      ],
-    };
+    // Two independent scopes, so they are ANDed rather than sharing one OR:
+    //  - visibility: global creatures (campaignId null) plus this campaign's own
+    //  - game system: the requested system plus system-agnostic creatures
+    const scopes: Array<Record<string, unknown>> = [
+      { OR: [{ campaignId: null }, { campaignId }] },
+    ];
+
+    if (gameSystem) {
+      // Creatures with no system recorded are usable anywhere, so they are
+      // never filtered out — only creatures belonging to a *different* system
+      // are excluded.
+      scopes.push({ OR: [{ gameSystem: gameSystem as string }, { gameSystem: null }] });
+    }
+
+    const where: Record<string, unknown> = { AND: scopes };
 
     if (search) {
       where.name = { contains: search as string, mode: 'insensitive' };
@@ -98,9 +109,6 @@ router.get('/', campaignMember, async (req: AuthenticatedRequest, res: Response)
     }
     if (cr) {
       where.challengeRating = cr as string;
-    }
-    if (gameSystem) {
-      where.gameSystem = gameSystem as string;
     }
 
     const [templates, total] = await Promise.all([
@@ -157,27 +165,29 @@ router.post('/', campaignDM, async (req: AuthenticatedRequest, res: Response) =>
   try {
     const { campaignId } = req.params;
     const userId = req.session.userId!;
-    const data = req.body;
 
-    // Validate required fields
-    if (!data.name || typeof data.name !== 'string') {
-      return res.status(400).json({ error: 'Validation Error', message: 'Creature name is required' });
+    const parsed = CreateCreatureSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: parsed.error.issues.map((i) => i.message).join('; '),
+      });
     }
-    if (!data.statBlock || typeof data.statBlock !== 'object') {
-      return res.status(400).json({ error: 'Validation Error', message: 'Stat block is required' });
-    }
+    const data = parsed.data;
 
     const template = await prisma.creatureTemplate.create({
       data: {
         id: randomUUID(),
-        name: data.name.trim(),
+        name: data.name,
         gameSystem: data.gameSystem || null,
         source: 'custom',
         challengeRating: data.challengeRating || null,
         creatureType: data.creatureType || null,
         alignment: data.alignment || null,
-        imageUrl: data.imageUrl || null,
-        statBlock: data.statBlock,
+        // Stored as the canonical /api/assets/tokens/{uuid}, matching characters
+        // and maps. Clients may send either a bare asset id or a full path.
+        imageUrl: normalizeAssetUrl(data.imageUrl || null, 'tokens'),
+        statBlock: toJson(data.statBlock),
         size: data.size || { width: 1, height: 1 },
         disposition: data.disposition || 'hostile',
         displayMode: data.displayMode || 'pog',
@@ -201,7 +211,15 @@ router.post('/', campaignDM, async (req: AuthenticatedRequest, res: Response) =>
 router.put('/:creatureId', campaignDM, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { campaignId, creatureId } = req.params;
-    const data = req.body;
+
+    const parsed = UpdateCreatureSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: parsed.error.issues.map((i) => i.message).join('; '),
+      });
+    }
+    const data = parsed.data;
 
     const existing = await prisma.creatureTemplate.findUnique({
       where: { id: creatureId },
@@ -227,13 +245,16 @@ router.put('/:creatureId', campaignDM, async (req: AuthenticatedRequest, res: Re
     const updated = await prisma.creatureTemplate.update({
       where: { id: creatureId },
       data: {
-        ...(data.name !== undefined && { name: data.name.trim() }),
+        ...(data.name !== undefined && { name: data.name }),
         ...(data.gameSystem !== undefined && { gameSystem: data.gameSystem }),
         ...(data.challengeRating !== undefined && { challengeRating: data.challengeRating }),
         ...(data.creatureType !== undefined && { creatureType: data.creatureType }),
         ...(data.alignment !== undefined && { alignment: data.alignment }),
-        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
-        ...(data.statBlock !== undefined && { statBlock: data.statBlock }),
+        // Empty string clears the image; anything else normalises to a full path.
+        ...(data.imageUrl !== undefined && {
+          imageUrl: data.imageUrl ? normalizeAssetUrl(data.imageUrl, 'tokens') : null,
+        }),
+        ...(data.statBlock !== undefined && { statBlock: toJson(data.statBlock) }),
         ...(data.size !== undefined && { size: data.size }),
         ...(data.disposition !== undefined && { disposition: data.disposition }),
         ...(data.displayMode !== undefined && { displayMode: data.displayMode }),
@@ -308,7 +329,8 @@ router.post('/:creatureId/duplicate', campaignDM, async (req: AuthenticatedReque
         challengeRating: source.challengeRating,
         creatureType: source.creatureType,
         alignment: source.alignment,
-        imageUrl: source.imageUrl,
+        // Duplicating an older SRD row is a chance to normalise its bare id.
+        imageUrl: normalizeAssetUrl(source.imageUrl, 'tokens'),
         statBlock: source.statBlock as object,
         size: source.size as object,
         disposition: source.disposition,

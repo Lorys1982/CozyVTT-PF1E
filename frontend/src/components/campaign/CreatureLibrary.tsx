@@ -21,29 +21,33 @@ import {
   Star,
   Pencil,
   Trash2,
-  Upload,
 } from 'lucide-react';
 import { useCampaign } from '@/contexts/CampaignContext';
 import { useGameStore } from '@/stores/gameStore';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import api from '@/services/api';
 import type { CreatureTemplate, NpcStatBlock } from '@/types';
-import { TokenType, GameSystem, AssetType, AssetScope } from '@/types';
-import { StatBlockViewer } from './npc-stat-blocks';
+import { TokenType, GameSystem, AssetType } from '@/types';
+import {
+  StatBlockViewer,
+  buildCreatureStatBlock,
+  ProficiencyEditor,
+  Pf2eProficiencyEditor,
+} from './npc-stat-blocks';
+import { CHALLENGE_RATINGS } from '@/utils/rules/dnd5e';
+import { GAME_SYSTEM_SHORT_LABELS } from '@/constants/game-systems';
 import Button from '@/components/ui/Button';
-import { useServerConfigQuery } from '@/hooks/queries';
-import { getUploadLimit, formatUploadLimit } from '@/utils/uploadLimits';
+import AssetPicker from '@/components/assets/AssetPicker';
+import { extractAssetId } from '@/utils/assetUrl';
 
 // ============================================
 // Constants
 // ============================================
 
-const CR_OPTIONS = [
-  '0', '1/8', '1/4', '1/2', '1', '2', '3', '4', '5',
-  '6', '7', '8', '9', '10', '11', '12', '13', '14', '15',
-  '16', '17', '18', '19', '20', '21', '22', '23', '24',
-  '25', '26', '27', '28', '29', '30',
-];
+// Challenge ratings come from the shared rules module so the filter dropdown
+// and the creature form cannot drift apart — and so a CR the form offers is
+// always one the proficiency-bonus table recognises.
+const CR_OPTIONS = CHALLENGE_RATINGS;
 
 const SOURCE_FILTERS = [
   { value: '', label: 'All Sources' },
@@ -73,6 +77,15 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
   const [sourceFilter, setSourceFilter] = useState('');
   const [crFilter, setCrFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  /**
+   * Whether to limit the library to this campaign's game system.
+   *
+   * Defaults to doing so: a Call of Cthulhu table has no use for 322 D&D
+   * monsters in its browse list. It stays a toggle rather than a hard rule
+   * because only D&D 5e ships SRD content, so a DM running anything else may
+   * legitimately want to borrow a stat block as a starting point.
+   */
+  const [matchGameSystem, setMatchGameSystem] = useState(true);
 
   // ── Data state ──
   const [creatures, setCreatures] = useState<CreatureTemplate[]>([]);
@@ -115,6 +128,9 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
         search: searchQuery || undefined,
         source: sourceFilter || undefined,
         cr: crFilter || undefined,
+        // A campaign with no system set has nothing to match against, so it
+        // always sees everything.
+        gameSystem: matchGameSystem ? (campaign.gameSystem ?? undefined) : undefined,
         limit: LIMIT,
         offset: newOffset,
       });
@@ -129,7 +145,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
     } finally {
       setIsLoading(false);
     }
-  }, [campaign, searchQuery, sourceFilter, crFilter, offset]);
+  }, [campaign, searchQuery, sourceFilter, crFilter, matchGameSystem, offset]);
 
   // Fetch on open and when filters change
   useEffect(() => {
@@ -147,7 +163,10 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       })
       .catch(() => {})
       .finally(() => setIsLoadingFavorites(false));
-  }, [isOpen, campaign?.id, sourceFilter, crFilter]);
+    // matchGameSystem belongs here with the other filters: without it, toggling
+    // between this campaign's system and all systems changed the dropdown but
+    // never refetched the list.
+  }, [isOpen, campaign?.id, sourceFilter, crFilter, matchGameSystem]);
 
   // Debounced search
   useEffect(() => {
@@ -379,26 +398,42 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
               {/* Filter controls */}
               {showFilters && (
-                <div className="flex gap-2">
-                  <select
-                    value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="input-cozy text-xs flex-1"
-                  >
-                    {SOURCE_FILTERS.map((f) => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={crFilter}
-                    onChange={(e) => setCrFilter(e.target.value)}
-                    className="input-cozy text-xs w-20"
-                  >
-                    <option value="">All CR</option>
-                    {CR_OPTIONS.map((cr) => (
-                      <option key={cr} value={cr}>CR {cr}</option>
-                    ))}
-                  </select>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <select
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className="input-cozy text-xs flex-1"
+                    >
+                      {SOURCE_FILTERS.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={crFilter}
+                      onChange={(e) => setCrFilter(e.target.value)}
+                      className="input-cozy text-xs w-20"
+                    >
+                      <option value="">All CR</option>
+                      {CR_OPTIONS.map((cr) => (
+                        <option key={cr} value={cr}>CR {cr}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Only meaningful when the campaign has a system to match. */}
+                  {campaign?.gameSystem && (
+                    <select
+                      aria-label="Game system filter"
+                      value={matchGameSystem ? 'campaign' : 'all'}
+                      onChange={(e) => setMatchGameSystem(e.target.value === 'campaign')}
+                      className="input-cozy text-xs w-full"
+                    >
+                      <option value="campaign">
+                        {GAME_SYSTEM_SHORT_LABELS[campaign.gameSystem]} only (this campaign)
+                      </option>
+                      <option value="all">All game systems</option>
+                    </select>
+                  )}
                 </div>
               )}
 
@@ -410,6 +445,9 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                 >
                   <Plus className="w-3 h-3" /> Create Custom
                 </button>
+                {/* The label names the system it imports: this seeds the D&D 5e
+                    bestiary whatever the campaign's system, which was not
+                    obvious from a bare "Import SRD Creatures". */}
                 {srdCount === 0 && (
                   <button
                     onClick={handleSeedSrd}
@@ -419,7 +457,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                     {isSeeding ? (
                       <><Loader2 className="w-3 h-3 animate-spin" /> Seeding...</>
                     ) : (
-                      <><BookOpen className="w-3 h-3" /> Import SRD Creatures</>
+                      <><BookOpen className="w-3 h-3" /> Import D&amp;D 5e SRD</>
                     )}
                   </button>
                 )}
@@ -504,6 +542,22 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                   <p className="text-sm text-stone-gray/70">
                     {searchQuery ? 'No creatures match your search.' : 'No creatures in the library yet.'}
                   </p>
+                  {/* The likeliest reason a non-D&D campaign looks empty: only
+                      D&D 5e ships SRD content, and the library defaults to this
+                      campaign's system. Say so rather than looking broken. */}
+                  {!searchQuery && matchGameSystem && campaign?.gameSystem && (srdCount ?? 0) > 0 && (
+                    <p className="mt-2 text-xs text-stone-gray/60">
+                      Showing {GAME_SYSTEM_SHORT_LABELS[campaign.gameSystem]} creatures only.{' '}
+                      <button
+                        type="button"
+                        onClick={() => { setMatchGameSystem(false); setShowFilters(true); }}
+                        className="underline hover:text-brand-ink"
+                      >
+                        Show all game systems
+                      </button>{' '}
+                      to browse creatures from other systems.
+                    </p>
+                  )}
                   {!searchQuery && srdCount === 0 && (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs text-stone-gray/60">
@@ -517,7 +571,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                         {isSeeding ? (
                           <><Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Importing from Open5e...</>
                         ) : (
-                          'Import SRD Creatures'
+                          'Import D&D 5e SRD Creatures'
                         )}
                       </Button>
                       <p className="text-[10px] text-stone-gray/40">
@@ -575,7 +629,13 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
             {/* ── Create / Edit Custom Form (inline) ── */}
             {showCreateForm && (
+              // Keyed on the creature being edited so switching directly from
+              // one creature to another remounts the form. handleEdit leaves
+              // showCreateForm true, so without this the form kept the previous
+              // creature's field state and saving wrote those stats onto the
+              // newly selected creature.
               <CreatureForm
+                key={editingCreature?.id ?? 'new'}
                 campaignId={campaign?.id || ''}
                 gameSystem={campaign?.gameSystem ?? null}
                 editingCreature={editingCreature}
@@ -830,7 +890,6 @@ interface CreatureFormProps {
 function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEdited, onCancel }: CreatureFormProps) {
   const isEdit = !!editingCreature;
   const sb = editingCreature?.statBlock;
-  const { data: serverConfig } = useServerConfigQuery();
 
   // ── Basic fields ──
   const [name, setName] = useState(editingCreature?.name ?? '');
@@ -852,8 +911,6 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
 
   // ── Image field ──
   const [imageUrl, setImageUrl] = useState(editingCreature?.imageUrl ?? '');
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Advanced stat block fields ──
   const [showAdvanced, setShowAdvanced] = useState(isEdit && !!(sb?.traits?.length || sb?.actions?.length));
@@ -869,43 +926,37 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   const [senses, setSenses] = useState(sb?.senses ?? '');
   const [languages, setLanguages] = useState(sb?.languages ?? '');
 
+  // Saves, skills and their proficiency metadata are edited together by
+  // ProficiencyEditor, which works on a whole stat block. Holding just those
+  // three fields here keeps the rest of the form's flat state untouched.
+  const [proficiencyFields, setProficiencyFields] = useState<
+    Pick<NpcStatBlock, 'savingThrows' | 'skills' | 'proficiencies'>
+  >({
+    savingThrows: sb?.savingThrows,
+    skills: sb?.skills,
+    proficiencies: sb?.proficiencies,
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // ── Image upload handler ──
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Pathfinder 2e rates creatures by Level rather than Challenge Rating, and
+  // stores printed modifiers instead of deriving them.
+  const isPf2e = gameSystem === GameSystem.PATHFINDER_2E;
+  const [level, setLevel] = useState<number | undefined>(sb?.level);
 
-    // Client-side size check against the server's token limit
-    const tokenLimit = getUploadLimit(serverConfig, AssetType.TOKEN);
-    if (file.size > tokenLimit) {
-      setFormError(`Image must be under ${formatUploadLimit(tokenLimit)}`);
-      return;
-    }
-
-    setIsUploading(true);
-    setFormError(null);
-    try {
-      // Fields before the file: multer parses in order, so the server knows the
-      // asset type even when it aborts a too-large file mid-stream.
-      const formData = new FormData();
-      formData.append('type', AssetType.TOKEN);
-      formData.append('scope', AssetScope.CAMPAIGN);
-      formData.append('campaignId', campaignId);
-      formData.append('name', file.name.replace(/\.[^.]+$/, ''));
-      formData.append('file', file);
-
-      const { asset } = await api.uploadAsset(formData);
-      setImageUrl(asset.id);
-    } catch {
-      setFormError('Failed to upload image');
-    } finally {
-      setIsUploading(false);
-      // Reset the file input so the same file can be re-selected
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  // The stat block the proficiency editor sees: live ability scores and CR from
+  // this form (both feed the derived bonuses) plus the proficiency state above.
+  const workingStatBlock: NpcStatBlock = {
+    ac,
+    hpMax,
+    speed,
+    abilities: { str, dex, con, int, wis, cha },
+    challengeRating: cr || undefined,
+    level,
+    ...proficiencyFields,
   };
+
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -915,33 +966,28 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
     setIsSubmitting(true);
     setFormError(null);
 
-    // Filter out empty name/description pairs
-    const filterPairs = (arr: Array<{ name: string; description: string }>) =>
-      arr.filter((p) => p.name.trim() || p.description.trim());
-
-    const statBlock: NpcStatBlock = {
+    // Merge the proficiency edits over the source before assembling, so the
+    // carry-forward below sees the current saves and skills.
+    const statBlock = buildCreatureStatBlock({ ...sb, ...proficiencyFields, level }, {
       ac,
       hpMax,
-      // Preserve hit dice from the source stat block (e.g. an SRD duplicate) —
-      // the form has no field for it, so it would otherwise be lost on save.
-      ...(sb?.hitDice && { hitDice: sb.hitDice }),
       speed,
       abilities: { str, dex, con, int, wis, cha },
-      creatureType: creatureType || undefined,
-      alignment: alignment || undefined,
-      challengeRating: cr || undefined,
-      ...(filterPairs(traits).length > 0 && { traits: filterPairs(traits) }),
-      ...(filterPairs(actions).length > 0 && { actions: filterPairs(actions) }),
-      ...(filterPairs(bonusActions).length > 0 && { bonusActions: filterPairs(bonusActions) }),
-      ...(filterPairs(reactions).length > 0 && { reactions: filterPairs(reactions) }),
-      ...(filterPairs(legendaryActions).length > 0 && { legendaryActions: filterPairs(legendaryActions) }),
-      ...(damageVulnerabilities && { damageVulnerabilities }),
-      ...(damageResistances && { damageResistances }),
-      ...(damageImmunities && { damageImmunities }),
-      ...(conditionImmunities && { conditionImmunities }),
-      ...(senses && { senses }),
-      ...(languages && { languages }),
-    };
+      creatureType,
+      alignment,
+      challengeRating: cr,
+      traits,
+      actions,
+      bonusActions,
+      reactions,
+      legendaryActions,
+      damageVulnerabilities,
+      damageResistances,
+      damageImmunities,
+      conditionImmunities,
+      senses,
+      languages,
+    });
 
     const payload = {
       name: name.trim(),
@@ -998,48 +1044,19 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
         />
       </div>
 
-      {/* Image */}
-      <div>
-        <label className="text-[10px] text-stone-gray block mb-0.5">Token Image</label>
-        <div className="flex items-center gap-2">
-          {imageUrl ? (
-            <img
-              src={imageUrl.startsWith('http') || imageUrl.startsWith('/') ? imageUrl : `/api/assets/${imageUrl}/file`}
-              alt="Token"
-              className="w-10 h-10 rounded-full object-cover border border-moss-green/20"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-stone-gray/10 flex items-center justify-center border border-dashed border-stone-gray/30">
-              <Upload className="w-4 h-4 text-stone-gray/40" />
-            </div>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="text-[10px] text-brand-ink hover:text-brand-ink/80 flex items-center gap-1"
-          >
-            {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-            {imageUrl ? 'Change' : 'Upload'}
-          </button>
-          {imageUrl && (
-            <button
-              type="button"
-              onClick={() => setImageUrl('')}
-              className="text-[10px] text-danger-ink hover:text-danger-ink"
-            >
-              Remove
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Image — browse the campaign's token assets or upload a new one.
+          Uploads go through the same endpoint as before, so magic-byte
+          validation and the campaign scope are unchanged. */}
+      <AssetPicker
+        label="Token Image"
+        type={AssetType.TOKEN}
+        campaignId={campaignId}
+        selectedAssetId={extractAssetId(imageUrl)}
+        onSelect={(asset) => setImageUrl(asset ? asset.id : '')}
+        columns={5}
+        searchPlaceholder="Search token images..."
+        emptyMessage="No token images yet. Upload one to get started."
+      />
 
       {/* Type & Alignment */}
       <div className="grid grid-cols-2 gap-2">
@@ -1076,16 +1093,41 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             className="input-cozy w-full text-xs"
           />
         </div>
-        <div>
-          <label className="text-[10px] text-stone-gray block mb-0.5">CR</label>
-          <input
-            type="text"
-            value={cr}
-            onChange={(e) => setCr(e.target.value)}
-            placeholder="1/4"
-            className="input-cozy w-full text-xs"
-          />
-        </div>
+        {isPf2e ? (
+          <div>
+            <label className="text-[10px] text-stone-gray block mb-0.5" htmlFor="creature-level">Level</label>
+            <input
+              id="creature-level"
+              type="number"
+              min={-1}
+              max={30}
+              value={level ?? ''}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                setLevel(Number.isFinite(parsed) ? parsed : undefined);
+              }}
+              placeholder="5"
+              className="input-cozy w-full text-xs text-center"
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="text-[10px] text-stone-gray block mb-0.5" htmlFor="creature-cr">CR</label>
+            {/* A select, not free text: CR determines the proficiency bonus, so a
+                typo would silently change every derived save and skill. */}
+            <select
+              id="creature-cr"
+              value={cr}
+              onChange={(e) => setCr(e.target.value)}
+              className="input-cozy w-full text-xs"
+            >
+              <option value="">—</option>
+              {CR_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-[10px] text-stone-gray block mb-0.5">HP Max</label>
           <input
@@ -1130,6 +1172,36 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Saves & skills — derived from the ability scores and CR above. This
+          form had no fields for these at all, which is why editing a duplicated
+          SRD creature used to delete them. */}
+      <div>
+        <label className="text-[10px] text-stone-gray block mb-1">Saving Throws &amp; Skills</label>
+        {isPf2e ? (
+          <Pf2eProficiencyEditor
+            statBlock={workingStatBlock}
+            onChange={(updated) =>
+              setProficiencyFields({
+                savingThrows: updated.savingThrows,
+                skills: updated.skills,
+                proficiencies: updated.proficiencies,
+              })
+            }
+          />
+        ) : (
+          <ProficiencyEditor
+            statBlock={workingStatBlock}
+            onChange={(updated) =>
+              setProficiencyFields({
+                savingThrows: updated.savingThrows,
+                skills: updated.skills,
+                proficiencies: updated.proficiencies,
+              })
+            }
+          />
+        )}
       </div>
 
       {/* Disposition */}

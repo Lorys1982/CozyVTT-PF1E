@@ -219,6 +219,17 @@ Your movement is visible to everyone in real time — your party can watch you c
 
 If your token is missing or in the wrong place, just let your DM know in chat — they can adjust it.
 
+### Why parts of the map are dark
+
+Most of the map usually starts hidden. That's **fog of war**, and it's how your DM keeps a dungeon from being a spoiler — you see a room when you get there, not before.
+
+Areas open up as you explore. If your DM is using **dynamic lighting** as well, what you can see also depends on where your character is standing and which walls are in the way, so the view shifts as you move.
+
+Two things worth knowing:
+
+- **Creatures standing in hidden areas are invisible to you** — including their tokens, and including their turn marker during combat. If the initiative tracker shows a creature you can't find on the map, that's deliberate. Something is out there.
+- **You can't reveal fog yourself.** Only the DM can, so there's nothing you can accidentally break by moving around.
+
 ---
 
 ## The Initiative Tracker
@@ -233,6 +244,25 @@ You'll see:
 - **HP** for each combatant (updating in real time)
 
 When it's your turn, your name is highlighted. Describe your actions in chat and move your token on the map.
+
+**Watch the map, too.** Whoever's turn it is gets a pulsing gold ring around their token. That's the fastest way to tell which creature is acting when the DM has several of the same monster on the board — three identical wolves look alike in the list, but only one is ringed on the map.
+
+If a creature is hidden or somewhere you haven't explored, you won't see a ring for it — the tracker will show its turn passing, but its position stays a mystery.
+
+**Not sure which wolf is which?** Hover a name in the tracker and that creature's token lights up on the map with a thin white outline. It works the other way too — hover a token on the map and its row in the turn order tints. Hovering only points; it never selects or moves anything.
+
+### Pointing at the Map
+
+Saying "no, the *other* door" never works. Instead, put your mouse where you mean and press **Tab**. A dot appears with rings radiating out of it, in your colour and labelled with your name, and everyone at the table sees it in the same spot for a couple of seconds.
+
+A few things worth knowing:
+
+- **Your mouse has to be over the map.** Tab does nothing if the cursor is over the chat panel or the sidebar.
+- **Tab still works normally everywhere else.** If you're typing in chat, or you've tabbed your way to a button, Tab keeps moving between controls as usual — it only pings when you're not in the middle of something.
+- **Anyone can ping**, players and DM alike. Your colour is assigned automatically and stays the same every session.
+- Pings are just a gesture. They don't move anything, don't reveal anything, and vanish on their own.
+
+If you ping repeatedly in quick succession, some will be quietly ignored — that's a spam guard, not a bug.
 
 The DM controls when initiative advances — after your turn, they'll click "Next" and the focus moves to the next combatant.
 
