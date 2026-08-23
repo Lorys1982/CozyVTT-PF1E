@@ -85,13 +85,21 @@ router.get('/', campaignMember, async (req: AuthenticatedRequest, res: Response)
     const take = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 50));
     const skip = Math.max(0, parseInt(offset as string, 10) || 0);
 
-    // Build where clause: include SRD (campaignId null) + this campaign's customs
-    const where: Record<string, unknown> = {
-      OR: [
-        { campaignId: null },
-        { campaignId },
-      ],
-    };
+    // Two independent scopes, so they are ANDed rather than sharing one OR:
+    //  - visibility: global creatures (campaignId null) plus this campaign's own
+    //  - game system: the requested system plus system-agnostic creatures
+    const scopes: Array<Record<string, unknown>> = [
+      { OR: [{ campaignId: null }, { campaignId }] },
+    ];
+
+    if (gameSystem) {
+      // Creatures with no system recorded are usable anywhere, so they are
+      // never filtered out — only creatures belonging to a *different* system
+      // are excluded.
+      scopes.push({ OR: [{ gameSystem: gameSystem as string }, { gameSystem: null }] });
+    }
+
+    const where: Record<string, unknown> = { AND: scopes };
 
     if (search) {
       where.name = { contains: search as string, mode: 'insensitive' };
@@ -101,9 +109,6 @@ router.get('/', campaignMember, async (req: AuthenticatedRequest, res: Response)
     }
     if (cr) {
       where.challengeRating = cr as string;
-    }
-    if (gameSystem) {
-      where.gameSystem = gameSystem as string;
     }
 
     const [templates, total] = await Promise.all([
