@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { Plus, LogOut, RefreshCw, User, ArrowRight, Mail, FolderOpen, Shield, AlertCircle, Upload } from 'lucide-react';
+import { Plus, LogOut, RefreshCw, User, ArrowRight, Mail, FolderOpen, Shield, AlertCircle, Upload, FileText } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useCampaignsQuery, useCharactersQuery, usePendingInvitationsQuery, queryKeys } from '@/hooks/queries';
 import CampaignCard from '@/components/CampaignCard';
@@ -148,7 +148,7 @@ export default function DashboardPage() {
       <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
           {/* Quick Links Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Characters Section */}
             <section className="glass-panel p-6">
               <div className="flex items-center justify-between mb-4">
@@ -284,6 +284,46 @@ export default function DashboardPage() {
                   </p>
                   <p className="text-xs text-warm-gray">
                     Upload and organize maps, tokens, audio, and avatar images
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Character Templates Section */}
+            <section className="glass-panel p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-moss-green/10">
+                    <FileText className="w-6 h-6 text-brand-ink" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-brand-ink font-heading">
+                      Character Templates
+                    </h2>
+                    <p className="text-sm text-warm-gray">Shared starter sheets</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => navigate('/character-templates')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="hidden sm:inline">Browse</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-3 mt-4">
+                <div
+                  className="p-4 rounded-lg bg-parchment/50 border border-moss-green/20
+                           hover:border-moss-green/40 transition-colors cursor-pointer text-center"
+                  onClick={() => navigate('/character-templates')}
+                >
+                  <FileText className="w-8 h-8 mx-auto mb-2 text-brand-ink/40" />
+                  <p className="text-sm font-medium text-brand-ink mb-1">
+                    Start From a Template
+                  </p>
+                  <p className="text-xs text-warm-gray">
+                    Copy a shared sheet into a character, or publish one for others
                   </p>
                 </div>
               </div>

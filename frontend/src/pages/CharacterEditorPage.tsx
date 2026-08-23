@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, AlertCircle, Loader2, Lock, Download } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, Loader2, Lock, Download, FileText } from 'lucide-react';
+import NewCharacterTemplateModal from '@/components/character/NewCharacterTemplateModal';
 import CharacterSheetSkeleton from '@/components/skeletons/CharacterSheetSkeleton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +33,7 @@ export default function CharacterEditorPage() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
 
   // Auto-save timer ref
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -348,6 +350,16 @@ export default function CharacterEditorPage() {
               Save
             </Button>
 
+            {/* Save as Template — publishes this sheet for everyone to copy */}
+            <Button
+              onClick={() => setShowSaveAsTemplate(true)}
+              variant="secondary" className="flex items-center gap-2"
+              title="Publish this sheet as a template others can copy"
+            >
+              <FileText className="w-4 h-4" />
+              <span className="hidden sm:inline">Save as Template</span>
+            </Button>
+
             {/* Export Button */}
             <Button
               onClick={() => characterService.exportCharacterJSON(character)}
@@ -371,6 +383,19 @@ export default function CharacterEditorPage() {
         />
       </div>
     </div>
+
+    {showSaveAsTemplate && character && (
+      <NewCharacterTemplateModal
+        initial={{
+          name: character.name,
+          gameSystem: character.gameSystem,
+          data: character.data,
+          tokenImageUrl: character.tokenImageUrl,
+        }}
+        onClose={() => setShowSaveAsTemplate(false)}
+        onCreated={() => setShowSaveAsTemplate(false)}
+      />
+    )}
     </>
   );
 }

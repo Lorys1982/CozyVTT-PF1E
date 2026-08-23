@@ -367,7 +367,7 @@ export function drawRuler(
   ctx.restore();
 }
 
-import { coneApex, cubeRect, lineOrigin, squaresFor } from '../aoeGeometry';
+import { cubeRect, snapToSquareCentre, squareExitPoint, squaresFor } from '../aoeGeometry';
 
 export type AoEShape = 'sphere' | 'cylinder' | 'cone' | 'line' | 'cube';
 
@@ -377,19 +377,41 @@ export interface AoEConfig {
   widthFt?: number; // line only, default 5
 }
 
+/**
+ * Where a template is anchored, in **map pixels**.
+ *
+ * This is a fixed pivot: aiming a cone or line must never move it. Held in
+ * pixels rather than grid coordinates so that `exact` placement can express a
+ * point part-way into a square.
+ */
+export interface AoEAnchor {
+  point: Pt;
+  /**
+   * True when the user held Alt to place freely — the origin is then the point
+   * itself, with no grid snapping, for an effect cast at a distance rather than
+   * from the caster (a wall of fire, say).
+   */
+  exact: boolean;
+}
+
 export interface AoEOverlayState {
   config: AoEConfig;
-  /** Committed origin (grid coords) — null means "follow cursor". */
-  origin: Pt | null;
-  /** Grid coords of the cursor (aim direction + fallback origin). */
-  hoverCoords: Pt | null;
+  /** Committed anchor — null means "follow cursor". */
+  anchor: AoEAnchor | null;
   /**
-   * Cursor in map pixels. Templates snap from this rather than from
-   * `hoverCoords`, because whole-square coordinates cannot express the
-   * difference between a grid line and a square centre — which is exactly the
-   * distinction that decides whether a shape lands on the grid.
+   * Live cursor in map pixels, or null when it is off the canvas. Stands in for
+   * the anchor until one is pinned, so nothing is drawn once the cursor leaves.
    */
   hoverMapPx: Pt | null;
+  /**
+   * What a pinned template aims at: the *last* cursor position, retained rather
+   * than cleared when the cursor leaves the canvas. The tool panel sits over
+   * the map, so aiming towards it would otherwise swing the template back to
+   * pointing right the moment the cursor crossed onto the panel.
+   */
+  aimMapPx: Pt | null;
+  /** True while Alt is held, so the un-pinned preview matches what a click does. */
+  hoverExact: boolean;
   feetPerSquare: number;
 }
 
@@ -399,60 +421,62 @@ export function drawAoEOverlay(
   state: AoEOverlayState,
   viewport: Viewport
 ): void {
-  const { zoom, gridSize: gs, mapHeight: mh } = viewport;
+  const { zoom, gridSize: gs } = viewport;
   const fps = state.feetPerSquare;
 
-  const gridOrigin = state.origin ?? state.hoverCoords;
-  if (!gridOrigin) return;
+  // The anchor is the pivot the template turns about. Once pinned it is fixed —
+  // deriving it from the aim is what used to make a rotating cone's apex jump
+  // between a few spots instead of sweeping around its square. Until it is
+  // pinned the cursor stands in for it, so the preview matches what a click
+  // would place.
+  const anchor: AoEAnchor | null =
+    state.anchor ??
+    (state.hoverMapPx ? { point: state.hoverMapPx, exact: state.hoverExact } : null);
+  if (!anchor) return;
 
-  // Where the template is anchored, before snapping. A committed origin is a
-  // whole-square coordinate, so it resolves to that square's centre; while the
-  // template still follows the cursor, the precise pointer position is used so
-  // snapping can distinguish a grid line from a square centre.
-  const rawX = state.origin
-    ? state.origin.x * gs + gs / 2
-    : (state.hoverMapPx?.x ?? gridOrigin.x * gs + gs / 2);
-  const rawY = state.origin
-    ? (mh - 1 - state.origin.y) * gs + gs / 2
-    : (state.hoverMapPx?.y ?? (mh - 1 - gridOrigin.y) * gs + gs / 2);
+  // A free-placed template pivots about the exact point; otherwise about the
+  // centre of the square it was placed in.
+  const pivot = anchor.exact
+    ? anchor.point
+    : { x: snapToSquareCentre(anchor.point.x, gs), y: snapToSquareCentre(anchor.point.y, gs) };
 
   const sizeSquares = squaresFor(state.config.sizeFt, fps);
   const widthSquares = squaresFor(state.config.widthFt ?? 5, fps);
   const sizeInPx = sizeSquares * gs;
   const widthInPx = widthSquares * gs;
 
-  // Aim direction, measured from the unsnapped anchor so the template does not
-  // jitter as the snapped origin steps between grid points.
-  let angle = 0;
-  if (state.hoverCoords && state.origin) {
-    const mx = state.hoverMapPx?.x ?? state.hoverCoords.x * gs + gs / 2;
-    const my = state.hoverMapPx?.y ?? (mh - 1 - state.hoverCoords.y) * gs + gs / 2;
-    angle = Math.atan2(my - rawY, mx - rawX);
-  }
-
-  // Each shape snaps by the rule that puts its edges on grid lines — see
-  // aoeGeometry.ts. Without this every template sat half a square off.
-  //
-  // Sphere and cylinder are deliberately left on the square centre they have
-  // always used: a circle never tiles squares whatever it is centred on, and
-  // that placement was not what was reported as misaligned.
-  const cursor = { x: rawX, y: rawY };
-  let ox = rawX;
-  let oy = rawY;
+  // Aim direction, measured from the pivot. Only meaningful once the anchor is
+  // pinned — before that the cursor *is* the anchor, so there is nothing to aim
+  // at and the template rests pointing right.
+  const angle =
+    state.anchor && state.aimMapPx
+      ? Math.atan2(state.aimMapPx.y - pivot.y, state.aimMapPx.x - pivot.x)
+      : 0;
 
   // The cube's rectangle is computed once and reused for both the outline and
   // the label anchor below — deriving them separately let the label drift off
-  // the snapped shape by up to half a square.
-  const cube =
-    state.config.shape === 'cube' ? cubeRect(cursor, gs, sizeSquares) : null;
+  // the snapped shape by up to half a square. A free-placed cube sits on the
+  // pivot; otherwise it snaps to cover whole squares (see aoeGeometry.ts).
+  let cube: { x: number; y: number; size: number } | null = null;
+  if (state.config.shape === 'cube') {
+    cube = anchor.exact
+      ? { x: pivot.x - sizeInPx / 2, y: pivot.y - sizeInPx / 2, size: sizeInPx }
+      : cubeRect(pivot, gs, sizeSquares);
+  }
 
-  if (state.config.shape === 'cone') {
-    ({ x: ox, y: oy } = coneApex(cursor, gs));
-  } else if (state.config.shape === 'line') {
-    ({ x: ox, y: oy } = lineOrigin(cursor, gs, widthSquares, angle));
-  } else if (cube) {
+  // Sphere and cylinder sit on the pivot itself: a circle never tiles squares
+  // whatever it is centred on, and that placement was not what was reported as
+  // misaligned. Cone and line emerge from the point their aim leaves the
+  // anchor square through, so they sweep around the token rather than through
+  // it — unless placed freely, where the origin is the point itself.
+  const isAimed = state.config.shape === 'cone' || state.config.shape === 'line';
+  let { x: ox, y: oy } = pivot;
+
+  if (cube) {
     ox = cube.x + cube.size / 2;
     oy = cube.y + cube.size / 2;
+  } else if (isAimed && !anchor.exact) {
+    ({ x: ox, y: oy } = squareExitPoint(pivot, gs, angle));
   }
 
   ctx.save();

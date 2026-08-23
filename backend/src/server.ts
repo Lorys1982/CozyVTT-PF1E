@@ -16,6 +16,7 @@ import authRoutes from './routes/auth';
 import campaignRoutes from './routes/campaigns';
 import userRoutes from './routes/users';
 import characterRoutes from './routes/characters';
+import characterTemplateRoutes from './routes/characterTemplates';
 import invitationRoutes from './routes/invitations';
 import assetRoutes from './routes/assets';
 import mapRoutes from './routes/maps';
@@ -155,6 +156,9 @@ app.use('/api/campaigns', campaignRoutes);
 
 // Characters
 app.use('/api/characters', characterRoutes);
+// Distinct from GET /api/characters/templates/:system/:name, which serves the
+// hardcoded starter presets rather than these user-published ones.
+app.use('/api/character-templates', characterTemplateRoutes);
 
 // Campaign invitations
 app.use('/api/invitations', invitationRoutes);

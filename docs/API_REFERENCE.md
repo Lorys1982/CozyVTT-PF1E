@@ -402,7 +402,7 @@ Upload a `.cozyvtt` archive and return its manifest preview without creating any
   "preview": {
     "formatVersion": 1,
     "exportedAt": "2026-04-18T12:00:00.000Z",
-    "exportedFrom": "CozyVTT v1.2.0",
+    "exportedFrom": "CozyVTT v1.2.1",
     "campaignName": "The Lost Mines",
     "gameSystem": "DND_5E",
     "mapCount": 5,
@@ -604,6 +604,77 @@ Additional fields:
 - `displayMode` — `"pog"`, `"top-down"`, or `"full-art"`
 - `statBlock` — NPC stat block (AC, HP, attacks, saves, skills). One shape shared across game systems — see [The `statBlock` object](#the-statblock-object)
 - `creatureTemplateId` — Links the token to a creature template for library integration
+
+---
+
+## Character Template Endpoints
+
+Shareable starter sheets, mounted under `/api/character-templates`.
+
+> **Not the same as `GET /api/characters/templates/:gameSystem/:templateName`.**
+> That route serves the *hardcoded* starter presets compiled into the backend
+> (`blank`, `fighter`, and so on). The endpoints below are user-published
+> templates stored in the database.
+
+**Visibility is not filtered.** Every template is readable by every
+authenticated user — that is the point of the feature. What varies is who may
+write:
+
+| Operation | Who |
+|---|---|
+| List, get | any authenticated user |
+| Create | any authenticated user |
+| Update, delete | the author, a platform admin, or a user with `templateEditor` |
+
+`templateEditor` is a boolean on `User`, granted by an admin through
+`PUT /api/users/:id` in the same way as `globalAssetManager`. It defaults to
+`false`, and is read fresh on each request rather than cached in the session, so
+revoking it takes effect immediately.
+
+### `GET /api/character-templates`
+
+Query parameters: `search` (name contains, case-insensitive), `gameSystem` (a
+`GameSystem` value, or `flexible` for system-agnostic templates), `mine`
+(`true` to return only your own), `limit` (max 100, default 50), `offset`.
+
+**Response:** `{ templates, total, limit, offset }`. Each template includes
+`createdBy: { id, displayName }` — never the author's email.
+
+### `GET /api/character-templates/:id`
+
+### `POST /api/character-templates`
+
+```json
+{
+  "name": "Novice Fighter",
+  "description": "A straightforward melee character",
+  "gameSystem": "DND_5E",
+  "tokenImageUrl": "/api/assets/tokens/uuid",
+  "data": { }
+}
+```
+
+- `name` is required; `gameSystem` may be null for a flexible template.
+- `data` is validated against the game system's schema exactly as a character's
+  is. A flexible template accepts free-form JSON, matching `Character`.
+- **`tokenImageUrl` must reference a `GLOBAL` asset.** A template is visible to
+  everyone, so a `USER`- or `CAMPAIGN`-scoped image would 403 for other readers
+  and show as broken. A non-global asset returns `400` with an explanation.
+
+### `PUT /api/character-templates/:id`
+
+Accepts `name`, `description`, `tokenImageUrl`, `data`. An empty body returns
+`400`. `gameSystem` is fixed at creation, as it is for a character — the sheet
+data is only meaningful against the system it was built for.
+
+### `DELETE /api/character-templates/:id`
+
+### Creating a character from a template
+
+There is no dedicated endpoint. The client reads the template and posts its
+`data`, `gameSystem` and `tokenImageUrl` to `POST /api/characters` — the
+resulting character belongs to whoever made the request, not to the template's
+author.
 
 ---
 
@@ -867,6 +938,17 @@ Update asset metadata (name, tags, scope).
 ### `DELETE /api/assets/:id`
 
 Delete an asset and its files from disk.
+
+Who may delete depends on the asset's scope:
+
+| Scope | Who may delete |
+|---|---|
+| `GLOBAL` | A platform admin, or the uploader if they hold `globalAssetManager`. The permission covers your own global uploads — it does not let you remove another manager's |
+| `USER` | The owner, or a platform admin |
+| `CAMPAIGN` | The uploader, that campaign's DM, or a platform admin |
+
+`globalAssetManager` is read from the database on each request rather than the
+session, so revoking it takes effect immediately.
 
 ---
 

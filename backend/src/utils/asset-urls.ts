@@ -49,6 +49,29 @@ export function normalizeAssetUrl(url: string | null | undefined, assetType: 'ma
 }
 
 /**
+ * Pull the asset id out of a stored URL.
+ *
+ * Accepts either form the app stores — a bare UUID or a full
+ * `/api/assets/{type}/{uuid}` path — and returns null when the string is
+ * neither. Needed wherever the server has to look the asset row up rather than
+ * just serve the URL back, e.g. to check its scope.
+ *
+ * @example
+ * extractAssetId('/api/assets/tokens/bc5f19c0-158b-4330-a5cc-6133666a4fec')
+ * // => 'bc5f19c0-158b-4330-a5cc-6133666a4fec'
+ */
+export function extractAssetId(url: string | null | undefined): string | null {
+  if (!url) return null;
+
+  if (isUUID(url)) return url;
+
+  const match = url.match(/\/api\/assets\/(?:maps|tokens|avatars|audio)\/([^/?#]+)/);
+  if (match && isUUID(match[1])) return match[1];
+
+  return null;
+}
+
+/**
  * Normalize a map's asset URLs
  */
 export function normalizeMapUrls(mapData: any): any {

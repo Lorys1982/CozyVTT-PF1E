@@ -465,6 +465,16 @@ Imported archives are validated at multiple levels:
 
 ## Managing Your Players
 
+### Preparing Character Sheets Before Players Join
+
+If your players are new to the system — or haven't accepted the invite yet — you can build sheets for them in advance and let them pick one up when they arrive.
+
+Open **Character Templates** from the dashboard and click **New Template**, or build a character normally and use **Save as Template** in the editor. Either way the result is visible to everyone on your instance, and a player copies it with one click: they get a character of their own, fully theirs to edit, and your template is unchanged.
+
+This is worth doing for a one-shot or a new group. Rather than talking four people through character creation at the table, publish four templates beforehand and let each player take one and rename it.
+
+Templates are per game system, so a D&D 5e template is only useful to a D&D 5e character. See [Character Templates](USER_GUIDE.md#character-templates) in the user guide for the full details, including why a template's image has to be a global asset.
+
 ### Viewing the Roster
 
 The Campaign Roster in the left sidebar gives you a real-time view of all players and their characters. During a session, you can see who's connected.
@@ -483,17 +493,23 @@ Players assign their own characters to your campaign when they accept an invitat
 
 ### Measuring and Area Templates
 
-Two tools in the map toolbar help you work out what a spell or a move actually reaches. Both are previews for you — they aren't saved to the map and players don't see them.
+Two tools in the map toolbar help you work out what a spell or a move actually reaches. Both draw on your screen only — they aren't saved to the map, and nobody else sees what you're measuring.
 
-**Ruler** (the ruler icon) — click a start point, then move the cursor to measure the distance between two squares in feet, using the map's own scale.
+**Your players have both tools too**, working the same way on their own screens, so a player can check their own spell's reach without asking you to measure it for them. The one difference is the ruler, below.
 
-**AoE Shape** (the lightning icon) — overlays a spell area on the map. Pick **Circle**, **Cone**, **Line** or **Cube**, set the size in feet (or use a preset), and move the cursor to position it. Click the map to pin the shape in place; with an origin pinned, moving the cursor aims cone and line templates. Press **Esc** to dismiss.
+**Ruler** (the ruler icon) — click a start point, then move the cursor to measure the distance between two squares in feet, using the map's own scale and its diagonal rule. For a player there's nothing to click: their ruler always measures from their own token.
 
-Templates snap to your map's grid, so a shape covers whole squares rather than straddling them:
+**AoE Shape** (the lightning icon) — overlays a spell area on the map. Pick **Circle**, **Cone**, **Line** or **Cube**, set the size in feet (or use a preset), and move the cursor to position it. Click the map to pin the shape in place; with a shape pinned, moving the cursor aims cone and line templates. Press **Esc** to drop the placement, and again to put the tool away.
+
+**Aiming a cone or line.** Click the square the effect comes from — usually the caster's token — and that square becomes the pivot. Moving the cursor then swings the shape around it, and the point it starts from slides around that square's edge to follow: straight out the middle of an edge when you aim along a row or column, out the corner when you aim diagonally. It always leaves on the side you're aiming at, so the shape sweeps *around* the token rather than back through it. The pivot stays put however far you swing, so you can keep turning until you've found what the attack actually catches.
+
+**Placing something away from the caster.** Some effects aren't measured from anyone — a wall of fire is a line you drop wherever you like within range. **Alt+click** places the shape freely: it ignores the grid and pins the origin exactly where you clicked, and the shape then turns about that point.
+
+Otherwise templates snap to your map's grid, so a shape covers whole squares rather than straddling them:
 
 - **Cube** — always axis-aligned, covering exactly the squares it should. A 10 ft cube on a 5 ft grid covers 2×2 squares; a 15 ft cube covers 3×3. It doesn't rotate, because a tilted square can't line up with a square grid
-- **Line** — starts on a grid line and is centred across its width, so a 20 ft × 5 ft line laid horizontally or vertically covers exactly 4×1 squares
-- **Cone** — its point sits on a grid intersection. The spreading edges are at an angle, so they'll still cut across squares — that's the shape, not a bug. Judge affected squares by how much of each is covered, as you would at the table
+- **Line** — starts at the edge of the square you pinned and is centred across its width, so a 20 ft × 5 ft line laid along a row or column covers exactly 4×1 squares. Widths that come to an *even* number of squares (10 ft on a 5 ft grid) sit half a square into the rows either side, because the line is centred on the square you pinned rather than on the line between two squares — Alt+click if you need one placed exactly
+- **Cone** — its point sits on the edge of the square you pinned, so the cone leaves that square evenly. The spreading edges are at an angle, so they'll still cut across squares — that's the shape, not a bug. Judge affected squares by how much of each is covered, as you would at the table
 - **Circle** — centred on the square under the cursor
 
 > Sizes use the map's **feet per square** setting (Map Settings), which defaults to 5 ft. If your templates look twice or half the size you expect, check that value first.

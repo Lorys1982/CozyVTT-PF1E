@@ -241,6 +241,7 @@ erDiagram
         string displayName
         PlatformRole platformRole
         bool isGlobalAssetManager
+        bool templateEditor
         bool approved
         bool mustChangePassword
         string bio
@@ -268,6 +269,16 @@ erDiagram
         GameSystem gameSystem
         json data
         string tokenImageUrl
+    }
+
+    CharacterTemplate {
+        string id PK
+        string name
+        string description
+        GameSystem gameSystem
+        json data
+        string tokenImageUrl
+        string createdById FK
     }
 
     Map {
@@ -332,6 +343,7 @@ erDiagram
     User ||--o{ CampaignMembership : "belongs to"
     Campaign ||--o{ CampaignMembership : "has"
     User ||--o{ Character : "owns"
+    User ||--o{ CharacterTemplate : "published"
     Campaign ||--o{ Character : "has assigned"
     Campaign ||--o{ Map : "has"
     Campaign ||--o{ Message : "has"

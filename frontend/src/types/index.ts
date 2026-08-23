@@ -254,6 +254,8 @@ export interface User {
   displayName: string;
   platformRole: PlatformRole;
   globalAssetManager: boolean;
+  /** May edit or delete anyone's character template, not just their own. */
+  templateEditor: boolean;
   mfaEnabled: boolean;
   avatarUrl: string | null;
   bio: string | null;
@@ -262,6 +264,28 @@ export interface User {
   lastLoginAt: string | null;
   mustChangePassword?: boolean;
   isApproved?: boolean;
+}
+
+/**
+ * A shareable starter sheet. Visible to everyone; editable by its author, an
+ * admin, or a user with `templateEditor`.
+ *
+ * Distinct from the hardcoded starter presets served by
+ * `/api/characters/templates/:system/:name`, which are compiled into the
+ * backend rather than stored as rows.
+ */
+export interface CharacterTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  gameSystem: GameSystem | null;
+  /** Always a GLOBAL asset — a template is readable by everyone, so its image must be too. */
+  tokenImageUrl: string | null;
+  data: unknown;
+  createdById: string | null;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============================================

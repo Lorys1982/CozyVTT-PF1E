@@ -364,6 +364,19 @@ function createBlankMySystemCharacter(): MySystemCharacterData {
 
 ## Step 6 — Character templates
 
+> **Two different things are called "templates".** This step is about the
+> **hardcoded starter presets** compiled into the backend and served by
+> `GET /api/characters/templates/:system/:name`. Separately, users publish
+> **character templates** stored in the database (`CharacterTemplate`,
+> `/api/character-templates`), browsable from the dashboard.
+>
+> Your system gets the user-published kind for free — that feature stores the
+> same `data` blob a character does and edits it through `CharacterSheetRouter`,
+> so once Steps 7–10 are done it works with no extra wiring. The one thing it
+> needs from you is the blank factory in Step 5: publishing a template starts
+> from `GET /api/characters/templates/<system>/blank`, so a system whose blank
+> is missing or invalid cannot have templates created for it.
+
 The template layer powers the "start from a preset" picker and the template API. Create `backend/src/utils/character-templates/mySystem-templates.ts` exporting **named `CharacterTemplate`s** plus two getter functions:
 
 ```typescript
