@@ -235,13 +235,16 @@ Open **Character Templates** from the dashboard. Every template on the instance 
 
 **Using one.** Click **Use** on any template. That creates a character that belongs entirely to you — you can rename it and change anything you like, and the original template is untouched. Whoever published it has no control over your character.
 
-**Publishing one.** There are three ways:
+**Publishing one.** There are four ways:
 
 - **New Template** on the templates page, which starts from a blank sheet for the system you pick
 - **Save as Template** in the character editor, which publishes the sheet you're looking at
 - while creating a character, if you want to keep the character and share it at the same time
+- **Import** on the templates page, which publishes a character JSON file as a template
 
 Templates you publish are visible to everyone on your instance. You can edit or delete your own at any time.
+
+**Importing from another instance.** The **Import** button accepts any character JSON — one you exported from this instance, one you wrote yourself, or one exported from a *different* CozyVTT server. That last case is the useful one: export a character from wherever you built it, bring the file to a new instance, and publish it there for that group to copy. Character exports and templates hold the same thing — a sheet plus a game system — so no conversion is involved. You'll see a preview before anything is published, and you can set the name and description at that point.
 
 > **A note on template images.** A template's picture has to be a **global** asset, because everyone who can see the template needs to be able to load it — a personal asset would show as broken for everyone but you. If you don't have permission to upload global assets, pick an existing global one or leave the image blank.
 

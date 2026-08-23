@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, Plus, Search, X, Loader2, Pencil, Trash2, Copy, User as UserIcon } from 'lucide-react';
+import { Home, Plus, Search, X, Loader2, Pencil, Trash2, Copy, Upload, User as UserIcon } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCharacterTemplatesQuery } from '@/hooks/queries';
@@ -23,6 +23,7 @@ import EmptyState from '@/components/common/EmptyState';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import NewCharacterTemplateModal from '@/components/character/NewCharacterTemplateModal';
 import CharacterTemplateEditorModal from '@/components/character/CharacterTemplateEditorModal';
+import ImportCharacterModal from '@/components/character/ImportCharacterModal';
 
 export default function CharacterTemplatesPage() {
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export default function CharacterTemplatesPage() {
   const [mineOnly, setMineOnly] = useState(false);
 
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editing, setEditing] = useState<CharacterTemplate | null>(null);
   const [deleting, setDeleting] = useState<CharacterTemplate | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -109,10 +111,24 @@ export default function CharacterTemplatesPage() {
                 </p>
               </div>
             </div>
-            <Button onClick={() => setShowCreate(true)} className="flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              <span className="hidden sm:inline">New Template</span>
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* A character export is a sheet plus a game system, which is
+                  exactly what a template holds — including one exported from a
+                  different instance. */}
+              <Button
+                onClick={() => setShowImport(true)}
+                variant="secondary"
+                className="flex items-center gap-2"
+                title="Publish a character JSON as a template"
+              >
+                <Upload className="w-5 h-5" />
+                <span className="hidden sm:inline">Import</span>
+              </Button>
+              <Button onClick={() => setShowCreate(true)} className="flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                <span className="hidden sm:inline">New Template</span>
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -276,6 +292,19 @@ export default function CharacterTemplatesPage() {
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
+            refresh();
+          }}
+        />
+      )}
+
+      {showImport && (
+        <ImportCharacterModal
+          mode="template"
+          existingCharacterNames={templates.map((t) => t.name)}
+          onClose={() => setShowImport(false)}
+          onImport={async ({ name, gameSystem, data, description }) => {
+            await api.createCharacterTemplate({ name, gameSystem, data, description });
+            showToast('Template published from the imported file', 'success');
             refresh();
           }}
         />
