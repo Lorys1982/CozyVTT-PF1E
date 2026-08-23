@@ -14,11 +14,12 @@ No technical knowledge required. Let's go.
 4. [The Campaign Page](#the-campaign-page)
 5. [Chat and Dice](#chat-and-dice)
 6. [Moving Your Token](#moving-your-token)
-7. [The Initiative Tracker](#the-initiative-tracker)
-8. [The Vibe Tracker](#the-vibe-tracker)
-9. [Managing Your Characters](#managing-your-characters)
-10. [Your Profile](#your-profile)
-11. [Quick Reference](#quick-reference)
+7. [Measuring and Spell Areas](#measuring-and-spell-areas)
+8. [The Initiative Tracker](#the-initiative-tracker)
+9. [The Vibe Tracker](#the-vibe-tracker)
+10. [Managing Your Characters](#managing-your-characters)
+11. [Your Profile](#your-profile)
+12. [Quick Reference](#quick-reference)
 
 ---
 
@@ -232,6 +233,24 @@ Two things worth knowing:
 
 ---
 
+## Measuring and Spell Areas
+
+Two tools in the toolbar above the map answer "can I actually reach that?" before you commit to a turn. Both are private — they draw on your screen only, so nobody sees you working out whether the fireball catches your own party.
+
+**Ruler** (the ruler icon) — measures from **your own token**, so there's nothing to click: turn it on and move the cursor, and the distance in feet follows, using the map's scale and its diagonal rule. If your DM hasn't placed your token on the map yet, the ruler has nothing to measure from and won't draw.
+
+**AoE Shape** (the lightning icon) — draws a spell area. Pick **Circle**, **Cone**, **Line** or **Cube**, set the size in feet or use one of the presets, and move the cursor to position it.
+
+For a cone or a line, **click your own token first**. That square becomes the pivot, and moving the cursor swings the shape around it — the point it comes out of slides around the square's edge to follow your aim, so it always leaves on the side you're pointing and never cuts back across you. Keep turning until you can see what the attack catches.
+
+For something you cast at a distance rather than from yourself — a wall of fire, say — hold **Alt** while clicking. That drops the grid snapping and pins the shape exactly where you clicked, and it turns about that point instead.
+
+Press **Esc** to drop the placement, and again to put the tool away.
+
+Shapes cover whole squares wherever the grid allows it. A cone's spreading edges are at an angle so they'll still clip across squares — that's the shape, not a bug. Judge the edge cases the way you would at the table, and if it matters, ask your DM.
+
+---
+
 ## The Initiative Tracker
 
 When combat begins, the DM will start initiative tracking. The **Initiative Tracker** appears in the right sidebar and shows the turn order.
@@ -386,6 +405,10 @@ The **Themes** section of your profile lets you pick the color theme and font *y
 |--------|---------|
 | Save character | Ctrl/Cmd + S (in Character Editor) |
 | Send chat message | Enter |
+| New line in chat without sending | Shift + Enter |
+| Ping the map | Tab (cursor over the map) |
+| Place a spell area off the grid | Alt + click (AoE tool) |
+| Drop a placement / close the tool | Esc |
 
 ### Common Questions
 

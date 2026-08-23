@@ -1,13 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
-  coneApex,
   cubeRect,
-  directionOctant,
-  dominantAxis,
-  lineOrigin,
   snapSpanCentre,
   snapToGridLine,
   snapToSquareCentre,
+  squareExitPoint,
   squaresFor,
 } from '../aoeGeometry';
 
@@ -102,146 +99,120 @@ describe('cubeRect', () => {
   });
 });
 
-describe('dominantAxis', () => {
-  it('reads cardinal directions', () => {
-    expect(dominantAxis(0)).toBe('x');
-    expect(dominantAxis(Math.PI)).toBe('x');
-    expect(dominantAxis(Math.PI / 2)).toBe('y');
-    expect(dominantAxis(-Math.PI / 2)).toBe('y');
-  });
+describe('squareExitPoint', () => {
+  // The centre of the square spanning (100,50)-(150,100).
+  const PIVOT = { x: 125, y: 75 };
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
-  it('breaks a perfect diagonal consistently', () => {
-    expect(dominantAxis(Math.PI / 4)).toBe('x');
-  });
-});
+  // The reported bug. The apex was snapped to the *nearest* grid line, which is
+  // the same line whichever way you point along an axis — so a cone aimed left
+  // emerged from the right edge and cut back through the caster's own token.
+  describe('leaves the square on the side it is aimed at', () => {
+    it('is opposite for left and right', () => {
+      const right = squareExitPoint(PIVOT, GRID, 0);
+      const left = squareExitPoint(PIVOT, GRID, Math.PI);
 
-describe('lineOrigin', () => {
-  // A 5 ft wide line is one square across, so its centre-line has to run along
-  // a row of square centres for the line to cover whole squares.
-  it('runs a 5 ft wide horizontal line along a row of squares', () => {
-    const origin = lineOrigin({ x: 137, y: 88 }, GRID, squaresFor(5, 5), 0);
-
-    expect(onGridLine(origin.x)).toBe(true);      // starts on a grid line
-    expect(origin.y).toBe(75);                    // centred in the row
-  });
-
-  it('centres a 10 ft wide horizontal line on a grid line', () => {
-    const origin = lineOrigin({ x: 137, y: 88 }, GRID, squaresFor(10, 5), 0);
-
-    expect(onGridLine(origin.x)).toBe(true);
-    expect(onGridLine(origin.y)).toBe(true);
-  });
-
-  it('swaps the axes for a vertical line', () => {
-    const origin = lineOrigin({ x: 88, y: 137 }, GRID, squaresFor(5, 5), Math.PI / 2);
-
-    expect(origin.x).toBe(75);                    // centred in the column
-    expect(onGridLine(origin.y)).toBe(true);      // starts on a grid line
-  });
-
-  it('handles a line pointing left or up the same way', () => {
-    const left = lineOrigin({ x: 137, y: 88 }, GRID, 1, Math.PI);
-    expect(onGridLine(left.x)).toBe(true);
-    expect(left.y).toBe(75);
-
-    const up = lineOrigin({ x: 88, y: 137 }, GRID, 1, -Math.PI / 2);
-    expect(up.x).toBe(75);
-    expect(onGridLine(up.y)).toBe(true);
-  });
-});
-
-describe('directionOctant', () => {
-  it.each([
-    [0, 0],                    // right
-    [Math.PI / 2, 2],          // down (y grows downwards in map pixels)
-    [Math.PI, 4],              // left
-    [-Math.PI / 2, 6],         // up
-    [Math.PI / 4, 1],          // down-right
-    [-Math.PI / 4, 7],         // up-right
-  ])('classifies %f as octant %i', (angle, expected) => {
-    expect(directionOctant(angle)).toBe(expected);
-  });
-
-  it('normalises angles outside a single turn', () => {
-    expect(directionOctant(Math.PI * 2)).toBe(0);
-    expect(directionOctant(-Math.PI * 2)).toBe(0);
-  });
-});
-
-describe('coneApex', () => {
-  // A cone leaves its square through a point on one of its edges, so where that
-  // point sits depends on which way the cone is aimed. It used to sit on the
-  // nearest intersection whatever the direction, which put an axis-aligned cone
-  // half a square off centre — the reported bug.
-  describe('pointing along an axis — the midpoint of an edge', () => {
-    it('uses a vertical edge when pointing right', () => {
-      // Cursor at (137, 88): nearest vertical grid line is x=150, and y=88 sits
-      // in the row whose centre is 75.
-      expect(coneApex({ x: 137, y: 88 }, GRID, 0)).toEqual({ x: 150, y: 75 });
+      expect(right).toEqual({ x: 150, y: 75 });
+      expect(left.x).toBeCloseTo(100);
+      expect(left.y).toBeCloseTo(75);
+      expect(left.x).not.toBeCloseTo(right.x);
     });
 
-    it('uses a vertical edge when pointing left', () => {
-      expect(coneApex({ x: 137, y: 88 }, GRID, Math.PI)).toEqual({ x: 150, y: 75 });
-    });
+    it('is opposite for up and down', () => {
+      const down = squareExitPoint(PIVOT, GRID, Math.PI / 2);
+      const up = squareExitPoint(PIVOT, GRID, -Math.PI / 2);
 
-    it('uses a horizontal edge when pointing down', () => {
-      expect(coneApex({ x: 137, y: 88 }, GRID, Math.PI / 2)).toEqual({ x: 125, y: 100 });
-    });
-
-    it('uses a horizontal edge when pointing up', () => {
-      expect(coneApex({ x: 137, y: 88 }, GRID, -Math.PI / 2)).toEqual({ x: 125, y: 100 });
-    });
-
-    it('leaves the square symmetrically, whichever axis', () => {
-      for (const angle of [0, Math.PI, Math.PI / 2, -Math.PI / 2]) {
-        const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
-        const onLine = [apex.x, apex.y].filter(onGridLine).length;
-        const onCentre = [apex.x, apex.y].filter((v) => !onGridLine(v)).length;
-
-        // Exactly one axis on a grid line and one at a square centre is what
-        // makes the point an edge midpoint rather than a corner.
-        expect(onLine).toBe(1);
-        expect(onCentre).toBe(1);
-      }
+      expect(down.x).toBeCloseTo(125);
+      expect(down.y).toBeCloseTo(100);
+      expect(up.x).toBeCloseTo(125);
+      expect(up.y).toBeCloseTo(50);
     });
   });
 
-  describe('pointing diagonally — the corner', () => {
-    it.each([
-      ['down-right', Math.PI / 4],
-      ['down-left', (3 * Math.PI) / 4],
-      ['up-left', (-3 * Math.PI) / 4],
-      ['up-right', -Math.PI / 4],
-    ])('snaps to an intersection when pointing %s', (_name, angle) => {
-      const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
-      expect(onGridLine(apex.x)).toBe(true);
-      expect(onGridLine(apex.y)).toBe(true);
-    });
-  });
+  it('lands on the midpoint of an edge when aimed along an axis', () => {
+    for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const p = squareExitPoint(PIVOT, GRID, angle);
+      const onLine = [p.x, p.y].filter(onGridLine).length;
 
-  describe('the boundary between cardinal and diagonal', () => {
-    // Each octant spans 45°, so the switch happens at 22.5° off an axis.
-    it('counts just inside 22.5 degrees as cardinal', () => {
-      const apex = coneApex({ x: 137, y: 88 }, GRID, (Math.PI / 8) * 0.99);
-      expect(apex).toEqual({ x: 150, y: 75 });
-    });
-
-    it('counts just past 22.5 degrees as diagonal', () => {
-      const apex = coneApex({ x: 137, y: 88 }, GRID, (Math.PI / 8) * 1.01);
-      expect(onGridLine(apex.x)).toBe(true);
-      expect(onGridLine(apex.y)).toBe(true);
-    });
-  });
-
-  it('stays adjacent to the square under the cursor', () => {
-    // Whatever the direction, the apex should be on the hovered square's own
-    // boundary — never snapped away to a different part of the map.
-    for (const angle of [0, Math.PI / 4, Math.PI / 2, Math.PI, -Math.PI / 3]) {
-      const apex = coneApex({ x: 137, y: 88 }, GRID, angle);
-      expect(apex.x).toBeGreaterThanOrEqual(100);
-      expect(apex.x).toBeLessThanOrEqual(150);
-      expect(apex.y).toBeGreaterThanOrEqual(50);
-      expect(apex.y).toBeLessThanOrEqual(100);
+      // Exactly one axis on a grid line and one at a square centre is what
+      // makes the point an edge midpoint rather than a corner.
+      expect(onLine).toBe(1);
     }
   });
+
+  it.each([
+    ['down-right', Math.PI / 4, 150, 100],
+    ['down-left', (3 * Math.PI) / 4, 100, 100],
+    ['up-left', (-3 * Math.PI) / 4, 100, 50],
+    ['up-right', -Math.PI / 4, 150, 50],
+  ])('lands exactly on the corner when aimed %s', (_name, angle, x, y) => {
+    const p = squareExitPoint(PIVOT, GRID, angle);
+    expect(p.x).toBeCloseTo(x);
+    expect(p.y).toBeCloseTo(y);
+  });
+
+  // The property the whole fix rests on. The old apex classified the angle into
+  // one of eight sectors, so sweeping a cone made its point teleport between a
+  // handful of spots instead of sliding around the square. Anyone reintroducing
+  // sector logic fails here.
+  it('moves continuously through a full sweep', () => {
+    const STEPS = 720;
+    let prev = squareExitPoint(PIVOT, GRID, -Math.PI);
+    const first = prev;
+
+    for (let i = 1; i <= STEPS; i++) {
+      const p = squareExitPoint(PIVOT, GRID, -Math.PI + (i / STEPS) * Math.PI * 2);
+      const moved = Math.hypot(p.x - prev.x, p.y - prev.y);
+
+      // Half a degree of sweep can move the point at most a fraction of a
+      // square; the old code jumped a full half-square at each sector boundary.
+      expect(moved).toBeLessThan(GRID / 8);
+      prev = p;
+    }
+
+    // ...and the sweep closes on itself rather than drifting.
+    expect(prev.x).toBeCloseTo(first.x);
+    expect(prev.y).toBeCloseTo(first.y);
+  });
+
+  it('always sits on the boundary of the pivot square', () => {
+    for (let i = 0; i < 360; i++) {
+      const p = squareExitPoint(PIVOT, GRID, (i / 360) * Math.PI * 2);
+
+      expect(p.x).toBeGreaterThanOrEqual(100 - 1e-9);
+      expect(p.x).toBeLessThanOrEqual(150 + 1e-9);
+      expect(p.y).toBeGreaterThanOrEqual(50 - 1e-9);
+      expect(p.y).toBeLessThanOrEqual(100 + 1e-9);
+
+      // On the boundary, not merely inside it: one coordinate is on an edge.
+      const onEdge =
+        near(p.x, 100) || near(p.x, 150) || near(p.y, 50) || near(p.y, 100);
+      expect(onEdge).toBe(true);
+    }
+  });
+
+  it('always points the way the template is aimed', () => {
+    // The invariant the bug violated: aiming left must not put the origin to
+    // the right of the pivot.
+    for (let i = 0; i < 360; i++) {
+      const angle = (i / 360) * Math.PI * 2;
+      const p = squareExitPoint(PIVOT, GRID, angle);
+      const dot =
+        (p.x - PIVOT.x) * Math.cos(angle) + (p.y - PIVOT.y) * Math.sin(angle);
+
+      expect(dot).toBeGreaterThan(0);
+    }
+  });
+
+  describe('degenerate input', () => {
+    it('collapses to the pivot for a zero grid rather than drifting', () => {
+      expect(squareExitPoint(PIVOT, 0, Math.PI / 3)).toEqual(PIVOT);
+    });
+
+    it('falls back to the pivot for a non-finite angle', () => {
+      expect(squareExitPoint(PIVOT, GRID, NaN)).toEqual(PIVOT);
+      expect(squareExitPoint(PIVOT, GRID, Infinity)).toEqual(PIVOT);
+    });
+  });
 });
+
