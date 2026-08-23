@@ -13,6 +13,7 @@ import authRoutes from '../../routes/auth';
 import campaignRoutes from '../../routes/campaigns';
 import characterRoutes from '../../routes/characters';
 import characterTemplateRoutes from '../../routes/characterTemplates';
+import assetRoutes from '../../routes/assets';
 import creatureRoutes from '../../routes/creatures';
 import userRoutes from '../../routes/users';
 
@@ -46,6 +47,7 @@ export function createTestApp(): express.Express {
   app.use('/api/characters', characterRoutes);
   app.use('/api/character-templates', characterTemplateRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/assets', assetRoutes);
 
   // Catch-all 404
   app.use('*', (_req, res) => {
