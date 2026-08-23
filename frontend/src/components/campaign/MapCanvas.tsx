@@ -1568,6 +1568,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         config: aoeConfig,
         origin: aoeOrigin,
         hoverCoords,
+        hoverMapPx: hoverMapPxRef.current,
         feetPerSquare: currentMap.feetPerSquare ?? 5,
       }, viewport);
     }
