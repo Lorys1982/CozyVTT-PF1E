@@ -9,6 +9,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { normalizeSkillKey } from '../utils/rules/dnd5e';
 import logger from '../utils/logger';
 
 // ─── Open5e API Types ───────────────────────────────────────────
@@ -88,7 +89,7 @@ const CR_XP: Record<string, number> = {
 
 // ─── Transform Open5e monster to our stat block ─────────────────
 
-function transformMonster(m: Open5eMonster) {
+export function transformMonster(m: Open5eMonster) {
   const speedParts = Object.entries(m.speed)
     .map(([type, val]) => (type === 'walk' ? `${val} ft.` : `${type} ${val} ft.`));
   const speedStr = speedParts.join(', ') || '0 ft.';
@@ -101,19 +102,33 @@ function transformMonster(m: Open5eMonster) {
   if (m.wisdom_save !== null) savingThrows.wis = m.wisdom_save;
   if (m.charisma_save !== null) savingThrows.cha = m.charisma_save;
 
+  const rawSkills = m.skills ?? {};
+  const normalisedSkills: Record<string, number> | undefined =
+    Object.keys(rawSkills).length > 0
+      ? Object.fromEntries(
+          Object.entries(rawSkills).map(([key, value]) => [normalizeSkillKey(key), value])
+        )
+      : undefined;
+
   const creatureType = m.subtype
     ? `${m.size} ${m.type} (${m.subtype})`
     : `${m.size} ${m.type}`;
 
   const statBlock = {
     ac: m.armor_class,
+    hpMax: m.hit_points,
+    hitDice: m.hit_dice || undefined,
     speed: speedStr,
     abilities: {
       str: m.strength, dex: m.dexterity, con: m.constitution,
       int: m.intelligence, wis: m.wisdom, cha: m.charisma,
     },
     savingThrows: Object.keys(savingThrows).length > 0 ? savingThrows : undefined,
-    skills: m.skills && Object.keys(m.skills).length > 0 ? m.skills : undefined,
+    // Open5e uses its own lowercase keys, including snake_case for multi-word
+    // skills ("animal_handling"). Normalising on import means the skill lookup
+    // recognises them, so they keep their ability association in the roll
+    // picker instead of being treated as unknown custom skills.
+    skills: normalisedSkills,
     damageVulnerabilities: m.damage_vulnerabilities || undefined,
     damageResistances: m.damage_resistances || undefined,
     damageImmunities: m.damage_immunities || undefined,
@@ -175,30 +190,78 @@ async function fetchAllSrdMonsters(): Promise<Open5eMonster[]> {
 export interface SeedResult {
   fetched: number;
   created: number;
+  updated: number;
   skipped: number;
   alreadyExisted: number;
 }
 
 /**
+ * Fill in hit points on a stat block that predates HP tracking.
+ *
+ * Returns null when the stat block already has HP (or is unusable), so callers
+ * can skip the write. Only the HP keys are added — every other key is copied
+ * through untouched, so a re-seed never rewrites curated stat block content.
+ */
+export function backfillStatBlockHp(
+  existingStatBlock: unknown,
+  hpMax: number,
+  hitDice?: string
+): Record<string, unknown> | null {
+  if (!existingStatBlock || typeof existingStatBlock !== 'object' || Array.isArray(existingStatBlock)) {
+    return null;
+  }
+
+  const statBlock = existingStatBlock as Record<string, unknown>;
+  if (typeof statBlock.hpMax === 'number') {
+    return null; // Already has HP — leave it alone
+  }
+
+  return {
+    ...statBlock,
+    hpMax,
+    ...(hitDice && !statBlock.hitDice && { hitDice }),
+  };
+}
+
+/**
  * Seed the CreatureTemplate table with D&D 5e SRD monsters from Open5e.
- * Safe to call multiple times — skips existing SRD creatures by name.
+ * Safe to call multiple times — existing SRD creatures are skipped, except that
+ * ones stored before hit points were tracked get their HP backfilled.
+ * Custom creatures are never touched.
  */
 export async function seedSrdCreatures(prisma: PrismaClient): Promise<SeedResult> {
-  // Check how many SRD creatures already exist
+  // Check which SRD creatures already exist (and whether they carry HP)
   const existing = await prisma.creatureTemplate.findMany({
     where: { source: 'srd', gameSystem: 'DND_5E' },
-    select: { name: true },
+    select: { id: true, name: true, statBlock: true },
   });
-  const existingNames = new Set(existing.map((e) => e.name));
+  const existingByName = new Map(existing.map((e) => [e.name, e]));
 
   // Fetch from Open5e
   const monsters = await fetchAllSrdMonsters();
 
   let created = 0;
+  let updated = 0;
   let skipped = 0;
 
   for (const monster of monsters) {
-    if (existingNames.has(monster.name)) {
+    const existingRow = existingByName.get(monster.name);
+    if (existingRow) {
+      // Pre-HP row: add the missing hit points, leaving the rest as it was
+      const patched = backfillStatBlockHp(existingRow.statBlock, monster.hit_points, monster.hit_dice);
+      if (patched) {
+        try {
+          await prisma.creatureTemplate.update({
+            where: { id: existingRow.id },
+            // `as object` matches how statBlock JSON is written elsewhere (routes/creatures.ts)
+            data: { statBlock: patched as object },
+          });
+          updated++;
+          continue;
+        } catch (err) {
+          logger.error(`Failed to backfill HP for "${monster.name}"`, { err: err });
+        }
+      }
       skipped++;
       continue;
     }
@@ -233,8 +296,9 @@ export async function seedSrdCreatures(prisma: PrismaClient): Promise<SeedResult
   return {
     fetched: monsters.length,
     created,
+    updated,
     skipped,
-    alreadyExisted: existingNames.size,
+    alreadyExisted: existingByName.size,
   };
 }
 

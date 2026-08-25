@@ -21,27 +21,33 @@ import {
   Star,
   Pencil,
   Trash2,
-  Upload,
 } from 'lucide-react';
 import { useCampaign } from '@/contexts/CampaignContext';
 import { useGameStore } from '@/stores/gameStore';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import api from '@/services/api';
 import type { CreatureTemplate, NpcStatBlock } from '@/types';
-import { TokenType, GameSystem, AssetType, AssetScope } from '@/types';
-import { StatBlockViewer } from './npc-stat-blocks';
+import { TokenType, GameSystem, AssetType } from '@/types';
+import {
+  StatBlockViewer,
+  buildCreatureStatBlock,
+  ProficiencyEditor,
+  Pf2eProficiencyEditor,
+} from './npc-stat-blocks';
+import { CHALLENGE_RATINGS } from '@/utils/rules/dnd5e';
+import { GAME_SYSTEM_SHORT_LABELS } from '@/constants/game-systems';
 import Button from '@/components/ui/Button';
+import AssetPicker from '@/components/assets/AssetPicker';
+import { extractAssetId } from '@/utils/assetUrl';
 
 // ============================================
 // Constants
 // ============================================
 
-const CR_OPTIONS = [
-  '0', '1/8', '1/4', '1/2', '1', '2', '3', '4', '5',
-  '6', '7', '8', '9', '10', '11', '12', '13', '14', '15',
-  '16', '17', '18', '19', '20', '21', '22', '23', '24',
-  '25', '26', '27', '28', '29', '30',
-];
+// Challenge ratings come from the shared rules module so the filter dropdown
+// and the creature form cannot drift apart — and so a CR the form offers is
+// always one the proficiency-bonus table recognises.
+const CR_OPTIONS = CHALLENGE_RATINGS;
 
 // ============================================
 // Props
@@ -65,6 +71,15 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
   const [sourceFilter, setSourceFilter] = useState('');
   const [crFilter, setCrFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  /**
+   * Whether to limit the library to this campaign's game system.
+   *
+   * Defaults to doing so: a Call of Cthulhu table has no use for 322 D&D
+   * monsters in its browse list. It stays a toggle rather than a hard rule
+   * because only D&D 5e ships SRD content, so a DM running anything else may
+   * legitimately want to borrow a stat block as a starting point.
+   */
+  const [matchGameSystem, setMatchGameSystem] = useState(true);
 
   // ── Data state ──
   const [creatures, setCreatures] = useState<CreatureTemplate[]>([]);
@@ -107,7 +122,9 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
         search: searchQuery || undefined,
         source: sourceFilter || undefined,
         cr: crFilter || undefined,
-        gameSystem: campaign.gameSystem || undefined,
+        // A campaign with no system set has nothing to match against, so it
+        // always sees everything.
+        gameSystem: matchGameSystem ? (campaign.gameSystem ?? undefined) : undefined,
         limit: LIMIT,
         offset: newOffset,
       });
@@ -122,7 +139,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
     } finally {
       setIsLoading(false);
     }
-  }, [campaign, searchQuery, sourceFilter, crFilter, offset]);
+  }, [campaign, searchQuery, sourceFilter, crFilter, matchGameSystem, offset]);
 
   // Fetch on open and when filters change
   useEffect(() => {
@@ -140,7 +157,10 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       })
       .catch(() => {})
       .finally(() => setIsLoadingFavorites(false));
-  }, [isOpen, campaign?.id, sourceFilter, crFilter]);
+    // matchGameSystem belongs here with the other filters: without it, toggling
+    // between this campaign's system and all systems changed the dropdown but
+    // never refetched the list.
+  }, [isOpen, campaign?.id, sourceFilter, crFilter, matchGameSystem]);
 
   // Debounced search
   useEffect(() => {
@@ -165,7 +185,10 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       const sourceName = campaign.gameSystem === GameSystem.PATHFINDER_1E
         ? 'Archives of Nethys PF1e creatures'
         : 'D&D 5e SRD creatures';
-      setSeedResult(`Imported ${result.created} ${sourceName} (${result.skipped} already existed).`);
+      const updatedNote = result.updated ? `, ${result.updated} updated with hit points` : '';
+      setSeedResult(
+        `Imported ${result.created} ${sourceName}${updatedNote} (${result.skipped} already existed).`
+      );
       setSrdCount((result.alreadyExisted || 0) + result.created);
       // Refresh the list
       fetchCreatures(true);
@@ -190,7 +213,10 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       const resolvedCreature = creature.source === 'aon-pf1e'
         ? await api.getCreature(campaign.id, creature.id)
         : creature;
-      const hpMax = resolvedCreature.statBlock.hitPoints || 10;
+      // D&D uses hpMax; hydrated PF1e stat blocks use hitPoints.
+      const hpMax = resolvedCreature.statBlock?.hpMax
+        ?? resolvedCreature.statBlock?.hitPoints
+        ?? 10;
       const tokenPayload = {
         name: resolvedCreature.name,
         imageUrl: resolvedCreature.imageUrl || '',
@@ -353,8 +379,8 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
           >
             {/* ── Header ── */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-moss-green/20 bg-parchment/60 sticky top-0 z-10">
-              <BookOpen className="w-5 h-5 text-moss-green flex-shrink-0" />
-              <h2 className="flex-1 text-base font-bold text-moss-green">
+              <BookOpen className="w-5 h-5 text-brand-ink flex-shrink-0" />
+              <h2 className="flex-1 text-base font-bold text-brand-ink">
                 Creature Library
               </h2>
               <span className="text-xs text-stone-gray/60">
@@ -382,7 +408,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
               {/* Filter toggle */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="flex items-center gap-1 text-xs text-moss-green hover:text-moss-green/80 transition-colors"
+                className="flex items-center gap-1 text-xs text-brand-ink hover:text-brand-ink/80 transition-colors"
               >
                 {showFilters ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 Filters
@@ -390,32 +416,47 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
               {/* Filter controls */}
               {showFilters && (
-                <div className="flex gap-2">
-                  <select
-                    value={sourceFilter}
-                    onChange={(e) => setSourceFilter(e.target.value)}
-                    className="input-cozy text-xs flex-1"
-                  >
-                    {[
-                      { value: '', label: 'All Sources' },
-                      campaign?.gameSystem === GameSystem.PATHFINDER_1E
-                        ? { value: 'aon-pf1e', label: 'Archives of Nethys' }
-                        : { value: 'srd', label: 'SRD (Official)' },
-                      { value: 'custom', label: 'Custom / Homebrew' },
-                    ].map((f) => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={crFilter}
-                    onChange={(e) => setCrFilter(e.target.value)}
-                    className="input-cozy text-xs w-20"
-                  >
-                    <option value="">All CR</option>
-                    {CR_OPTIONS.map((cr) => (
-                      <option key={cr} value={cr}>CR {cr}</option>
-                    ))}
-                  </select>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <select
+                      value={sourceFilter}
+                      onChange={(e) => setSourceFilter(e.target.value)}
+                      className="input-cozy text-xs flex-1"
+                    >
+                      {[
+                        { value: '', label: 'All Sources' },
+                        { value: 'srd', label: 'D&D 5e SRD' },
+                        { value: 'aon-pf1e', label: 'Archives of Nethys (PF1e)' },
+                        { value: 'custom', label: 'Custom / Homebrew' },
+                      ].map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={crFilter}
+                      onChange={(e) => setCrFilter(e.target.value)}
+                      className="input-cozy text-xs w-20"
+                    >
+                      <option value="">All CR</option>
+                      {CR_OPTIONS.map((cr) => (
+                        <option key={cr} value={cr}>CR {cr}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Only meaningful when the campaign has a system to match. */}
+                  {campaign?.gameSystem && (
+                    <select
+                      aria-label="Game system filter"
+                      value={matchGameSystem ? 'campaign' : 'all'}
+                      onChange={(e) => setMatchGameSystem(e.target.value === 'campaign')}
+                      className="input-cozy text-xs w-full"
+                    >
+                      <option value="campaign">
+                        {GAME_SYSTEM_SHORT_LABELS[campaign.gameSystem]} only (this campaign)
+                      </option>
+                      <option value="all">All game systems</option>
+                    </select>
+                  )}
                 </div>
               )}
 
@@ -423,26 +464,27 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowCreateForm(true)}
-                  className="flex items-center gap-1 text-xs text-moss-green hover:text-moss-green/80 transition-colors"
+                  className="flex items-center gap-1 text-xs text-brand-ink hover:text-brand-ink/80 transition-colors"
                 >
                   <Plus className="w-3 h-3" /> Create Custom
                 </button>
+                {/* The backend selects the official catalogue from the campaign system. */}
                 {srdCount === 0 && (
                   <button
                     onClick={handleSeedSrd}
                     disabled={isSeeding}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-500 transition-colors"
+                    className="flex items-center gap-1 text-xs text-info-ink hover:text-info-ink transition-colors"
                   >
                     {isSeeding ? (
                       <><Loader2 className="w-3 h-3 animate-spin" /> Seeding...</>
                     ) : (
-                      <><BookOpen className="w-3 h-3" /> Import Official Creatures</>
+                      <><BookOpen className="w-3 h-3" /> {campaign?.gameSystem === GameSystem.PATHFINDER_1E ? 'Import PF1e Bestiary' : 'Import D&D 5e SRD'}</>
                     )}
                   </button>
                 )}
               </div>
               {seedResult && (
-                <div className="text-[10px] text-green-600 bg-green-500/10 rounded px-2 py-1">
+                <div className="text-[10px] text-success-ink bg-success/10 rounded px-2 py-1">
                   {seedResult}
                 </div>
               )}
@@ -450,7 +492,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
             {/* ── Error ── */}
             {error && (
-              <div className="mx-4 mt-2 text-xs text-red-600 bg-red-500/10 border border-red-500/20 rounded-cozy px-3 py-2">
+              <div className="mx-4 mt-2 text-xs text-danger-ink bg-danger/10 border border-danger/20 rounded-cozy px-3 py-2">
                 {error}
               </div>
             )}
@@ -463,7 +505,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                   className="w-full flex items-center justify-between px-4 py-2 hover:bg-moss-green/5 transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    <Star className="w-3.5 h-3.5 text-warning-ink fill-amber-500" />
                     <span className="text-xs font-semibold text-stone-gray uppercase tracking-wide">
                       Favorites
                     </span>
@@ -476,7 +518,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                   )}
                 </button>
                 {showFavorites && (
-                  <div className="divide-y divide-moss-green/10 bg-amber-500/[0.02]">
+                  <div className="divide-y divide-moss-green/10 bg-warning/[0.02]">
                     {isLoadingFavorites ? (
                       <div className="flex items-center gap-2 text-stone-gray text-xs py-3 px-4">
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -517,10 +559,26 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                 </div>
               ) : creatures.length === 0 ? (
                 <div className="text-center py-12 px-6">
-                  <BookOpen className="w-8 h-8 text-moss-green/30 mx-auto mb-2" />
+                  <BookOpen className="w-8 h-8 text-brand-ink/30 mx-auto mb-2" />
                   <p className="text-sm text-stone-gray/70">
                     {searchQuery ? 'No creatures match your search.' : 'No creatures in the library yet.'}
                   </p>
+                  {/* The likeliest reason a non-D&D campaign looks empty: only
+                      D&D 5e ships SRD content, and the library defaults to this
+                      campaign's system. Say so rather than looking broken. */}
+                  {!searchQuery && matchGameSystem && campaign?.gameSystem && (srdCount ?? 0) > 0 && (
+                    <p className="mt-2 text-xs text-stone-gray/60">
+                      Showing {GAME_SYSTEM_SHORT_LABELS[campaign.gameSystem]} creatures only.{' '}
+                      <button
+                        type="button"
+                        onClick={() => { setMatchGameSystem(false); setShowFilters(true); }}
+                        className="underline hover:text-brand-ink"
+                      >
+                        Show all game systems
+                      </button>{' '}
+                      to browse creatures from other systems.
+                    </p>
+                  )}
                   {!searchQuery && srdCount === 0 && (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs text-stone-gray/60">
@@ -534,9 +592,11 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                         className="text-xs py-2 px-4"
                       >
                         {isSeeding ? (
-                          <><Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Importing from Open5e...</>
+                          <><Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Importing official creatures...</>
                         ) : (
-                          'Import Official Creatures'
+                          campaign?.gameSystem === GameSystem.PATHFINDER_1E
+                            ? 'Import PF1e Bestiary'
+                            : 'Import D&D 5e SRD Creatures'
                         )}
                       </Button>
                       <p className="text-[10px] text-stone-gray/40">
@@ -596,7 +656,13 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
             {/* ── Create / Edit Custom Form (inline) ── */}
             {showCreateForm && (
+              // Keyed on the creature being edited so switching directly from
+              // one creature to another remounts the form. handleEdit leaves
+              // showCreateForm true, so without this the form kept the previous
+              // creature's field state and saving wrote those stats onto the
+              // newly selected creature.
               <CreatureForm
+                key={editingCreature?.id ?? 'new'}
                 campaignId={campaign?.id || ''}
                 gameSystem={campaign?.gameSystem ?? null}
                 editingCreature={editingCreature}
@@ -667,8 +733,8 @@ function CreatureRow({
         ) : (
           <div
             className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-sm ${
-              creature.disposition === 'hostile' ? 'bg-red-500' :
-              creature.disposition === 'friendly' ? 'bg-teal-500' : 'bg-amber-500'
+              creature.disposition === 'hostile' ? 'bg-danger' :
+              creature.disposition === 'friendly' ? 'bg-teal-500' : 'bg-warning'
             }`}
           >
             {creature.name.charAt(0).toUpperCase()}
@@ -686,8 +752,8 @@ function CreatureRow({
         {/* Source badge */}
         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
           creature.source !== 'custom'
-            ? 'bg-blue-500/10 text-blue-600'
-            : 'bg-moss-green/10 text-moss-green'
+            ? 'bg-info/10 text-info-ink'
+            : 'bg-moss-green/10 text-brand-ink'
         }`}>
           {creature.source === 'aon-pf1e' ? 'AoN' : creature.source === 'srd' ? 'SRD' : 'Custom'}
         </span>
@@ -695,13 +761,13 @@ function CreatureRow({
         {/* Favorite star */}
         <button
           onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-          className="flex-shrink-0 p-0.5 rounded hover:bg-amber-500/10 transition-colors"
+          className="flex-shrink-0 p-0.5 rounded hover:bg-warning/10 transition-colors"
           title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
         >
           <Star className={`w-3.5 h-3.5 transition-colors ${
             isFavorite
-              ? 'text-amber-500 fill-amber-500'
-              : 'text-stone-gray/30 hover:text-amber-400'
+              ? 'text-warning-ink fill-amber-500'
+              : 'text-stone-gray/30 hover:text-warning-ink'
           }`} />
         </button>
 
@@ -721,7 +787,7 @@ function CreatureRow({
             <button
               onClick={onPlace}
               disabled={isPlacing}
-              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-cozy bg-moss-green/10 text-moss-green border border-moss-green/30 hover:bg-moss-green/20 transition-colors font-medium"
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs rounded-cozy bg-moss-green/10 text-brand-ink border border-moss-green/30 hover:bg-moss-green/20 transition-colors font-medium"
             >
               {isPlacing ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -733,7 +799,7 @@ function CreatureRow({
             {creature.source === 'custom' && (
               <button
                 onClick={onEdit}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-moss-green/20 text-moss-green hover:bg-moss-green/10 transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-moss-green/20 text-brand-ink hover:bg-moss-green/10 transition-colors"
                 title="Edit creature"
               >
                 <Pencil className="w-3 h-3" /> Edit
@@ -749,7 +815,7 @@ function CreatureRow({
             {creature.source === 'custom' && (
               <button
                 onClick={onDelete}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-colors"
+                className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-danger/20 text-danger-ink hover:bg-danger/10 transition-colors"
               >
                 <Trash2 className="w-3 h-3" /> Delete
               </button>
@@ -790,7 +856,7 @@ function NameDescriptionList({
         <button
           type="button"
           onClick={() => onChange([...items, { name: '', description: '' }])}
-          className="text-[10px] text-moss-green hover:text-moss-green/80 flex items-center gap-0.5"
+          className="text-[10px] text-brand-ink hover:text-brand-ink/80 flex items-center gap-0.5"
         >
           <Plus className="w-2.5 h-2.5" /> Add
         </button>
@@ -824,7 +890,7 @@ function NameDescriptionList({
           <button
             type="button"
             onClick={() => onChange(items.filter((_, idx) => idx !== i))}
-            className="p-1 text-red-400 hover:text-red-600 flex-shrink-0 mt-0.5"
+            className="p-1 text-danger-ink hover:text-danger-ink flex-shrink-0 mt-0.5"
             title="Remove"
           >
             <Trash2 className="w-3 h-3" />
@@ -859,7 +925,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   const [cr, setCr] = useState(editingCreature?.challengeRating ?? sb?.challengeRating ?? '');
   const [ac, setAc] = useState(sb?.ac ?? 10);
   const [speed, setSpeed] = useState(sb?.speed ?? '30 ft.');
-  const [hpMax, setHpMax] = useState(10);
+  const [hpMax, setHpMax] = useState(sb?.hpMax ?? 10);
   const [str, setStr] = useState(sb?.abilities?.str ?? 10);
   const [dex, setDex] = useState(sb?.abilities?.dex ?? 10);
   const [con, setCon] = useState(sb?.abilities?.con ?? 10);
@@ -872,8 +938,6 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
 
   // ── Image field ──
   const [imageUrl, setImageUrl] = useState(editingCreature?.imageUrl ?? '');
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Advanced stat block fields ──
   const [showAdvanced, setShowAdvanced] = useState(isEdit && !!(sb?.traits?.length || sb?.actions?.length));
@@ -889,40 +953,37 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   const [senses, setSenses] = useState(sb?.senses ?? '');
   const [languages, setLanguages] = useState(sb?.languages ?? '');
 
+  // Saves, skills and their proficiency metadata are edited together by
+  // ProficiencyEditor, which works on a whole stat block. Holding just those
+  // three fields here keeps the rest of the form's flat state untouched.
+  const [proficiencyFields, setProficiencyFields] = useState<
+    Pick<NpcStatBlock, 'savingThrows' | 'skills' | 'proficiencies'>
+  >({
+    savingThrows: sb?.savingThrows,
+    skills: sb?.skills,
+    proficiencies: sb?.proficiencies,
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // ── Image upload handler ──
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Pathfinder 2e rates creatures by Level rather than Challenge Rating, and
+  // stores printed modifiers instead of deriving them.
+  const isPf2e = gameSystem === GameSystem.PATHFINDER_2E;
+  const [level, setLevel] = useState<number | undefined>(sb?.level);
 
-    // Client-side size check
-    if (file.size > 5 * 1024 * 1024) {
-      setFormError('Image must be under 5 MB');
-      return;
-    }
-
-    setIsUploading(true);
-    setFormError(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', AssetType.TOKEN);
-      formData.append('scope', AssetScope.CAMPAIGN);
-      formData.append('campaignId', campaignId);
-      formData.append('name', file.name.replace(/\.[^.]+$/, ''));
-
-      const { asset } = await api.uploadAsset(formData);
-      setImageUrl(asset.id);
-    } catch {
-      setFormError('Failed to upload image');
-    } finally {
-      setIsUploading(false);
-      // Reset the file input so the same file can be re-selected
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  // The stat block the proficiency editor sees: live ability scores and CR from
+  // this form (both feed the derived bonuses) plus the proficiency state above.
+  const workingStatBlock: NpcStatBlock = {
+    ac,
+    hpMax,
+    speed,
+    abilities: { str, dex, con, int, wis, cha },
+    challengeRating: cr || undefined,
+    level,
+    ...proficiencyFields,
   };
+
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -932,29 +993,28 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
     setIsSubmitting(true);
     setFormError(null);
 
-    // Filter out empty name/description pairs
-    const filterPairs = (arr: Array<{ name: string; description: string }>) =>
-      arr.filter((p) => p.name.trim() || p.description.trim());
-
-    const statBlock: NpcStatBlock = {
+    // Merge the proficiency edits over the source before assembling, so the
+    // carry-forward below sees the current saves and skills.
+    const statBlock = buildCreatureStatBlock({ ...sb, ...proficiencyFields, level }, {
       ac,
+      hpMax,
       speed,
       abilities: { str, dex, con, int, wis, cha },
-      creatureType: creatureType || undefined,
-      alignment: alignment || undefined,
-      challengeRating: cr || undefined,
-      ...(filterPairs(traits).length > 0 && { traits: filterPairs(traits) }),
-      ...(filterPairs(actions).length > 0 && { actions: filterPairs(actions) }),
-      ...(filterPairs(bonusActions).length > 0 && { bonusActions: filterPairs(bonusActions) }),
-      ...(filterPairs(reactions).length > 0 && { reactions: filterPairs(reactions) }),
-      ...(filterPairs(legendaryActions).length > 0 && { legendaryActions: filterPairs(legendaryActions) }),
-      ...(damageVulnerabilities && { damageVulnerabilities }),
-      ...(damageResistances && { damageResistances }),
-      ...(damageImmunities && { damageImmunities }),
-      ...(conditionImmunities && { conditionImmunities }),
-      ...(senses && { senses }),
-      ...(languages && { languages }),
-    };
+      creatureType,
+      alignment,
+      challengeRating: cr,
+      traits,
+      actions,
+      bonusActions,
+      reactions,
+      legendaryActions,
+      damageVulnerabilities,
+      damageResistances,
+      damageImmunities,
+      conditionImmunities,
+      senses,
+      languages,
+    });
 
     const payload = {
       name: name.trim(),
@@ -987,7 +1047,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   return (
     <div className="border-t border-moss-green/20 bg-parchment/40 p-4 space-y-3 max-h-[70vh] overflow-y-auto">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold text-moss-green uppercase tracking-wide">
+        <h3 className="text-xs font-semibold text-brand-ink uppercase tracking-wide">
           {isEdit ? 'Edit Creature' : 'Create Custom Creature'}
         </h3>
         <button onClick={onCancel} className="text-stone-gray hover:text-stone-gray/80 p-0.5">
@@ -996,7 +1056,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
       </div>
 
       {formError && (
-        <div className="text-xs text-red-600 bg-red-500/10 rounded px-2 py-1">{formError}</div>
+        <div className="text-xs text-danger-ink bg-danger/10 rounded px-2 py-1">{formError}</div>
       )}
 
       {/* Name */}
@@ -1011,48 +1071,19 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
         />
       </div>
 
-      {/* Image */}
-      <div>
-        <label className="text-[10px] text-stone-gray block mb-0.5">Token Image</label>
-        <div className="flex items-center gap-2">
-          {imageUrl ? (
-            <img
-              src={imageUrl.startsWith('http') || imageUrl.startsWith('/') ? imageUrl : `/api/assets/${imageUrl}/file`}
-              alt="Token"
-              className="w-10 h-10 rounded-full object-cover border border-moss-green/20"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-stone-gray/10 flex items-center justify-center border border-dashed border-stone-gray/30">
-              <Upload className="w-4 h-4 text-stone-gray/40" />
-            </div>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className="text-[10px] text-moss-green hover:text-moss-green/80 flex items-center gap-1"
-          >
-            {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-            {imageUrl ? 'Change' : 'Upload'}
-          </button>
-          {imageUrl && (
-            <button
-              type="button"
-              onClick={() => setImageUrl('')}
-              className="text-[10px] text-red-500 hover:text-red-600"
-            >
-              Remove
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Image — browse the campaign's token assets or upload a new one.
+          Uploads go through the same endpoint as before, so magic-byte
+          validation and the campaign scope are unchanged. */}
+      <AssetPicker
+        label="Token Image"
+        type={AssetType.TOKEN}
+        campaignId={campaignId}
+        selectedAssetId={extractAssetId(imageUrl)}
+        onSelect={(asset) => setImageUrl(asset ? asset.id : '')}
+        columns={5}
+        searchPlaceholder="Search token images..."
+        emptyMessage="No token images yet. Upload one to get started."
+      />
 
       {/* Type & Alignment */}
       <div className="grid grid-cols-2 gap-2">
@@ -1089,22 +1120,48 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             className="input-cozy w-full text-xs"
           />
         </div>
-        <div>
-          <label className="text-[10px] text-stone-gray block mb-0.5">CR</label>
-          <input
-            type="text"
-            value={cr}
-            onChange={(e) => setCr(e.target.value)}
-            placeholder="1/4"
-            className="input-cozy w-full text-xs"
-          />
-        </div>
+        {isPf2e ? (
+          <div>
+            <label className="text-[10px] text-stone-gray block mb-0.5" htmlFor="creature-level">Level</label>
+            <input
+              id="creature-level"
+              type="number"
+              min={-1}
+              max={30}
+              value={level ?? ''}
+              onChange={(e) => {
+                const parsed = parseInt(e.target.value, 10);
+                setLevel(Number.isFinite(parsed) ? parsed : undefined);
+              }}
+              placeholder="5"
+              className="input-cozy w-full text-xs text-center"
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="text-[10px] text-stone-gray block mb-0.5" htmlFor="creature-cr">CR</label>
+            {/* A select, not free text: CR determines the proficiency bonus, so a
+                typo would silently change every derived save and skill. */}
+            <select
+              id="creature-cr"
+              value={cr}
+              onChange={(e) => setCr(e.target.value)}
+              className="input-cozy w-full text-xs"
+            >
+              <option value="">—</option>
+              {CR_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-[10px] text-stone-gray block mb-0.5">HP Max</label>
           <input
             type="number"
             value={hpMax}
-            onChange={(e) => setHpMax(parseInt(e.target.value, 10) || 1)}
+            onChange={(e) => setHpMax(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            min={1}
             className="input-cozy w-full text-xs"
           />
         </div>
@@ -1132,7 +1189,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             ['CHA', cha, setCha],
           ] as const).map(([label, val, setter]) => (
             <div key={label} className="text-center">
-              <label className="text-[8px] font-bold text-moss-green block">{label}</label>
+              <label className="text-[8px] font-bold text-brand-ink block">{label}</label>
               <input
                 type="number"
                 value={val}
@@ -1142,6 +1199,36 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Saves & skills — derived from the ability scores and CR above. This
+          form had no fields for these at all, which is why editing a duplicated
+          SRD creature used to delete them. */}
+      <div>
+        <label className="text-[10px] text-stone-gray block mb-1">Saving Throws &amp; Skills</label>
+        {isPf2e ? (
+          <Pf2eProficiencyEditor
+            statBlock={workingStatBlock}
+            onChange={(updated) =>
+              setProficiencyFields({
+                savingThrows: updated.savingThrows,
+                skills: updated.skills,
+                proficiencies: updated.proficiencies,
+              })
+            }
+          />
+        ) : (
+          <ProficiencyEditor
+            statBlock={workingStatBlock}
+            onChange={(updated) =>
+              setProficiencyFields({
+                savingThrows: updated.savingThrows,
+                skills: updated.skills,
+                proficiencies: updated.proficiencies,
+              })
+            }
+          />
+        )}
       </div>
 
       {/* Disposition */}
@@ -1160,8 +1247,8 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
               className={`flex-1 py-1 text-[10px] rounded-cozy border transition-all ${
                 disposition === d
                   ? color === 'teal'  ? 'border-teal-500 bg-teal-500/10 text-teal-700 font-semibold'
-                  : color === 'amber' ? 'border-amber-500 bg-amber-500/10 text-amber-700 font-semibold'
-                  :                     'border-red-500 bg-red-500/10 text-red-700 font-semibold'
+                  : color === 'amber' ? 'border-warning/60 bg-warning/10 text-warning-ink font-semibold'
+                  :                     'border-danger/60 bg-danger/10 text-danger-ink font-semibold'
                   : 'border-moss-green/20 hover:border-moss-green/40 text-stone-gray'
               }`}
             >
@@ -1176,7 +1263,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-1 text-[10px] text-moss-green hover:text-moss-green/80 font-medium"
+          className="flex items-center gap-1 text-[10px] text-brand-ink hover:text-brand-ink/80 font-medium"
         >
           {showAdvanced ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           Advanced Stats

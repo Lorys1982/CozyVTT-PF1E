@@ -87,9 +87,35 @@ export enum TokenDisposition {
 export type TokenDisplayMode = 'pog' | 'top-down' | 'full-art';
 
 /** NPC stat block — game-system-agnostic container for combat stats. */
+/**
+ * How proficient a creature is in a save or skill.
+ * 'custom' marks a bonus set explicitly rather than derived — used for homebrew
+ * and for published creatures whose printed value does not decompose into
+ * ability modifier plus a whole number of proficiency bonuses.
+ */
+export type ProficiencyLevel = 'none' | 'proficient' | 'expertise' | 'custom';
+
+/** Proficiency metadata backing a creature's derived save and skill bonuses. */
+export interface NpcProficiencies {
+  /**
+   * Overrides the proficiency bonus derived from challenge rating, for the rare
+   * published monster whose printed values do not match the CR table.
+   */
+  bonusOverride?: number;
+  saves?: Record<string, ProficiencyLevel>;
+  skills?: Record<string, ProficiencyLevel>;
+}
+
 export interface NpcStatBlock {
   /** Armor Class / Defense rating */
   ac: number;
+  /**
+   * Maximum hit points. Optional: stat blocks saved before HP was tracked have
+   * none, and callers fall back to a default (see CreatureLibrary placement).
+   */
+  hpMax?: number;
+  /** Hit dice expression, e.g. "7d8+14" (informational) */
+  hitDice?: string;
   /** Speed (e.g. "30 ft." or "30 ft., fly 60 ft.") */
   speed: string;
   /** Ability scores */
@@ -101,10 +127,21 @@ export interface NpcStatBlock {
     wis: number;
     cha: number;
   };
-  /** Saving throw bonuses, e.g. { "dex": 5, "wis": 3 } */
+  /**
+   * Saving throw bonuses as totals, e.g. { "dex": 5, "wis": 3 }.
+   * These stay the value that is displayed and rolled. Where `proficiencies`
+   * has a matching entry the total is derived and rewritten on save; where it
+   * does not, the stored value is preserved verbatim (which is how every stat
+   * block created before proficiency tracking keeps working unchanged).
+   */
   savingThrows?: Record<string, number>;
-  /** Skill bonuses, e.g. { "perception": 5, "stealth": 7 } */
+  /** Skill bonuses as totals, e.g. { "perception": 5, "stealth": 7 }. See savingThrows. */
   skills?: Record<string, number>;
+  /**
+   * How each bonus above is arrived at. Optional throughout — absent means
+   * "legacy data, take the totals as given".
+   */
+  proficiencies?: NpcProficiencies;
   /** Damage vulnerabilities */
   damageVulnerabilities?: string;
   /** Damage resistances */
@@ -117,8 +154,29 @@ export interface NpcStatBlock {
   senses?: string;
   /** Languages */
   languages?: string;
+  /**
+   * Attribute modifiers, used by systems that print modifiers rather than
+   * scores. Pathfinder 2e stat blocks give "Str +4" directly and have no
+   * underlying score, so deriving one from `abilities` would be an invention.
+   * Absent for D&D 5e, where `abilities` holds scores and the modifier is
+   * derived.
+   */
+  attributeModifiers?: {
+    str: number;
+    dex: number;
+    con: number;
+    int: number;
+    wis: number;
+    cha: number;
+  };
   /** Challenge rating, e.g. "1/4", "5" */
   challengeRating?: string;
+  /**
+   * Creature level, for systems that rate creatures by level rather than
+   * challenge rating (Pathfinder 2e). Kept separate from challengeRating so
+   * neither system has to pretend to use the other's scale.
+   */
+  level?: number;
   /** XP value */
   xp?: number;
   /** Maximum hit points, used when placing imported creatures */
@@ -209,6 +267,8 @@ export interface User {
   displayName: string;
   platformRole: PlatformRole;
   globalAssetManager: boolean;
+  /** May edit or delete anyone's character template, not just their own. */
+  templateEditor: boolean;
   mfaEnabled: boolean;
   avatarUrl: string | null;
   bio: string | null;
@@ -217,6 +277,28 @@ export interface User {
   lastLoginAt: string | null;
   mustChangePassword?: boolean;
   isApproved?: boolean;
+}
+
+/**
+ * A shareable starter sheet. Visible to everyone; editable by its author, an
+ * admin, or a user with `templateEditor`.
+ *
+ * Distinct from the hardcoded starter presets served by
+ * `/api/characters/templates/:system/:name`, which are compiled into the
+ * backend rather than stored as rows.
+ */
+export interface CharacterTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  gameSystem: GameSystem | null;
+  /** Always a GLOBAL asset — a template is readable by everyone, so its image must be too. */
+  tokenImageUrl: string | null;
+  data: unknown;
+  createdById: string | null;
+  createdBy: { id: string; displayName: string } | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============================================
@@ -295,6 +377,23 @@ export interface AdminActivityData {
   recentSessions: AdminActivitySession[];
   onlineUsers: AdminOnlineUser[];
   recentLogs: AdminSystemLog[];
+}
+
+// ============================================
+// Public Server Config
+// ============================================
+
+/** Upload limits in bytes, keyed by asset type — served by GET /api/config. */
+export interface ServerUploadLimits {
+  MAP: number;
+  TOKEN: number;
+  AUDIO: number;
+  AVATAR: number;
+}
+
+export interface ServerConfig {
+  uploadLimits: ServerUploadLimits;
+  maxUploadBytes: number;
 }
 
 // ============================================
@@ -1033,6 +1132,28 @@ export interface InitiativeRemoveEvent { tokenId: string; }
 export interface InitiativeSetEvent    { tokenId: string; mapId: string; value: number | null; }
 export interface InitiativeRollEvent   { tokenId: string; mapId: string; expression: string; characterName?: string; }
 export interface InitiativeReorderEvent { orderedTokenIds: string[]; }
+
+// ============================================
+// Map Pings — transient "look here" marks
+// ============================================
+
+/** Client → server. Coordinates are map pixels, not grid cells. */
+export interface MapPingEvent {
+  mapId: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Server → all campaign members. Carries only the sender's id — the display
+ * name and identity colour are resolved client-side from the roster.
+ */
+export interface MapPingedBroadcast {
+  mapId: string;
+  x: number;
+  y: number;
+  userId: string;
+}
 
 // ============================================
 // User Preferences (per-user theme + font)

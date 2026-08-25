@@ -8,7 +8,9 @@
  * Architecture:
  * - Server holds canonical CombatState in memory (initiativeState.ts)
  * - Any mutation emits the full updated state back to all campaign members via 'initiative.state'
- * - On mount, client requests state with 'initiative.request_state'
+ * - CampaignPage's useInitiativeSync() owns the subscription and mirrors that
+ *   state into the game store; this panel and the map's active-token ring are
+ *   both readers. Mutations still emit straight from here.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -28,20 +30,20 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { useCampaign } from '@/contexts/CampaignContext';
-import { useTokenListIgnoringMovement } from '@/stores/gameStore';
+import { useTokenListIgnoringMovement, useCombatState, usePeekTokenId, useGameStore } from '@/stores/gameStore';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 
-import type { CombatState, CombatantEntry, Token } from '@/types';
+import type { CombatantEntry, Token } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function dispositionColor(entry: CombatantEntry): string {
-  if (entry.type === 'player') return 'text-moss-green';
-  if (entry.disposition === 'friendly') return 'text-moss-green';
-  if (entry.disposition === 'hostile') return 'text-red-600';
+  if (entry.type === 'player') return 'text-brand-ink';
+  if (entry.disposition === 'friendly') return 'text-brand-ink';
+  if (entry.disposition === 'hostile') return 'text-danger-ink';
   return 'text-stone-gray';
 }
 
@@ -83,7 +85,7 @@ function AddCombatantModal({ tokens, combatantIds, mapId: _mapId, onAdd, onClose
         className="bg-soft-cream border-2 border-moss-green/30 rounded-xl shadow-2xl w-full max-w-sm mx-4"
       >
         <div className="flex items-center justify-between p-4 border-b border-moss-green/20">
-          <h3 className="font-bold text-moss-green">Add Combatant</h3>
+          <h3 className="font-bold text-brand-ink">Add Combatant</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-stone-gray/10 transition-colors">
             <XCircle className="w-4 h-4 text-stone-gray" />
           </button>
@@ -112,7 +114,7 @@ function AddCombatantModal({ tokens, combatantIds, mapId: _mapId, onAdd, onClose
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-moss-green truncate">{token.name}</div>
+                  <div className="font-medium text-sm text-brand-ink truncate">{token.name}</div>
                   <div className="text-xs text-stone-gray capitalize">
                     {token.type ?? 'npc'}{token.disposition ? ` · ${token.disposition}` : ''}
                   </div>
@@ -136,6 +138,8 @@ function AddCombatantModal({ tokens, combatantIds, mapId: _mapId, onAdd, onClose
 interface CombatantRowProps {
   entry: CombatantEntry;
   isActive: boolean;
+  /** This token is being pointed at — from this list, or from the map. */
+  isPeeked: boolean;
   isDM: boolean;
   mapId: string | null;
   isDragOver: boolean;
@@ -149,7 +153,7 @@ interface CombatantRowProps {
 }
 
 function CombatantRow({
-  entry, isActive, isDM, isDragOver,
+  entry, isActive, isPeeked, isDM, isDragOver,
   onSetInitiative, onRoll, onRemove,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: CombatantRowProps) {
@@ -182,12 +186,17 @@ function CombatantRow({
       onDragOver={isDM ? (e) => onDragOver(e, entry.tokenId) : undefined}
       onDrop={isDM ? (e) => onDrop(e, entry.tokenId) : undefined}
       onDragEnd={isDM ? onDragEnd : undefined}
+      onMouseEnter={() => useGameStore.getState().setPeekToken(entry.tokenId, 'tracker')}
+      onMouseLeave={() => useGameStore.getState().setPeekToken(null, 'tracker')}
       className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${
         isDragOver
           ? 'border-t-2 border-moss-green'
           : isActive
             ? 'bg-warm-amber/20 border border-warm-amber/40'
-            : 'hover:bg-moss-green/5 border border-transparent'
+            : isPeeked
+              // Mirrors the map: hovering a token there tints its row here.
+              ? 'bg-moss-green/10 border border-moss-green/40'
+              : 'hover:bg-moss-green/5 border border-transparent'
       } ${isDM ? 'cursor-grab active:cursor-grabbing' : ''}`}
     >
       {/* Drag handle (DM) or active dot (players) */}
@@ -218,7 +227,7 @@ function CombatantRow({
 
       {/* Name + disposition */}
       <div className="flex-1 min-w-0">
-        <div className={`text-sm font-medium truncate ${isActive ? 'text-warm-amber' : 'text-moss-green'}`}>
+        <div className={`text-sm font-medium truncate ${isActive ? 'text-warm-amber' : 'text-brand-ink'}`}>
           {entry.name}
         </div>
         {entry.hp && (
@@ -262,14 +271,14 @@ function CombatantRow({
           <button
             onClick={() => onRoll(entry.tokenId)}
             title="Roll initiative for this token"
-            className="p-1 rounded hover:bg-moss-green/10 text-stone-gray hover:text-moss-green transition-colors"
+            className="p-1 rounded hover:bg-moss-green/10 text-stone-gray hover:text-brand-ink transition-colors"
           >
             <Dices className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => onRemove(entry.tokenId)}
             title="Remove from initiative"
-            className="p-1 rounded hover:bg-red-100 text-stone-gray hover:text-red-600 transition-colors"
+            className="p-1 rounded hover:bg-danger/10 text-stone-gray hover:text-danger-ink transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -288,12 +297,13 @@ export default function InitiativeTracker() {
   // Initiative reads token names/ids, not coordinates — skip move re-renders.
   const tokens = useTokenListIgnoringMovement();
   const { socket } = useWebSocket();
-  const [combatState, setCombatState] = useState<CombatState>({
-    active: false,
-    round: 0,
-    currentTokenId: null,
-    combatants: [],
-  });
+  // Combat state is mirrored into the game store by useInitiativeSync(), which
+  // CampaignPage owns — the map's active-token ring reads the same snapshot,
+  // and the subscription no longer dies with this panel.
+  const combatState = useCombatState();
+  // Cross-highlight: set when a row here is hovered, and when a token is
+  // hovered on the map. Either way the matching row tints.
+  const peekTokenId = usePeekTokenId();
   const [collapsed, setCollapsed] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
@@ -304,25 +314,6 @@ export default function InitiativeTracker() {
 
   const isDM = userRole === 'DM';
   const mapId = currentMap?.id ?? null;
-
-  // ── WebSocket listeners ──────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleState = (state: CombatState) => {
-      setCombatState(state);
-    };
-
-    socket.onInitiativeState(handleState);
-
-    // Request current state on mount (handles reconnects too)
-    socket.emitInitiativeRequestState();
-
-    return () => {
-      socket.getSocket()?.off('initiative.state', handleState);
-    };
-  }, [socket]);
 
   // ── DM Actions ───────────────────────────────────────────────────────────
 
@@ -402,13 +393,13 @@ export default function InitiativeTracker() {
     const [moved] = reordered.splice(fromIndex, 1);
     reordered.splice(toIndex, 0, moved);
 
-    // Optimistic update
-    setCombatState((prev) => ({ ...prev, combatants: reordered }));
+    // Optimistic update — the server's broadcast replaces this moments later.
+    useGameStore.getState().setCombatState({ ...combatState, combatants: reordered });
     socket.emitInitiativeReorder({ orderedTokenIds: reordered.map((c) => c.tokenId) });
 
     dragTokenId.current = null;
     setDragOverTokenId(null);
-  }, [socket, combatState.combatants]);
+  }, [socket, combatState]);
 
   const handleDragEnd = useCallback(() => {
     dragTokenId.current = null;
@@ -433,8 +424,8 @@ export default function InitiativeTracker() {
           className="w-full flex items-center justify-between px-4 py-3 bg-parchment/40 hover:bg-parchment/60 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <Swords className="w-4 h-4 text-moss-green" />
-            <span className="font-semibold text-moss-green text-sm">Initiative Tracker</span>
+            <Swords className="w-4 h-4 text-brand-ink" />
+            <span className="font-semibold text-brand-ink text-sm">Initiative Tracker</span>
             {combatState.active && (
               <span className="text-xs font-bold text-warm-amber bg-warm-amber/10 border border-warm-amber/20 rounded px-1.5 py-0.5">
                 Round {combatState.round}
@@ -473,6 +464,7 @@ export default function InitiativeTracker() {
                     key={entry.tokenId}
                     entry={entry}
                     isActive={combatState.active && entry.tokenId === combatState.currentTokenId}
+                    isPeeked={entry.tokenId === peekTokenId}
                     isDM={isDM}
                     mapId={mapId}
                     isDragOver={isDM && dragOverTokenId === entry.tokenId}
@@ -503,7 +495,7 @@ export default function InitiativeTracker() {
                 {mapId && (
                   <button
                     onClick={() => setShowAddModal(true)}
-                    className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium text-moss-green border border-dashed border-moss-green/30 rounded-lg hover:bg-moss-green/5 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium text-brand-ink border border-dashed border-moss-green/30 rounded-lg hover:bg-moss-green/5 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Add Combatant
@@ -532,7 +524,7 @@ export default function InitiativeTracker() {
                         </button>
                         <button
                           onClick={handleEnd}
-                          className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                          className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold border border-danger/30 text-danger-ink rounded-lg hover:bg-danger/10 transition-colors"
                           title="End combat"
                         >
                           <XCircle className="w-3.5 h-3.5" />

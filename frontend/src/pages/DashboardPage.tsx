@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { Plus, LogOut, RefreshCw, User, ArrowRight, Mail, FolderOpen, Shield, AlertCircle, Upload } from 'lucide-react';
+import { Plus, LogOut, RefreshCw, User, ArrowRight, Mail, FolderOpen, Shield, AlertCircle, Upload, FileText } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useCampaignsQuery, useCharactersQuery, usePendingInvitationsQuery, queryKeys } from '@/hooks/queries';
 import CampaignCard from '@/components/CampaignCard';
@@ -81,7 +81,7 @@ export default function DashboardPage() {
                 <img src={mascotUrl} alt="" className="w-10 h-10 object-contain" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-moss-green font-heading">
+                <h1 className="text-3xl font-bold text-brand-ink font-heading">
                   CozyVTT
                 </h1>
                 <p className="text-sm text-warm-gray">
@@ -109,7 +109,7 @@ export default function DashboardPage() {
                   variant="secondary" className="flex items-center gap-2"
                   aria-label="Go to Admin Panel"
                 >
-                  <Shield className="w-4 h-4 text-moss-green" aria-hidden="true" />
+                  <Shield className="w-4 h-4 text-brand-ink" aria-hidden="true" />
                   <span className="hidden sm:inline">Admin</span>
                 </Button>
               )}
@@ -136,7 +136,7 @@ export default function DashboardPage() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <User className="w-6 h-6 text-moss-green" aria-hidden="true" />
+                  <User className="w-6 h-6 text-brand-ink" aria-hidden="true" />
                 )}
               </button>
             </div>
@@ -148,7 +148,7 @@ export default function DashboardPage() {
       <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="space-y-8">
           {/* Quick Links Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {/* Characters Section */}
             <section className="glass-panel p-6">
               <div className="flex items-center justify-between mb-4">
@@ -157,7 +157,7 @@ export default function DashboardPage() {
                     <User className="w-6 h-6 text-spirit-purple" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold text-moss-green font-heading">
+                    <h2 className="text-xl font-semibold text-brand-ink font-heading">
                       Your Characters
                     </h2>
                     <p className="text-sm text-warm-gray">
@@ -210,7 +210,7 @@ export default function DashboardPage() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <User className="w-5 h-5 text-moss-green" />
+                              <User className="w-5 h-5 text-brand-ink" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                     <FolderOpen className="w-6 h-6 text-warm-amber" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold text-moss-green font-heading">
+                    <h2 className="text-xl font-semibold text-brand-ink font-heading">
                       Asset Library
                     </h2>
                     <p className="text-sm text-warm-gray">
@@ -279,11 +279,51 @@ export default function DashboardPage() {
                   onClick={() => navigate('/assets')}
                 >
                   <FolderOpen className="w-8 h-8 mx-auto mb-2 text-warm-amber/60" />
-                  <p className="text-sm font-medium text-moss-green mb-1">
+                  <p className="text-sm font-medium text-brand-ink mb-1">
                     Manage Your Assets
                   </p>
                   <p className="text-xs text-warm-gray">
                     Upload and organize maps, tokens, audio, and avatar images
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* Character Templates Section */}
+            <section className="glass-panel p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-moss-green/10">
+                    <FileText className="w-6 h-6 text-brand-ink" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-brand-ink font-heading">
+                      Character Templates
+                    </h2>
+                    <p className="text-sm text-warm-gray">Shared starter sheets</p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => navigate('/character-templates')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="hidden sm:inline">Browse</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-3 mt-4">
+                <div
+                  className="p-4 rounded-lg bg-parchment/50 border border-moss-green/20
+                           hover:border-moss-green/40 transition-colors cursor-pointer text-center"
+                  onClick={() => navigate('/character-templates')}
+                >
+                  <FileText className="w-8 h-8 mx-auto mb-2 text-brand-ink/40" />
+                  <p className="text-sm font-medium text-brand-ink mb-1">
+                    Start From a Template
+                  </p>
+                  <p className="text-xs text-warm-gray">
+                    Copy a shared sheet into a character, or publish one for others
                   </p>
                 </div>
               </div>
@@ -295,10 +335,10 @@ export default function DashboardPage() {
             <section className="glass-panel p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="p-2 rounded-lg bg-moss-green/10">
-                  <Mail className="w-6 h-6 text-moss-green" />
+                  <Mail className="w-6 h-6 text-brand-ink" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold text-moss-green font-heading">
+                  <h2 className="text-xl font-semibold text-brand-ink font-heading">
                     Pending Invitations
                   </h2>
                   <p className="text-sm text-warm-gray">
@@ -314,7 +354,7 @@ export default function DashboardPage() {
                     className="p-4 rounded-lg bg-parchment/50 border border-moss-green/20 hover:border-moss-green/40 transition-colors cursor-pointer"
                     onClick={() => setSelectedInvitation(invitation)}
                   >
-                    <h3 className="font-semibold text-moss-green mb-1">
+                    <h3 className="font-semibold text-brand-ink mb-1">
                       {invitation.campaign?.name}
                     </h3>
                     {invitation.campaign?.description && (
@@ -326,7 +366,7 @@ export default function DashboardPage() {
                       <span>
                         DM: {invitation.campaign?.owner?.displayName}
                       </span>
-                      <button className="text-moss-green hover:underline font-medium">
+                      <button className="text-brand-ink hover:underline font-medium">
                         View Invitation →
                       </button>
                     </div>
@@ -339,7 +379,7 @@ export default function DashboardPage() {
           {/* Campaigns Section */}
           <section>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-semibold text-moss-green font-heading">
+              <h2 className="text-2xl font-semibold text-brand-ink font-heading">
                 Your Campaigns
               </h2>
               <div className="flex items-center gap-2">
@@ -362,10 +402,10 @@ export default function DashboardPage() {
 
             {/* Error Message */}
             {error && !loading && (
-              <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="mb-6 bg-danger/10 border border-danger/20 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-danger-ink flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm text-red-700 font-medium">{error}</p>
+                  <p className="text-sm text-danger-ink font-medium">{error}</p>
                 </div>
                 <Button
                   onClick={loadData}
@@ -392,7 +432,7 @@ export default function DashboardPage() {
                   <div className="mb-4 inline-block p-4 rounded-full bg-moss-green/10">
                     <img src={mascotUrl} alt="" className="w-12 h-12 object-contain" />
                   </div>
-                  <h3 className="text-xl font-semibold text-moss-green mb-2">
+                  <h3 className="text-xl font-semibold text-brand-ink mb-2">
                     No campaigns yet
                   </h3>
                   <p className="text-warm-gray mb-6">
@@ -427,12 +467,12 @@ export default function DashboardPage() {
           {/* Campaign Stats (if campaigns exist) */}
           {!loading && campaigns.length > 0 && (
             <section className="glass-panel p-6">
-              <h3 className="text-lg font-semibold text-moss-green mb-4">
+              <h3 className="text-lg font-semibold text-brand-ink mb-4">
                 Quick Stats
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="text-center p-4 rounded-lg bg-moss-green/5">
-                  <p className="text-3xl font-bold text-moss-green">
+                  <p className="text-3xl font-bold text-brand-ink">
                     {campaigns.filter(c => getUserRole(c) === CampaignRole.DM).length}
                   </p>
                   <p className="text-sm text-warm-gray mt-1">Campaigns as DM</p>

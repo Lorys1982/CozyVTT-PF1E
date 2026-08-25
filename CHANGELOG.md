@@ -6,6 +6,197 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.2.1] — 2026-08-23
+
+### Added
+
+- **Character templates — shareable starter sheets.** A DM preparing a campaign can now build a sheet for a player who hasn't joined yet, and a player new to a system can start from someone else's work rather than a blank page. Publish a template from the new **Character Templates** page on the dashboard, from an existing character sheet with **Save as Template**, while creating a character, or by **importing a character JSON** — including one exported from a different CozyVTT instance, so a sheet built on one server can be shared with a group on another. Every template on the instance is visible to everyone; copying one creates a character that belongs entirely to you, and the original is untouched. You can edit and delete templates you published. A new **template editor** permission, granted per user from the admin panel exactly like Global Assets, lets a trusted user tidy up or correct anyone's — nobody has it until an admin grants it. A template can carry a token image, which must be a global asset: everyone who can see the template needs to be able to load its picture, so the app says so plainly rather than storing an image that would fail for other people
+- **Alt+click places an area template freely.** Not every effect is measured from a caster — a wall of fire is a line dropped wherever you like within range. Holding Alt while clicking an area template skips the grid snap and pins it exactly where you clicked, with the shape turning about that point
+
+### Fixed
+
+- **A global asset manager can delete their own global assets again.** The permission check loaded the flag only when the requester was *not* the asset's uploader, but the rule that consults it also requires that they *are* — so in the one case it was meant to permit, the flag was never actually read and the delete was refused. Anyone holding that permission would have seen every attempt to remove their own global upload fail. Admins were unaffected, which is likely why it went unnoticed
+- **Cone and line templates now sweep around the square you pin them on.** Aiming one moved its own starting point, so rotating a cone made its tip jump between a few fixed spots rather than turning smoothly — and because the old snapping ignored *which way* the shape pointed, a cone or line aimed left came out of the square's right edge and cut back through the caster's own token. Exactly half of all directions were affected. The square you click is now a fixed pivot, and the point the shape leaves it from slides continuously around that square's edge to follow your aim: the middle of an edge along a row or column, the corner on a diagonal, always on the side you're aiming at. This also finishes the grid alignment started in 1.2.0, where the cone still snapped to the nearest intersection and sat half a square off centre. The cone's 53° spread is unchanged
+- **Esc now closes the area template tool, as the DM guide has always said it does.** Nothing was listening for it, so the only way out was to click the toolbar button again. Esc drops the placement, and a second press puts the tool away — the same two-stage escape the wall tools use. Aiming a template also no longer snaps back to pointing right when the cursor crosses onto the tool panel that sits over the map; it holds the direction you left it at
+- **A token with no image no longer shows a heart icon.** The token edit panel used a heart where the image should be, which read as "favourite" and gave no hint that the avatar is a button. It now shows a dashed circle with an upload icon, matching the empty image slot in the token template editor
+
+### Upgrading from 1.2.0
+
+`docker compose up -d --build`. No configuration changes.
+
+This release adds a database table, which the backend container applies on start — you don't run anything by hand. If the migration fails the backend refuses to start rather than serving against a half-updated database, so a broken upgrade is loud rather than silent.
+
+The change is additive and touches no existing data: one new table nothing previously read, and one new permission column that defaults to off. **Nobody gains the template editor permission on upgrade** — an admin grants it per user. Your characters, campaigns, maps and creatures are untouched.
+
+As with any release that migrates, take a database dump first — migrations here are forward-only, so rolling back to 1.2.0 means restoring one:
+
+```bash
+./backend/scripts/backup.sh
+```
+
+---
+
+## [1.2.0] — 2026-08-22
+
+### Added
+
+- **Ping a location on the map with Tab.** Put the cursor where you mean and press Tab: a dot appears with rings radiating out of it, in your own colour and labelled with your name, visible to everyone at the table for about a second and a half. Every player gets a consistent colour automatically — there is nothing to configure and no migration. Tab only pings when the cursor is over the map and you aren't typing or tabbing between controls, so keyboard navigation is unaffected. Pings are drawn above dynamic lighting so pointing into an unlit area works, and repeat pings are rate-limited server-side. Under the OS *reduce motion* setting the rings hold still and simply fade
+- **The acting combatant's token is highlighted on the map.** During initiative, the token whose turn it is gets a pulsing gold ring, visible to everyone at the table — so it's obvious which of five identical goblins is up, without counting rows in the tracker. The ring is a gold band edged in black rather than a single colour, so it stays legible over any map image, light or dark. It respects the same visibility rules as the token itself: a creature hidden from players, or standing in unexplored fog, shows no ring on their screens, so an ambusher's position is never given away by their turn coming around. The operating system's *reduce motion* setting turns off the pulse and keeps the ring
+- **Hovering an initiative row highlights that token on the map, and vice versa.** Pointing at a name in the turn order draws a thin white outline around its token and lifts it slightly — quieter than the turn ring, and both can show at once. Hovering a token on the map tints its row in the tracker the same way. Works for players as well as the DM, is purely a pointer (it never selects or moves anything), and respects the same visibility rules, so hovering a hidden creature's row doesn't give its position away to players
+
+- **Creature saving throws and skills are worked out for you.** Instead of typing a number for each one, tick which saves and skills a creature is proficient or expert in and CozyVTT derives the bonus from its ability score and proficiency. A commoner with Wisdom 14 who is proficient in Perception gets **+4** — +2 Wisdom, +2 proficiency — and expertise doubles the proficiency to +6. All six saves and all eighteen skills are listed, so there is no longer a free-text field where a misspelling silently created a skill called "perceptoin". The proficiency bonus comes from Challenge Rating on the same scale a character's comes from level, and is shown with its source ("From CR 1/4"); changing an ability score or the CR updates every derived bonus at once. Homebrew is still possible: any row can be overridden by hand, and an override that its ability scores and CR cannot support is flagged rather than silently accepted. **Existing creatures keep their exact numbers** — an SRD Goblin opens already showing Stealth as expertise at its printed +6, and values that don't fit the rules, like the Night Hag's, are preserved as overrides
+
+### Changed
+
+- **Creature rolls now depend on your game system.** The right-click NPC roll menu applied D&D 5e maths to every campaign, so a Call of Cthulhu NPC was offered `1d20 + ability modifier` for a percentile game that has neither d20s nor ability modifiers, and a Shadowrun NPC the same for a dice-pool game. D&D 5e and Pathfinder 2e now each get their own correct treatment; Call of Cthulhu and Shadowrun offer the free-form **Custom Roll** input instead of confidently wrong dice, and are noted for a future release
+- **Pathfinder 2e creatures use Pathfinder's own structure.** PF2e stat blocks print final modifiers because creatures are built from level benchmark tables, not from proficiency ranks — so nothing is derived for them, unlike D&D 5e. PF2e creatures now show **Fortitude, Reflex and Will** rather than six ability saves, a **Level** rather than a Challenge Rating, and attribute **modifiers** rather than scores. Values are entered directly and never recalculated; a number far outside the usual range for the creature's level is flagged as a possible typo, nothing more
+- **The Creature Library now shows your campaign's game system by default.** Every campaign saw all ~320 D&D 5e SRD creatures regardless of system, so a Call of Cthulhu table browsed a list of dragons to find its own creatures. The library now defaults to the campaign's system, with an **All game systems** option in Filters for deliberately borrowing a stat block from elsewhere — worth keeping, since only D&D 5e ships SRD content. Creatures saved without a system recorded always appear either way, and the seeding button is now labelled **Import D&D 5e SRD** so it's clear what it fetches in a non-D&D campaign
+- **Challenge Rating is chosen from a list rather than typed.** It sets the proficiency bonus, so a typo used to silently change every derived save and skill
+- **Fog of war is now a box selection instead of a brush.** Drag over the map and the selection snaps to whole grid squares, showing its size (`4 × 7`) as you go, so you reveal exactly the area you meant — the circular brush it replaces caught neighbouring squares by accident, which on a fog tool means showing players a room they weren't supposed to see yet. Click a single square to toggle just that one, drag in any direction, and cancel a drag with Esc or a right-drag. **The brush and its size slider are gone.** Existing maps are unaffected: the fog data was always one cell per grid square, so revealed areas carry over exactly as they were
+
+### Fixed
+
+- **Editing a creature no longer deletes its saving throws and skills.** The creature editor rebuilt the stat block from the fields on screen, and it had no fields for saves or skills — so duplicating an SRD Goblin and renaming it silently removed its Stealth +6, which also removed the skill from the right-click roll menu with nothing to indicate anything had been lost. The same save also dropped XP and notes. Every field the form doesn't show is now carried through untouched
+- **A creature can no longer be given an impossible saving throw.** The creature endpoints accepted whatever they were sent — the only checks were that the name was a string and the stat block was an object — so a commoner could be stored with a +30 Wisdom save and the roll menu would faithfully roll `1d20+30`. Stat blocks are now validated on every write, on creature templates, token templates and campaign import alike
+- **Negative bonuses no longer display as `+-1`,** and multi-word skills read as "Sleight of Hand" rather than "SleightOfHand"
+- **Editing one creature straight after another no longer carries the first one's data across.** Clicking edit on a second creature while the editor was already open reused the open form without reloading it, so the new creature showed the previous one's name, ability scores and stats — and saving wrote them onto it. The same applied to token templates
+- **AoE templates now line up with the grid.** Cube, cone and line were anchored to the *centre* of the hovered square, so they sat half a square off — a 10 ft cube on a 5 ft grid straddled four squares instead of covering two. Each shape now snaps by the rule that puts its edges on grid lines: an even span centres on a grid intersection, an odd one on a square centre. A cube is also axis-aligned now rather than rotating toward the cursor, since a tilted square can't align to a square grid. A cone's point lands on an intersection, though its spreading edges still cross squares — that's the shape itself. Circle is unchanged, as it was already placed correctly
+
+- **Creature token images can be chosen from the asset library, not just uploaded.** Editing a custom or duplicated creature previously offered only **Upload**, so an image you had already uploaded couldn't be reused — the DM guide had described picking from your token assets for some time, but the screen never offered it. There is now a **Browse Assets** grid with search alongside **Upload New**
+- **Creature token images were broken even when uploaded.** The editor's preview pointed at `/api/assets/{id}/file`, an endpoint that has never existed, so the thumbnail silently 404'd. The same defect affected the token template library. Both now use the real serving route
+- **Changing a token's image updates the map immediately for everyone.** The canvas cached token images by token id alone, so a changed image kept rendering the old picture until the page was reloaded — for every player, not just the DM. The cache now also checks the image URL
+- **The NPC Quick Editor's close button is no longer pushed off the panel edge** by a long token name, and the token avatar in its header is larger and easier to see
+- **The initiative tracker no longer freezes after a WebSocket reconnect.** Its listener was attached to a socket instance that gets rebuilt on reconnect, so after a dropped connection the tracker silently kept showing whatever turn was current when the link went down. Combat state is now mirrored into the shared session store by a reconnect-aware subscription, and re-synced from the server each time the socket comes back
+
+### Documentation
+
+- **`docs/GAME_SYSTEMS.md` now covers creatures**, which it had never mentioned — it documented only the player-character pipeline, leaving the entirely separate creature model undocumented. Adds a section on the shared `NpcStatBlock` shape, the four places creature code branches on game system, and the decision a contributor has to make first: whether their system's creature values are *derived* (D&D 5e) or *printed as final* (Pathfinder 2e). Deriving values a system doesn't derive fabricates numbers that look authoritative. A new optional Step 11 covers adding creature support, and records that returning no roll options is a valid, correct outcome
+- Documented the creature stat block object and its validation bounds in the API reference, including the new `proficiencies`, `attributeModifiers` and `level` fields, and why save and skill keys are deliberately not enumerated
+- **Documented character templates** across the user guide (browsing, copying and the three ways to publish), the DM guide (preparing sheets before players join), the API reference (the five endpoints, the permission matrix and the global-image rule), and the deployment guide, which gained a **Per-User Permissions** section covering both Global Assets and Templates — neither had been described for operators
+- **Corrected the roadmap**, which still listed the global asset manager admin toggle as outstanding long after it shipped
+- Documented the asset deletion rules in the API reference — who may delete at each scope was only discoverable by reading the handler
+- **Documented the ruler and AoE Shape tools**, which had never been described in any guide despite being in the map toolbar. Covers how each template snaps to the grid, that a cone's angled edges will still cross squares by nature, and that template sizes follow the map's *feet per square* setting
+- Rewrote the DM guide's NPC roll and creature-library sections: the claim that skills show "only skills the stat block lists explicit bonuses for" no longer held, and there was nothing describing how to give a creature a proficiency. Adds the proficiency-bonus-by-CR table and what differs under Pathfinder 2e
+- Corrected the socket API reference for initiative, which still described the original name-based combatants (`{ name, initiative, hp? }`) years after they became token-based. Documented the `CombatState` payload while there
+- Corrected the DM guide's "Adding Combatants", which described typing a name, initiative and HP by hand rather than picking a token from the map
+- Corrected the README and user guide, which described admin logo/mascot/favicon **upload** as a shipped feature. The instance does honour custom images — they appear on the login page and across the app — but there is no upload screen yet, so the guide now explains how to change branding today (replace the images in `frontend/public/` and rebuild, or set the URLs through the settings API). The upload UI remains on the roadmap
+
+### Upgrading from 1.1.2
+
+`docker compose up -d --build` is all that is required — **no database migration, and no configuration changes.** Creature stat blocks are stored as JSON and every new field is optional, so existing creatures, tokens, token templates and campaign archives load unchanged.
+
+Your existing creatures keep their exact numbers. CozyVTT works backwards from each stored bonus to show the right proficiency checkboxes, so an SRD Goblin opens already showing Stealth as expertise at its printed +6 without anything being rewritten.
+
+One optional follow-up:
+
+- **Record proficiency on your seeded SRD creatures.** The editor infers it on the fly regardless, so this is a tidiness step rather than a fix. It writes the structure into the stored stat blocks so it doesn't have to be re-derived each time:
+
+  ```bash
+  # See what would change without writing anything
+  docker compose exec backend node dist/scripts/backfillCreatureProficiency.js --dry-run
+
+  # Apply it
+  docker compose exec backend node dist/scripts/backfillCreatureProficiency.js
+  ```
+
+  It only touches creatures with `source: 'srd'` — **your custom creatures are never read or written** — and it never changes a printed bonus, only records the reasoning behind it. Safe to run more than once; a second run reports everything as already done. Add `--verbose` for a per-creature breakdown. On a full SRD library expect roughly 212 of 322 creatures updated, with a handful of entries left as overrides where the published stat block doesn't follow the CR proficiency table (the Night Hag is one).
+
+---
+
+## [1.1.2] — 2026-08-21
+
+A readability and account-management release: text is legible on every theme, admins can invite users
+by email instead of handing out passwords, and the external-reverse-proxy documentation now describes
+a setup that actually works. No breaking changes and no database migration — update and restart.
+
+### Added
+
+- **Invite users by email.** With SMTP configured, admins can add someone from **Admin → Users → Invite User** by entering just an email address and role. The person receives a link, chooses their own password, and signs in — no password is ever generated, shown to the admin, or sent by email. Links are valid for 7 days, and an **Invite** button on any user who has never signed in sends a fresh one (invalidating the previous link). Instances without SMTP keep using Create User exactly as before
+
+### Fixed
+
+- **Text is now readable on every theme.** All 16 built-in themes failed the WCAG AA contrast minimum somewhere, despite the codebase claiming otherwise: muted text — the most common text color in the app — sat between 3.3:1 and 4.4:1 on 13 themes, accent-colored text dropped to 1.84:1 on Northern Frost, and headings fell to 2.6:1 on Shadow Realm. Measured across every theme, text role and surface, **141 unreadable combinations are now zero**, with the worst pairing anywhere improved from 1.71:1 to 4.50:1
+- **Screens now follow your theme.** Error, success and warning panels, status badges, NPC stat blocks and various inline messages were built from fixed colors, so on the dark themes they appeared as pale pink or washed-out boxes with near-invisible text. Roughly 850 hardcoded colors across 50 files now use theme-aware tokens
+- Stat blocks in the creature library and NPC editor used dark text with no background of their own, making them nearly unreadable on all four dark themes
+- The Pathfinder and Call of Cthulhu stat block accents never rendered at all — they were built from dynamic class names the styling system cannot generate
+- Faint labels and icons on character sheets (as low as 1.4:1) and unreadable hint text on the DM wall, light and fog control panels
+- **Admin-issued temporary passwords now stop working once used.** Accounts created or reset by an admin were flagged as needing a password change, and the login response even said so — but nothing acted on it, so the temporary password the admin had just seen kept working indefinitely and the user was never prompted. The flag is now enforced on the server: until the password is replaced, every API call except changing it is refused, WebSocket connections are declined, and the app sends the user straight to a change-password screen
+- Resetting a user's password from the admin panel now signs out that user's existing sessions, instead of leaving them browsing on a session created with the old password
+
+### Changed
+
+- Custom theme colors are now checked for readability: the theme picker shows the contrast ratio of each key text/background pair and flags anything below the 4.5:1 minimum, and derived text shades are adjusted automatically instead of being computed by fixed lightening steps that could produce unreadable results
+- The temporary password from **Create User** is no longer displayed to the admin when the welcome email was delivered successfully — it is shown only when there is no other way to hand it over (no SMTP, or the send failed)
+- Password requirement checklists are now defined once and shared by every screen that sets a password, so they cannot drift from what the server enforces
+
+### Documentation
+
+- **Fixed the external-reverse-proxy instructions, which described a setup that cannot work.** Removing the bundled `nginx` service leaves *nothing* publishing a port — the backend and frontend are `expose`-only — so the old "Option A" sent people's proxies at a closed port. The API then either failed outright (502 during setup) or, when a proxy pointed only at the frontend, returned the web page itself for every `/api` call, which made a brand-new install show the login page instead of the setup wizard. Option A now covers publishing both services on `127.0.0.1`, why the loopback prefix matters (and that Docker's published ports bypass UFW), and the routing every proxy must do
+- **New Cloudflare Tunnel section** covering all three working setups — keeping the bundled nginx (one ingress rule), running `cloudflared` as a container on CozyVTT's network, and running it on the host with path rules — including that ingress rules match in order so the catch-all must be last, and that `localhost` inside a container means the container itself
+- **New troubleshooting section**: fresh install showing the login page instead of the setup wizard, setup failing with 502, live features not updating, `git pull` blocked by local changes, and large uploads failing — each with the one-command check that identifies it
+- **New `docker-compose.override.example.yml`** and docs for keeping personal deployment tweaks in `docker-compose.override.yml`, which Compose merges automatically and git ignores, so `git pull` stops conflicting with local edits. Also documents the `git stash` workflow for anyone who edits `docker-compose.yml` directly
+- Corrected the health-check instructions — `/health` is served by the backend and is not forwarded by the bundled Nginx, so `curl http://localhost/health` never worked; the docs now use `docker compose exec`
+- `docker-compose.yml` header comments now list everything required to run without the bundled nginx (comments only — no configuration changes)
+
+### Upgrading from 1.1.1
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+No database migration, no configuration changes. Verified by upgrading a 1.1.1 instance in place:
+existing accounts sign in with their original passwords and are **not** forced to reset, campaigns,
+characters and uploaded files are untouched, and saved theme choices — including custom colors — carry
+over exactly.
+
+Two changes are visible immediately and are intentional:
+
+- Muted and accent-colored text shifts slightly (darker on light themes, lighter on dark ones) — that
+  text was below the readable minimum on most themes
+- Error, success and warning panels now tint with your theme instead of always being pale pink or green
+
+If your instance has SMTP configured, **Admin → Users** gains an **Invite User** button; if it doesn't,
+Create User behaves exactly as before.
+
+---
+
+## [1.1.1] — 2026-08-17
+
+A bug-fix release for two settings that looked configurable but weren't: upload size limits set in
+`.env`, and a creature's HP Max. No breaking changes, no database migration — update and restart.
+
+### Fixed
+
+- **Creature HP Max now saves.** Editing a custom creature's HP Max appeared to work but the value was never sent to the server, so reopening the creature always showed 10 again — hit points were not part of a creature stat block at all. HP is now stored with the creature, loaded back into the edit form, and used when placing the creature on a map (previously every creature placed as a 10 HP token regardless of its stat block)
+- **SRD monsters now carry their real hit points.** The SRD importer fetched each monster's HP and hit dice from Open5e and then discarded them. New imports include them, and re-running **Seed SRD** from the creature library backfills hit points onto SRD creatures already in your library — it only fills in the missing HP fields and never touches custom creatures. Stat blocks now display hit points alongside armor class
+- **Upload size limits set in `.env` are now actually applied.** `MAX_MAP_SIZE_MB`, `MAX_TOKEN_SIZE_MB`, `MAX_AUDIO_SIZE_MB`, and `MAX_AVATAR_SIZE_MB` were documented, passed into the container, and displayed in the admin panel — but never read: every limit was a hardcoded constant, so raising a limit had no effect and the admin panel reported values that didn't match `.env`. The backend now resolves all four at startup, the upload dialog and admin panel read the live values from the server, and the generic upload cap follows the largest configured limit (it previously capped *every* upload at 25 MB, below the documented 50 MB for maps)
+- Oversize uploads no longer produce the error "FILE files must be smaller than NaNMB"; the message now names the asset type and its real limit
+- Files dropped onto the upload dialog are validated against the asset type currently selected, not the one selected when the dialog opened
+- Avatars are checked against the server's avatar limit after cropping, instead of being rejected by the server after a 10 MB client-side check that never matched it
+
+### Changed
+
+- Default upload limits in code now match the documented defaults — MAP 50 MB and AUDIO 20 MB (previously 25 MB and 10 MB in code, while `.env.example`, the README, and the docs all advertised 50/20). Docker installs already passed these values, so only installs running without the environment variables see a change, and only as an increase
+- The bundled Nginx reads its `client_max_body_size` from the new **`NGINX_MAX_BODY_SIZE`** variable (default `55M`, i.e. today's behaviour), so a limit increase no longer requires editing `nginx/nginx.conf`. `docker-compose.yml` now mounts `nginx/nginx.conf` as an Nginx template; custom configs keep working unchanged
+- The backend logs its effective upload limits at startup, and warns when they exceed the proxy's body cap — including a note about Cloudflare's 100 MB cap on proxied requests (Tunnels included), which no application setting can raise
+- The upload dialog now shows the maximum size for the selected asset type up front, and the admin panel shows the body limit your reverse proxy needs
+
+### Added
+
+- `GET /api/config` — public endpoint returning the server's upload limits, so limit changes take effect on restart without rebuilding the frontend image
+- **`NGINX_MAX_BODY_SIZE`** environment variable (optional, defaults to `55M`) — sets the bundled Nginx request body cap without editing `nginx/nginx.conf`
+
+### Upgrading from 1.1.0
+
+`docker compose up -d --build` is all that is required — no migration, no configuration changes.
+
+Two optional follow-ups:
+- To give SRD monsters their hit points, open a campaign's creature library and click **Seed SRD**. It backfills HP onto the SRD creatures already in your library and leaves custom creatures alone.
+- If you raise a `MAX_*_SIZE_MB` above ~50 MB, also raise `NGINX_MAX_BODY_SIZE` (bundled Nginx) or your own proxy's body limit — the backend logs a warning at startup telling you the value it needs.
+
+---
+
 ## [1.1.0] — 2026-07-12
 
 A modernization release: faster and smoother real-time play, a redesigned resizable session workspace, a shared UI component layer, a hardened and restructured backend, and accessibility + polish throughout — with no breaking changes for existing installs.

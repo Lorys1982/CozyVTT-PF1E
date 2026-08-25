@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { CampaignProvider, useCampaign } from '@/contexts/CampaignContext';
 import { WebSocketProvider, useWebSocket } from '@/contexts/WebSocketContext';
 import { useGameStore } from '@/stores/gameStore';
+import { useInitiativeSync } from '@/hooks/useInitiativeSync';
 import {
   ArrowLeft,
   Loader2,
@@ -63,6 +64,12 @@ function CampaignPageContent() {
   const navigate = useNavigate();
   const { campaign, currentMap, loading, error, userRole, updateCampaignStatus, setActiveSession, refreshCurrentMap } = useCampaign();
   const { socket, reconnectCount, status } = useWebSocket();
+
+  // Mirror combat/initiative state into the game store. Owned here rather than
+  // by the initiative panel so both the tracker and the map's active-token
+  // ring read one source, and so the subscription survives the panel being
+  // collapsed or unmounted.
+  useInitiativeSync();
 
   // After a WebSocket reconnect, refetch the current map's state via REST.
   // The real-time stream only pushes deltas; any moves/wall edits/fog ops
@@ -175,7 +182,7 @@ function CampaignPageContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-soft-cream via-parchment to-warm-amber/20">
         <div className="text-center space-y-4">
-          <Loader2 className="w-12 h-12 text-moss-green animate-spin mx-auto" />
+          <Loader2 className="w-12 h-12 text-brand-ink animate-spin mx-auto" />
           <p className="text-stone-gray">Loading campaign...</p>
         </div>
       </div>
@@ -227,7 +234,7 @@ function CampaignPageContent() {
 
           <div className="h-6 w-px bg-moss-green/20" />
 
-          <h1 className="text-xl font-bold text-moss-green">
+          <h1 className="text-xl font-bold text-brand-ink">
             {campaign.name}
           </h1>
         </div>
@@ -238,9 +245,9 @@ function CampaignPageContent() {
 
           {/* Session status indicator (visible to all) */}
           {campaign.status === CampaignStatus.ACTIVE && (
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/20">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs font-medium text-green-700 hidden sm:inline">Live</span>
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-success/10 border border-success/20">
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-xs font-medium text-success-ink hidden sm:inline">Live</span>
             </div>
           )}
           {campaign.status === CampaignStatus.PAUSED && (
@@ -364,7 +371,7 @@ function CampaignPageContent() {
               <Suspense
                 fallback={
                   <div className="w-full h-full flex items-center justify-center" aria-live="polite" aria-label="Loading map">
-                    <Loader2 className="w-8 h-8 text-moss-green animate-spin" aria-hidden="true" />
+                    <Loader2 className="w-8 h-8 text-brand-ink animate-spin" aria-hidden="true" />
                   </div>
                 }
               >
@@ -473,7 +480,7 @@ function CampaignPageContent() {
       {/* Mobile Warning */}
       <div className="lg:hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
         <div className="card-cozy max-w-md text-center space-y-4">
-          <h2 className="text-xl font-bold text-moss-green">
+          <h2 className="text-xl font-bold text-brand-ink">
             Desktop Required
           </h2>
           <p className="text-stone-gray">

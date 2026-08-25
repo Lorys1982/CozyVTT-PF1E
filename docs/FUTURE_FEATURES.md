@@ -26,7 +26,7 @@ _Nothing in progress._
 - **Per-user default dice color** — surface a color in the dice picker so a player's rolls visually stand apart in chat. Needs: pass the color into the dice renderer (`DicePanel`, roll display in chat, socket roll payload metadata), then re-add the color picker on the profile page. Removed on 2026-04-27 pending the renderer wiring.
 - **Asset move-between-scopes UI** — the three-scope asset model (GLOBAL / USER / CAMPAIGN) is fully wired in the backend, but there's no UI for moving assets between scopes yet.
 - **Bulk character export as a ZIP** — exporting multiple characters currently downloads each one as a separate file. Bundling them into a single ZIP (e.g. via JSZip) would be tidier. See the multi-character export path in `frontend/src/utils/character-export.ts`.
-- **Global asset manager toggle (admin)** — the backend permission is already live; the admin UI needs to expose the toggle.
+- **Merge the hardcoded starter templates into the character template library** — `backend/src/utils/character-templates/` holds four presets per system as source constants, served by `GET /api/characters/templates/:system/:name`, while user-published templates now live in the database. Two systems for one idea. Folding the presets in as seeded, admin-owned rows would leave one browsable list and one endpoint. Note `getTemplatesForGameSystem`, `getAllTemplates` and `getBlankTemplate` in that directory are already dead code with no callers; `getBlankCharacterTemplate` in `validators/game-systems/index.ts` is the one still in use.
 - **Shadowrun 6E character sheet** — the backend (types, validation, templates) is complete, but the frontend sheet is still a placeholder and the system is hidden from the creation dropdown until it's finished. See `docs/GAME_SYSTEMS.md`.
 - **NPC chatbot / asset generation (AI)** — No code yet. The `@anthropic-ai/sdk` dependency was removed before v1.0.0 launch (it was installed but unused, and shipping it left an open `npm audit` finding). When this feature work begins, re-add the current major of the SDK and introduce `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` env vars at the same time so they enter the codebase together rather than sitting around as dead config.
 - **Admin upload UI for instance branding (logo / favicon / mascot)** — backend already accepts `customLogoUrl` / `customFaviconUrl` / `customMascotUrl` on `SystemSettings`, and `ThemeContext` reads them and dynamically swaps the favicon when set. What's missing is a file-upload form on the Admin → Appearance tab so an instance operator can swap branding at runtime without redeploy. Until then, operators replace the defaults at `frontend/public/default-logo.png` and `frontend/public/default-mascot.png` and rebuild.
@@ -38,12 +38,22 @@ _Nothing in progress._
 
 ### Polish / tech debt
 
-- _(add items here as they come up)_
+- **Call of Cthulhu 7e and Shadowrun 6e creature stat blocks.** Creature rolls are
+  now dispatched per game system, and these two deliberately offer nothing rather
+  than the wrong dice — a d100 game and a dice-pool game have no d20 rolls,
+  ability modifiers or proficiency bonus to compute from. Their NPC tokens fall
+  back to the free-form custom roll input, which works but leaves the DM doing
+  the arithmetic. Doing this properly means a per-system creature shape:
+  characteristics and percentile skill values for CoC, attribute + skill dice
+  pools and limits for Shadowrun, plus their own stat block editors and viewers.
+  Neither has SRD seed data to test against. See the "Creature and NPC stat
+  blocks" section of `docs/GAME_SYSTEMS.md` for where the branch points are.
 
 ---
 
 ## Shipped
 
+- **2026-08-23 — Global asset manager toggle (admin).** Was listed as outstanding long after it shipped; the pill toggle is in the user table on the admin panel, beside the new Templates one.
 - **2026-04-26 — Per-user theme preferences.** Theme + font picker moved from admin-only to per-user (profile page). Admin theme becomes the public-page / new-user default. Bug fix: themes now persist across logout/login.
 - **2026-04-26 — DM right-click NPC token rolls.** DMs can now right-click an NPC token to roll abilities, saves, skills, attacks, and damage parsed from the stat block. Includes a free-form custom roll fallback for tokens without stat blocks or non-d20 systems. D&D 5e gets full roll math; other systems get the custom roll path.
 - **2026-04-26 — Token templates can edit stat blocks.** The Token Templates editor now mounts the full `StatBlockEditor` for NPC-type templates, matching the live token edit panel.

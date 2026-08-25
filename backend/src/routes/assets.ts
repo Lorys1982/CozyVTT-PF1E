@@ -566,9 +566,17 @@ router.delete('/:id', authenticated, async (req: AuthenticatedRequest, res: Resp
     const isOwner = asset.uploadedById === userId;
     const isAdmin = req.session.platformRole === 'ADMIN';
 
-    // globalAssetManager requires a DB read (not stored in session)
+    // globalAssetManager requires a DB read (not stored in session). Read it
+    // whenever it could still change the answer: a GLOBAL asset where the
+    // requester is not already an admin.
+    //
+    // This guard used to skip the read for the owner (`!isAdmin && !isOwner`),
+    // but the only rule that consults the flag also requires ownership — so for
+    // an owner it stayed false and a global asset manager could never delete
+    // their own global asset. Same lazy-read shape as the scope-change handler
+    // below, which has always been correct.
     let isGlobalAssetManager = false;
-    if (!isAdmin && !isOwner) {
+    if (!isAdmin && asset.scope === 'GLOBAL') {
       const userRecord = await prisma.user.findUnique({
         where: { id: userId },
         select: { globalAssetManager: true },

@@ -14,26 +14,34 @@ No technical knowledge required. Let's go.
 4. [The Campaign Page](#the-campaign-page)
 5. [Chat and Dice](#chat-and-dice)
 6. [Moving Your Token](#moving-your-token)
-7. [The Initiative Tracker](#the-initiative-tracker)
-8. [The Vibe Tracker](#the-vibe-tracker)
-9. [Managing Your Characters](#managing-your-characters)
-10. [Your Profile](#your-profile)
-11. [Quick Reference](#quick-reference)
+7. [Measuring and Spell Areas](#measuring-and-spell-areas)
+8. [The Initiative Tracker](#the-initiative-tracker)
+9. [The Vibe Tracker](#the-vibe-tracker)
+10. [Managing Your Characters](#managing-your-characters)
+11. [Your Profile](#your-profile)
+12. [Quick Reference](#quick-reference)
 
 ---
 
 ## Getting Your Account
 
-Your platform administrator (or your DM, if they're also the admin) will create an account for you and send you login credentials. You'll receive:
+Your platform administrator (or your DM, if they're also the admin) sets up your account. Depending on how their instance is configured, you'll get one of two things by email.
 
-- The URL for your CozyVTT instance
-- Your email address
-- A temporary password
+**If you receive an invitation link** (most common):
 
-**First login:**
+1. Click **Accept Invitation** in the email
+2. Choose your own password — nobody else ever sees it
+3. Sign in with your email and that password
+
+The link is valid for **7 days**. If it expires, ask your administrator to send another.
+
+**If you receive a temporary password instead:**
+
 1. Go to the CozyVTT URL
-2. Log in with your email and temporary password
-3. You'll be prompted to change your password — pick something you'll actually remember
+2. Sign in with your email and the temporary password
+3. You'll be asked immediately to choose your own password — this is required, and until you do, the temporary one won't get you anywhere else in the app
+
+Either way you end up with a password only you know. Pick something you'll actually remember.
 
 *Screenshot pending — Login page.*
 
@@ -213,6 +221,35 @@ Your movement is visible to everyone in real time — your party can watch you c
 
 If your token is missing or in the wrong place, just let your DM know in chat — they can adjust it.
 
+### Why parts of the map are dark
+
+Most of the map usually starts hidden. That's **fog of war**, and it's how your DM keeps a dungeon from being a spoiler — you see a room when you get there, not before.
+
+Areas open up as you explore. If your DM is using **dynamic lighting** as well, what you can see also depends on where your character is standing and which walls are in the way, so the view shifts as you move.
+
+Two things worth knowing:
+
+- **Creatures standing in hidden areas are invisible to you** — including their tokens, and including their turn marker during combat. If the initiative tracker shows a creature you can't find on the map, that's deliberate. Something is out there.
+- **You can't reveal fog yourself.** Only the DM can, so there's nothing you can accidentally break by moving around.
+
+---
+
+## Measuring and Spell Areas
+
+Two tools in the toolbar above the map answer "can I actually reach that?" before you commit to a turn. Both are private — they draw on your screen only, so nobody sees you working out whether the fireball catches your own party.
+
+**Ruler** (the ruler icon) — measures from **your own token**, so there's nothing to click: turn it on and move the cursor, and the distance in feet follows, using the map's scale and its diagonal rule. If your DM hasn't placed your token on the map yet, the ruler has nothing to measure from and won't draw.
+
+**AoE Shape** (the lightning icon) — draws a spell area. Pick **Circle**, **Cone**, **Line** or **Cube**, set the size in feet or use one of the presets, and move the cursor to position it.
+
+For a cone or a line, **click your own token first**. That square becomes the pivot, and moving the cursor swings the shape around it — the point it comes out of slides around the square's edge to follow your aim, so it always leaves on the side you're pointing and never cuts back across you. Keep turning until you can see what the attack catches.
+
+For something you cast at a distance rather than from yourself — a wall of fire, say — hold **Alt** while clicking. That drops the grid snapping and pins the shape exactly where you clicked, and it turns about that point instead.
+
+Press **Esc** to drop the placement, and again to put the tool away.
+
+Shapes cover whole squares wherever the grid allows it. A cone's spreading edges are at an angle so they'll still clip across squares — that's the shape, not a bug. Judge the edge cases the way you would at the table, and if it matters, ask your DM.
+
 ---
 
 ## The Initiative Tracker
@@ -227,6 +264,25 @@ You'll see:
 - **HP** for each combatant (updating in real time)
 
 When it's your turn, your name is highlighted. Describe your actions in chat and move your token on the map.
+
+**Watch the map, too.** Whoever's turn it is gets a pulsing gold ring around their token. That's the fastest way to tell which creature is acting when the DM has several of the same monster on the board — three identical wolves look alike in the list, but only one is ringed on the map.
+
+If a creature is hidden or somewhere you haven't explored, you won't see a ring for it — the tracker will show its turn passing, but its position stays a mystery.
+
+**Not sure which wolf is which?** Hover a name in the tracker and that creature's token lights up on the map with a thin white outline. It works the other way too — hover a token on the map and its row in the turn order tints. Hovering only points; it never selects or moves anything.
+
+### Pointing at the Map
+
+Saying "no, the *other* door" never works. Instead, put your mouse where you mean and press **Tab**. A dot appears with rings radiating out of it, in your colour and labelled with your name, and everyone at the table sees it in the same spot for a couple of seconds.
+
+A few things worth knowing:
+
+- **Your mouse has to be over the map.** Tab does nothing if the cursor is over the chat panel or the sidebar.
+- **Tab still works normally everywhere else.** If you're typing in chat, or you've tabbed your way to a button, Tab keeps moving between controls as usual — it only pings when you're not in the middle of something.
+- **Anyone can ping**, players and DM alike. Your colour is assigned automatically and stays the same every session.
+- Pings are just a gesture. They don't move anything, don't reveal anything, and vanish on their own.
+
+If you ping repeatedly in quick succession, some will be quietly ignored — that's a spam guard, not a bug.
 
 The DM controls when initiative advances — after your turn, they'll click "Next" and the focus moves to the next combatant.
 
@@ -350,6 +406,10 @@ The **Themes** section of your profile lets you pick the color theme and font *y
 |--------|---------|
 | Save character | Ctrl/Cmd + S (in Character Editor) |
 | Send chat message | Enter |
+| New line in chat without sending | Shift + Enter |
+| Ping the map | Tab (cursor over the map) |
+| Place a spell area off the grid | Alt + click (AoE tool) |
+| Drop a placement / close the tool | Esc |
 
 ### Common Questions
 

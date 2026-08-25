@@ -37,6 +37,7 @@ import {
   AlertCircle,
   Layers,
   Globe,
+  FileText,
   User as UserIcon,
   MapPin,
   FileAudio,
@@ -87,6 +88,15 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
+/**
+ * Body size a reverse proxy must accept: the largest upload limit plus a few MB
+ * of multipart overhead (mirrors UPLOAD_OVERHEAD_BYTES in the backend).
+ */
+function requiredProxyBodyMB(uploadLimits: Record<string, number>): number {
+  const largest = Math.max(...Object.values(uploadLimits));
+  return Math.ceil((largest + 5 * 1024 * 1024) / (1024 * 1024));
+}
+
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '\u2014';
   return new Date(dateStr).toLocaleDateString(undefined, {
@@ -131,10 +141,10 @@ function formatDuration(ms: number): string {
 }
 
 const LOG_LEVEL_COLORS: Record<string, string> = {
-  INFO: 'bg-blue-100 text-blue-700',
-  WARNING: 'bg-amber-100 text-amber-700',
-  ERROR: 'bg-red-100 text-red-700',
-  CRITICAL: 'bg-red-200 text-red-900 font-bold',
+  INFO: 'bg-info/10 text-info-ink',
+  WARNING: 'bg-warning/10 text-warning-ink',
+  ERROR: 'bg-danger/10 text-danger-ink',
+  CRITICAL: 'bg-danger/20 text-danger-ink font-bold',
 };
 
 type Tab = 'dashboard' | 'users' | 'settings' | 'appearance' | 'activity' | 'backups' | 'assets';
@@ -188,6 +198,12 @@ export default function AdminPage() {
   const [createUserError, setCreateUserError] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserPasswordCopied, setNewUserPasswordCopied] = useState(false);
+  // 'create' generates a temporary password; 'invite' emails a set-password link
+  const [createUserMode, setCreateUserMode] = useState<'create' | 'invite'>('create');
+  // Success message shown after an invite or an emailed create
+  const [createUserSuccess, setCreateUserSuccess] = useState('');
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
+  const [resendInviteResult, setResendInviteResult] = useState<{ id: string; message: string } | null>(null);
 
   // MFA reset per-row (inline confirm)
   const [resetMfaConfirmId, setResetMfaConfirmId] = useState<string | null>(null);
@@ -268,6 +284,7 @@ export default function AdminPage() {
 
   // ---- Global Asset Manager toggle ----
   const [togglingGlobalAssets, setTogglingGlobalAssets] = useState<string | null>(null);
+  const [togglingTemplateEditor, setTogglingTemplateEditor] = useState<string | null>(null);
 
   // ---- Delete user — asset warning ----
   const [deletingUserAssetCount, setDeletingUserAssetCount] = useState<number>(0);
@@ -409,6 +426,8 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'dashboard' && !stats && !statsLoading) loadStats();
     if (activeTab === 'users' && users.length === 0 && !usersLoading) loadUsers();
+    // The Users tab needs smtp.configured to decide whether inviting is possible
+    if (activeTab === 'users' && !serverConfig && !configLoading) loadServerConfig();
     if (activeTab === 'settings' || activeTab === 'appearance') {
       if (!settings && !settingsLoading) loadSettings();
       if (activeTab === 'settings' && !serverConfig && !configLoading) loadServerConfig();
@@ -435,6 +454,25 @@ export default function AdminPage() {
   // ============================================
   // User management actions
   // ============================================
+
+  const handleToggleTemplateEditor = async (u: User) => {
+    setTogglingTemplateEditor(u.id);
+    const next = !u.templateEditor;
+    // Optimistic update
+    setUsers(prev => prev.map(x => x.id === u.id ? { ...x, templateEditor: next } : x));
+    try {
+      const updated = await adminService.updateUser(u.id, { templateEditor: next });
+      setUsers(prev => prev.map(x => x.id === u.id ? updated : x));
+      showToast(`Template editing ${next ? 'enabled' : 'disabled'} for ${u.displayName}`, 'success');
+    } catch (err: unknown) {
+      // Revert on error
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, templateEditor: !next } : x));
+      const e = err as { response?: { data?: { message?: string } } };
+      showToast(e.response?.data?.message ?? 'Failed to update permission', 'error');
+    } finally {
+      setTogglingTemplateEditor(null);
+    }
+  };
 
   const handleToggleGlobalAssets = async (u: User) => {
     setTogglingGlobalAssets(u.id);
@@ -569,18 +607,53 @@ export default function AdminPage() {
     setCreatingUser(true);
     setCreateUserError('');
     try {
-      const { user: newUser, temporaryPassword } = await adminService.createUser({
+      const payload = {
         email: createUserForm.email.trim(),
         displayName: createUserForm.displayName.trim() || undefined,
         platformRole: createUserForm.platformRole,
-      });
-      setNewUserPassword(temporaryPassword);
-      setUsers(prev => [newUser, ...prev]);
+      };
+
+      if (createUserMode === 'invite') {
+        const { user: newUser, expiresInDays } = await adminService.inviteUser(payload);
+        setCreateUserSuccess(
+          `Invitation sent to ${newUser.email}. The link expires in ${expiresInDays} days.`
+        );
+        setUsers(prev => [newUser, ...prev]);
+      } else {
+        const { user: newUser, emailSent, temporaryPassword } = await adminService.createUser(payload);
+        if (emailSent) {
+          // The user has their password by email; the admin doesn't need it
+          setCreateUserSuccess(`User created. Sign-in details were emailed to ${newUser.email}.`);
+        } else {
+          setNewUserPassword(temporaryPassword ?? '');
+        }
+        setUsers(prev => [newUser, ...prev]);
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { message?: string } } };
-      setCreateUserError(e.response?.data?.message ?? 'Failed to create user');
+      setCreateUserError(
+        e.response?.data?.message ??
+          (createUserMode === 'invite' ? 'Failed to send invitation' : 'Failed to create user')
+      );
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleResendInvite = async (userId: string) => {
+    setResendingInviteId(userId);
+    setResendInviteResult(null);
+    try {
+      const { message } = await adminService.resendInvite(userId);
+      setResendInviteResult({ id: userId, message });
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { message?: string } } };
+      setResendInviteResult({
+        id: userId,
+        message: e.response?.data?.message ?? 'Failed to resend invitation',
+      });
+    } finally {
+      setResendingInviteId(null);
     }
   };
 
@@ -590,6 +663,7 @@ export default function AdminPage() {
     setCreateUserError('');
     setNewUserPassword('');
     setNewUserPasswordCopied(false);
+    setCreateUserSuccess('');
   };
 
   const handleResetMfa = async (userId: string) => {
@@ -787,13 +861,13 @@ export default function AdminPage() {
               <button
                 onClick={() => navigate('/dashboard')}
                 aria-label="Back to Dashboard"
-                className="flex items-center gap-1 text-sm text-warm-gray hover:text-moss-green transition-colors"
+                className="flex items-center gap-1 text-sm text-warm-gray hover:text-brand-ink transition-colors"
               >
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                 Dashboard
               </button>
               <div>
-                <h1 className="text-2xl font-bold text-moss-green font-heading flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-brand-ink font-heading flex items-center gap-2">
                   <Shield className="w-6 h-6" aria-hidden="true" />
                   Admin Panel
                 </h1>
@@ -802,7 +876,7 @@ export default function AdminPage() {
             </div>
             <span className="text-sm text-warm-gray">
               Signed in as{' '}
-              <span className="font-medium text-moss-green">{user?.displayName}</span>
+              <span className="font-medium text-brand-ink">{user?.displayName}</span>
             </span>
           </div>
 
@@ -819,8 +893,8 @@ export default function AdminPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
                     activeTab === tab.id
-                      ? 'bg-paper text-moss-green border border-b-paper border-moss-green/20 -mb-px'
-                      : 'text-warm-gray hover:text-moss-green hover:bg-paper/50'
+                      ? 'bg-paper text-brand-ink border border-b-paper border-moss-green/20 -mb-px'
+                      : 'text-warm-gray hover:text-brand-ink hover:bg-paper/50'
                   }`}
                 >
                   <span aria-hidden="true">{tab.icon}</span>
@@ -839,7 +913,7 @@ export default function AdminPage() {
         {activeTab === 'dashboard' && (
           <div role="tabpanel" id="tabpanel-dashboard" aria-labelledby="tab-dashboard">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-moss-green">System Overview</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">System Overview</h2>
               <Button
                 onClick={loadStats}
                 disabled={statsLoading}
@@ -851,7 +925,7 @@ export default function AdminPage() {
             </div>
 
             {statsError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 text-sm">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 mb-6 text-sm">
                 {statsError}
               </div>
             )}
@@ -875,58 +949,58 @@ export default function AdminPage() {
                 {/* Stat Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
-                    <Users className="w-7 h-7 text-moss-green mb-2" />
-                    <p className="text-3xl font-bold text-moss-green">{stats?.userCount ?? '\u2014'}</p>
+                    <Users className="w-7 h-7 text-brand-ink mb-2" />
+                    <p className="text-3xl font-bold text-brand-ink">{stats?.userCount ?? '\u2014'}</p>
                     <p className="text-xs text-warm-gray mt-1">Users</p>
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
                     <FolderOpen className="w-7 h-7 text-warm-amber mb-2" />
-                    <p className="text-3xl font-bold text-moss-green">{stats?.campaignCount ?? '\u2014'}</p>
+                    <p className="text-3xl font-bold text-brand-ink">{stats?.campaignCount ?? '\u2014'}</p>
                     <p className="text-xs text-warm-gray mt-1">Campaigns</p>
                     {stats && (
-                      <p className="text-xs text-green-600 mt-0.5">{stats.activeCampaignCount} active</p>
+                      <p className="text-xs text-success-ink mt-0.5">{stats.activeCampaignCount} active</p>
                     )}
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
-                    <CalendarDays className="w-7 h-7 text-blue-500 mb-2" />
-                    <p className="text-3xl font-bold text-moss-green">{stats?.sessionCount ?? '\u2014'}</p>
+                    <CalendarDays className="w-7 h-7 text-info-ink mb-2" />
+                    <p className="text-3xl font-bold text-brand-ink">{stats?.sessionCount ?? '\u2014'}</p>
                     <p className="text-xs text-warm-gray mt-1">Sessions</p>
                     {stats && (
-                      <p className="text-xs text-green-600 mt-0.5">{stats.activeSessionCount} live</p>
+                      <p className="text-xs text-success-ink mt-0.5">{stats.activeSessionCount} live</p>
                     )}
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
-                    <BookUser className="w-7 h-7 text-indigo-500 mb-2" />
-                    <p className="text-3xl font-bold text-moss-green">{stats?.characterCount ?? '\u2014'}</p>
+                    <BookUser className="w-7 h-7 text-info-ink mb-2" />
+                    <p className="text-3xl font-bold text-brand-ink">{stats?.characterCount ?? '\u2014'}</p>
                     <p className="text-xs text-warm-gray mt-1">Characters</p>
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
                     <Database className="w-7 h-7 text-teal-500 mb-2" />
-                    <p className="text-3xl font-bold text-moss-green">{stats?.mapCount ?? '\u2014'}</p>
+                    <p className="text-3xl font-bold text-brand-ink">{stats?.mapCount ?? '\u2014'}</p>
                     <p className="text-xs text-warm-gray mt-1">Maps</p>
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
-                    <Database className="w-7 h-7 text-purple-500 mb-2" />
-                    <p className="text-2xl font-bold text-moss-green break-all">
+                    <Database className="w-7 h-7 text-spirit-ink mb-2" />
+                    <p className="text-2xl font-bold text-brand-ink break-all">
                       {stats ? formatBytes(stats.totalStorageBytes) : '\u2014'}
                     </p>
                     <p className="text-xs text-warm-gray mt-1">Storage</p>
                   </div>
 
                   <div className="glass-panel p-5 flex flex-col items-center text-center">
-                    <Shield className="w-7 h-7 text-green-500 mb-2" />
-                    <p className="text-sm font-bold text-green-600">Healthy</p>
+                    <Shield className="w-7 h-7 text-success-ink mb-2" />
+                    <p className="text-sm font-bold text-success-ink">Healthy</p>
                     <p className="text-xs text-warm-gray mt-1">Status</p>
                     <div className="mt-2 space-y-1 text-left w-full">
                       {[['API', true], ['DB', true], ['WS', true]].map(([label, ok]) => (
                         <div key={String(label)} className="flex items-center justify-between text-xs">
                           <span className="text-stone-gray">{label}</span>
-                          <span className={ok ? 'text-green-600' : 'text-red-500'}>&#9679;</span>
+                          <span className={ok ? 'text-success-ink' : 'text-danger-ink'}>&#9679;</span>
                         </div>
                       ))}
                     </div>
@@ -938,7 +1012,7 @@ export default function AdminPage() {
                   <section className="glass-panel overflow-hidden">
                     <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
                       <FolderOpen className="w-4 h-4 text-warm-amber" />
-                      <h3 className="font-semibold text-moss-green text-sm">Asset Breakdown</h3>
+                      <h3 className="font-semibold text-brand-ink text-sm">Asset Breakdown</h3>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -982,10 +1056,22 @@ export default function AdminPage() {
         {activeTab === 'users' && (
           <div role="tabpanel" id="tabpanel-users" aria-labelledby="tab-users">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-moss-green">User Management</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">User Management</h2>
               <div className="flex items-center gap-2">
+                {/* Only offered when email can actually be delivered — the
+                    invitation link is the sole way into an invited account */}
+                {serverConfig?.smtp.configured && (
+                  <Button
+                    onClick={() => { setCreateUserMode('invite'); setCreateUserOpen(true); }}
+                    className="flex items-center gap-2 text-sm py-1.5 px-3"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    Invite User
+                  </Button>
+                )}
                 <Button
-                  onClick={() => setCreateUserOpen(true)}
+                  onClick={() => { setCreateUserMode('create'); setCreateUserOpen(true); }}
+                  variant={serverConfig?.smtp.configured ? 'secondary' : 'primary'}
                   className="flex items-center gap-2 text-sm py-1.5 px-3"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
@@ -1003,7 +1089,7 @@ export default function AdminPage() {
             </div>
 
             {usersError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4 text-sm">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 mb-4 text-sm">
                 {usersError}
               </div>
             )}
@@ -1062,7 +1148,7 @@ export default function AdminPage() {
                                 {/* User */}
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-moss-green/20 flex items-center justify-center text-moss-green font-medium text-xs flex-shrink-0">
+                                    <div className="w-8 h-8 rounded-full bg-moss-green/20 flex items-center justify-center text-brand-ink font-medium text-xs flex-shrink-0">
                                       {u.displayName.charAt(0).toUpperCase()}
                                     </div>
                                     <span className="font-medium text-stone-gray">{u.displayName}</span>
@@ -1070,7 +1156,7 @@ export default function AdminPage() {
                                       <span className="text-xs text-warm-gray">(you)</span>
                                     )}
                                     {isPending && (
-                                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">Pending</span>
+                                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-warning/10 text-warning-ink font-medium">Pending</span>
                                     )}
                                   </div>
                                 </td>
@@ -1085,7 +1171,7 @@ export default function AdminPage() {
                                       title={isSelf ? 'Cannot change your own role' : 'Click to toggle role'}
                                       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
                                         u.platformRole === PlatformRole.ADMIN
-                                          ? 'bg-moss-green/20 text-moss-green hover:bg-moss-green/30'
+                                          ? 'bg-moss-green/20 text-brand-ink hover:bg-moss-green/30'
                                           : 'bg-warm-gray/20 text-warm-gray hover:bg-warm-gray/30'
                                       } ${isSelf ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
                                     >
@@ -1111,28 +1197,69 @@ export default function AdminPage() {
                                         Global Assets
                                       </button>
                                     )}
+                                    {/* Template editor toggle — only for non-admin users */}
+                                    {u.platformRole !== PlatformRole.ADMIN && (
+                                      <button
+                                        onClick={() => !isSelf && togglingTemplateEditor !== u.id && handleToggleTemplateEditor(u)}
+                                        disabled={isSelf || togglingTemplateEditor === u.id}
+                                        title="Can edit and delete anyone's character template"
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                                          u.templateEditor
+                                            ? 'bg-spirit-purple/20 text-spirit-purple hover:bg-spirit-purple/30'
+                                            : 'bg-warm-gray/10 text-warm-gray/60 hover:bg-warm-gray/20'
+                                        } ${isSelf ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
+                                      >
+                                        {togglingTemplateEditor === u.id
+                                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                                          : <FileText className="w-3 h-3" />
+                                        }
+                                        Templates
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                                 {/* MFA */}
                                 <td className="px-4 py-3">
-                                  <span className={`text-xs font-medium ${u.mfaEnabled ? 'text-green-600' : 'text-warm-gray'}`}>
+                                  <span className={`text-xs font-medium ${u.mfaEnabled ? 'text-success-ink' : 'text-warm-gray'}`}>
                                     {u.mfaEnabled ? 'Enabled' : 'Off'}
                                   </span>
                                 </td>
                                 {/* Joined */}
                                 <td className="px-4 py-3 text-warm-gray text-xs">{formatDate(u.createdAt)}</td>
                                 {/* Last Login */}
-                                <td className="px-4 py-3 text-warm-gray text-xs">{formatDate(u.lastLoginAt)}</td>
+                                <td className="px-4 py-3 text-warm-gray text-xs">
+                                  {u.lastLoginAt ? (
+                                    formatDate(u.lastLoginAt)
+                                  ) : (
+                                    <span className="inline-flex items-center rounded-full bg-warm-amber/15 text-warm-amber px-2 py-0.5 text-[10px] font-medium">
+                                      Never signed in
+                                    </span>
+                                  )}
+                                </td>
                                 {/* Actions */}
                                 <td className="px-4 py-3">
                                   <div className="flex items-center justify-end gap-1.5">
+                                    {/* Resend invite — only useful before a first sign-in */}
+                                    {!u.lastLoginAt && serverConfig?.smtp.configured && (
+                                      <button
+                                        onClick={() => handleResendInvite(u.id)}
+                                        disabled={resendingInviteId === u.id}
+                                        title="Email a fresh invitation link (invalidates any previous one)"
+                                        className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-moss-green/30 text-brand-ink hover:bg-moss-green/5 transition-colors disabled:opacity-50"
+                                      >
+                                        {resendingInviteId === u.id
+                                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                                          : <Mail className="w-3 h-3" />}
+                                        Invite
+                                      </button>
+                                    )}
                                     {/* Approve — only when pending */}
                                     {isPending && (
                                       <button
                                         onClick={() => handleApproveUser(u.id)}
                                         disabled={isApproving}
                                         title="Approve this account"
-                                        className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-green-300 text-green-700 hover:bg-green-50 transition-colors disabled:opacity-50"
+                                        className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-success/30 text-success-ink hover:bg-success/10 transition-colors disabled:opacity-50"
                                       >
                                         {isApproving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                                         Approve
@@ -1157,7 +1284,7 @@ export default function AdminPage() {
                                         className={`text-xs py-1 px-2 flex items-center gap-1 rounded border transition-colors ${
                                           isSelf
                                             ? 'opacity-40 cursor-not-allowed border-warm-gray/20 text-warm-gray'
-                                            : 'border-amber-200 text-amber-700 hover:bg-amber-50'
+                                            : 'border-warning/30 text-warning-ink hover:bg-warning/10'
                                         }`}
                                       >
                                         <Shield className="w-3 h-3" />
@@ -1198,7 +1325,7 @@ export default function AdminPage() {
                                       className={`text-xs py-1 px-2 flex items-center gap-1 rounded border transition-colors ${
                                         isSelf
                                           ? 'opacity-40 cursor-not-allowed border-warm-gray/20 text-warm-gray'
-                                          : 'border-red-200 text-red-600 hover:bg-red-50'
+                                          : 'border-danger/30 text-danger-ink hover:bg-danger/10'
                                       }`}
                                     >
                                       {loadingDeleteWarning === u.id
@@ -1212,23 +1339,23 @@ export default function AdminPage() {
 
                               {/* MFA Reset Inline Confirm */}
                               {isMfaConfirm && (
-                                <tr className="bg-amber-50/60 border-b border-warm-gray/10">
+                                <tr className="bg-warning/10 border-b border-warm-gray/10">
                                   <td colSpan={7} className="px-6 py-4">
                                     <div className="max-w-md">
-                                      <p className="text-sm font-medium text-amber-800 mb-1">
+                                      <p className="text-sm font-medium text-warning-ink mb-1">
                                         Reset MFA for <strong>{u.displayName}</strong>?
                                       </p>
-                                      <p className="text-xs text-amber-700 mb-3">
+                                      <p className="text-xs text-warning-ink mb-3">
                                         This clears their authenticator app enrollment. They will need to re-enroll on next login.
                                       </p>
                                       {resetMfaError && (
-                                        <p className="text-xs text-red-600 mb-2">{resetMfaError}</p>
+                                        <p className="text-xs text-danger-ink mb-2">{resetMfaError}</p>
                                       )}
                                       <div className="flex items-center gap-2">
                                         <button
                                           onClick={() => handleResetMfa(u.id)}
                                           disabled={isResettingMfa}
-                                          className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                                          className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-medium bg-warning text-white hover:bg-warning disabled:opacity-50 transition-colors"
                                         >
                                           {isResettingMfa && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                                           Confirm Reset
@@ -1245,9 +1372,17 @@ export default function AdminPage() {
                                 </tr>
                               )}
 
+                              {/* Resend invite result */}
+                              {resendInviteResult?.id === u.id && (
+                                <tr className="bg-moss-green/5 border-b border-warm-gray/10">
+                                  <td colSpan={7} className="px-6 py-2">
+                                    <p className="text-xs text-stone-gray">{resendInviteResult.message}</p>
+                                  </td>
+                                </tr>
+                              )}
                               {/* Reset Password Inline Panel */}
                               {isResetExpanded && (
-                                <tr className="bg-blue-50/50 border-b border-warm-gray/10">
+                                <tr className="bg-info/10 border-b border-warm-gray/10">
                                   <td colSpan={7} className="px-6 py-4">
                                     <div className="max-w-md">
                                       <p className="text-sm font-medium text-stone-gray mb-3">
@@ -1266,7 +1401,7 @@ export default function AdminPage() {
                                               onClick={() => handleCopyToClipboard(tempPassword, setCopied)}
                                               variant="secondary" className="flex items-center gap-1 text-xs py-2 px-3"
                                             >
-                                              {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                              {copied ? <Check className="w-3.5 h-3.5 text-success-ink" /> : <Copy className="w-3.5 h-3.5" />}
                                               {copied ? 'Copied' : 'Copy'}
                                             </Button>
                                           </div>
@@ -1283,7 +1418,7 @@ export default function AdminPage() {
                                           <div>
                                             <p className="text-xs text-warm-gray mb-1.5">Generate a temporary password to share with the user directly:</p>
                                             {resetError && (
-                                              <p className="text-xs text-red-600 mb-1.5">{resetError}</p>
+                                              <p className="text-xs text-danger-ink mb-1.5">{resetError}</p>
                                             )}
                                             <Button
                                               onClick={handleResetPassword}
@@ -1299,13 +1434,13 @@ export default function AdminPage() {
                                           <div>
                                             <p className="text-xs text-warm-gray mb-1.5">Or send a password reset link to their email address:</p>
                                             {resetLinkSent ? (
-                                              <p className="text-xs text-green-700 flex items-center gap-1">
+                                              <p className="text-xs text-success-ink flex items-center gap-1">
                                                 <Check className="w-3.5 h-3.5" /> Reset link sent to {resetTarget?.email}
                                               </p>
                                             ) : (
                                               <>
                                                 {resetLinkError && (
-                                                  <p className="text-xs text-red-600 mb-1.5">{resetLinkError}</p>
+                                                  <p className="text-xs text-danger-ink mb-1.5">{resetLinkError}</p>
                                                 )}
                                                 <Button
                                                   onClick={handleSendPasswordResetLink}
@@ -1334,18 +1469,18 @@ export default function AdminPage() {
 
                               {/* Delete Inline Panel */}
                               {isDeleteExpanded && (
-                                <tr className="bg-red-50/50 border-b border-warm-gray/10">
+                                <tr className="bg-danger/10 border-b border-warm-gray/10">
                                   <td colSpan={7} className="px-6 py-4">
                                     <div className="max-w-md">
-                                      <p className="text-sm font-medium text-red-700 mb-1">
+                                      <p className="text-sm font-medium text-danger-ink mb-1">
                                         Delete <strong>{u.displayName}</strong>?
                                       </p>
                                       <p className="text-xs text-warm-gray mb-3">
                                         This action is permanent. Type their email address to confirm.
                                       </p>
                                       {deletingUserAssetCount > 0 && (
-                                        <div className="flex items-start gap-2 mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                                          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600" />
+                                        <div className="flex items-start gap-2 mb-3 p-2.5 bg-warning/10 border border-warning/30 rounded-lg text-xs text-warning-ink">
+                                          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-warning-ink" />
                                           <span>
                                             This user has <strong>{deletingUserAssetCount}</strong> personal asset{deletingUserAssetCount !== 1 ? 's' : ''} that will be deleted with their account.
                                             To preserve them, promote them to Global scope from the <button onClick={() => { closeDeleteModal(); setActiveTab('assets'); }} className="underline hover:no-underline">Assets tab</button> first.
@@ -1353,7 +1488,7 @@ export default function AdminPage() {
                                         </div>
                                       )}
                                       {deleteError && (
-                                        <p className="text-xs text-red-600 mb-2">{deleteError}</p>
+                                        <p className="text-xs text-danger-ink mb-2">{deleteError}</p>
                                       )}
                                       <div className="flex items-center gap-2">
                                         <input
@@ -1366,7 +1501,7 @@ export default function AdminPage() {
                                         <button
                                           onClick={handleDeleteUser}
                                           disabled={deleteEmail !== u.email || isDeleting}
-                                          className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                          className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-danger text-white hover:bg-danger disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                         >
                                           {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                                           Delete
@@ -1403,7 +1538,7 @@ export default function AdminPage() {
         {activeTab === 'assets' && (
           <div role="tabpanel" id="tabpanel-assets" aria-labelledby="tab-assets">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-moss-green">Asset Management</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">Asset Management</h2>
               <Button
                 onClick={() => loadAdminAssets(adminAssetsPage, adminAssetsScope, adminAssetsType, debouncedAdminAssetsSearch)}
                 disabled={adminAssetsLoading}
@@ -1463,7 +1598,7 @@ export default function AdminPage() {
             </div>
 
             {adminAssetsError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4 text-sm">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 mb-4 text-sm">
                 {adminAssetsError}
               </div>
             )}
@@ -1534,7 +1669,7 @@ export default function AdminPage() {
                               <td className="px-3 py-2">
                                 <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-parchment border border-moss-green/20 text-stone-gray">
                                   {asset.type === AssetType.MAP && <MapPin className="w-3 h-3 text-warm-amber" />}
-                                  {asset.type === AssetType.TOKEN && <UserIcon className="w-3 h-3 text-moss-green" />}
+                                  {asset.type === AssetType.TOKEN && <UserIcon className="w-3 h-3 text-brand-ink" />}
                                   {asset.type === AssetType.AUDIO && <FileAudio className="w-3 h-3 text-spirit-purple" />}
                                   {asset.type === AssetType.AVATAR && <UserIcon className="w-3 h-3 text-sunset-orange" />}
                                   {asset.type}
@@ -1544,9 +1679,9 @@ export default function AdminPage() {
                               <td className="px-3 py-2">
                                 <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium ${
                                   asset.scope === AssetScope.GLOBAL
-                                    ? 'bg-purple-100 text-purple-700'
+                                    ? 'bg-spirit/10 text-spirit-ink'
                                     : asset.scope === AssetScope.USER
-                                      ? 'bg-moss-green/15 text-moss-green'
+                                      ? 'bg-moss-green/15 text-brand-ink'
                                       : 'bg-warm-amber/15 text-warm-amber'
                                 }`}>
                                   {asset.scope === AssetScope.GLOBAL && <Globe className="w-3 h-3" />}
@@ -1591,7 +1726,7 @@ export default function AdminPage() {
                                       <option value={AssetScope.CAMPAIGN}>Campaign…</option>
                                     </select>
                                     {isChangingScope && (
-                                      <Loader2 className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-moss-green pointer-events-none" />
+                                      <Loader2 className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-brand-ink pointer-events-none" />
                                     )}
                                     {!isChangingScope && (
                                       <ArrowRightLeft className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-warm-gray/60 pointer-events-none" />
@@ -1601,7 +1736,7 @@ export default function AdminPage() {
                                   <button
                                     onClick={() => handleAdminDeleteAsset(asset.id)}
                                     disabled={isDeleting || isChangingScope}
-                                    className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                                    className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-danger/30 text-danger-ink hover:bg-danger/10 transition-colors disabled:opacity-50"
                                     title="Delete asset"
                                   >
                                     {isDeleting
@@ -1696,11 +1831,11 @@ export default function AdminPage() {
         {/* ===== SETTINGS TAB ===== */}
         {activeTab === 'settings' && (
           <div role="tabpanel" id="tabpanel-settings" aria-labelledby="tab-settings" className="max-w-2xl space-y-6">
-            <h2 className="text-xl font-semibold text-moss-green">System Settings</h2>
+            <h2 className="text-xl font-semibold text-brand-ink">System Settings</h2>
 
             {settingsLoading && !settings ? (
               <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 text-moss-green animate-spin" />
+                <Loader2 className="w-8 h-8 text-brand-ink animate-spin" />
               </div>
             ) : (
               <section className="glass-panel p-6 space-y-6">
@@ -1790,7 +1925,7 @@ export default function AdminPage() {
 
                 <div className="pt-2 border-t border-warm-gray/20 flex items-center gap-3">
                   {settingsError && (
-                    <p className="text-sm text-red-600 flex-1">{settingsError}</p>
+                    <p className="text-sm text-danger-ink flex-1">{settingsError}</p>
                   )}
                   <Button
                     onClick={handleSaveSettings}
@@ -1809,7 +1944,7 @@ export default function AdminPage() {
             <section className="glass-panel p-6 space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-warm-gray/20">
                 <Mail className="w-4 h-4 text-warm-amber" />
-                <h3 className="font-semibold text-moss-green text-sm">SMTP Configuration</h3>
+                <h3 className="font-semibold text-brand-ink text-sm">SMTP Configuration</h3>
                 <span className="ml-auto text-xs text-warm-gray">Read-only — set via environment variables</span>
               </div>
 
@@ -1823,10 +1958,10 @@ export default function AdminPage() {
                   <div className="flex items-center gap-3">
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                       serverConfig.smtp.configured
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-amber-100 text-amber-700'
+                        ? 'bg-success/10 text-success-ink'
+                        : 'bg-warning/10 text-warning-ink'
                     }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${serverConfig.smtp.configured ? 'bg-green-500' : 'bg-amber-500'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${serverConfig.smtp.configured ? 'bg-success' : 'bg-warning'}`} />
                       {serverConfig.smtp.configured ? 'Configured' : 'Not configured'}
                     </span>
                     {serverConfig.smtp.configured && (
@@ -1843,7 +1978,7 @@ export default function AdminPage() {
                       <button
                         onClick={handleSmtpTest}
                         disabled={smtpTesting}
-                        className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-lg border border-moss-green/30 text-moss-green hover:bg-moss-green/10 transition-colors disabled:opacity-50"
+                        className="flex items-center gap-2 text-sm py-1.5 px-3 rounded-lg border border-moss-green/30 text-brand-ink hover:bg-moss-green/10 transition-colors disabled:opacity-50"
                       >
                         {smtpTesting
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1852,7 +1987,7 @@ export default function AdminPage() {
                         Send Test Email
                       </button>
                       {smtpTestResult && (
-                        <span className={`text-xs ${smtpTestResult.ok ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className={`text-xs ${smtpTestResult.ok ? 'text-success-ink' : 'text-danger-ink'}`}>
                           {smtpTestResult.ok ? '✓' : '✗'} {smtpTestResult.message}
                         </span>
                       )}
@@ -1877,7 +2012,7 @@ export default function AdminPage() {
             <section className="glass-panel p-6 space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-warm-gray/20">
                 <FolderOpen className="w-4 h-4 text-warm-amber" />
-                <h3 className="font-semibold text-moss-green text-sm">Upload Size Limits</h3>
+                <h3 className="font-semibold text-brand-ink text-sm">Upload Size Limits</h3>
                 <span className="ml-auto text-xs text-warm-gray">Read-only — set via environment variables</span>
               </div>
 
@@ -1901,6 +2036,17 @@ export default function AdminPage() {
                       ))}
                     </tbody>
                   </table>
+                  <p className="text-xs text-warm-gray/70 mt-3">
+                    Your reverse proxy must allow request bodies of at least{' '}
+                    <strong>{requiredProxyBodyMB(serverConfig.uploadLimits)} MB</strong>, or larger
+                    uploads fail with HTTP 413 before reaching the API. For the bundled Nginx, set{' '}
+                    <code className="font-mono bg-warm-gray/10 px-1 rounded">
+                      NGINX_MAX_BODY_SIZE={requiredProxyBodyMB(serverConfig.uploadLimits)}M
+                    </code>{' '}
+                    in your <code className="font-mono bg-warm-gray/10 px-1 rounded">.env</code> and
+                    restart. Cloudflare-proxied setups (including Tunnels) also cap request bodies at
+                    100 MB on Free/Pro plans.
+                  </p>
                 </div>
               ) : (
                 <p className="text-xs text-warm-gray">Could not load upload limits.</p>
@@ -1911,7 +2057,7 @@ export default function AdminPage() {
             <section className="glass-panel p-6 space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b border-warm-gray/20">
                 <Clock className="w-4 h-4 text-warm-amber" />
-                <h3 className="font-semibold text-moss-green text-sm">Session Timeouts</h3>
+                <h3 className="font-semibold text-brand-ink text-sm">Session Timeouts</h3>
                 <span className="ml-auto text-xs text-warm-gray">Read-only — set via environment variables</span>
               </div>
 
@@ -1954,7 +2100,7 @@ export default function AdminPage() {
         {activeTab === 'appearance' && (
           <div role="tabpanel" id="tabpanel-appearance" aria-labelledby="tab-appearance" className="max-w-3xl space-y-6">
             <div>
-              <h2 className="text-xl font-semibold text-moss-green">Default Theme &amp; Branding</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">Default Theme &amp; Branding</h2>
               <p className="text-sm text-warm-gray mt-1">
                 The default theme is shown on the login page and applied to brand-new users.
                 Each user can pick their own theme from their <span className="font-medium">Profile</span>.
@@ -1964,7 +2110,7 @@ export default function AdminPage() {
 
             {settingsLoading && !settings ? (
               <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-8 h-8 text-moss-green animate-spin" />
+                <Loader2 className="w-8 h-8 text-brand-ink animate-spin" />
               </div>
             ) : (
               <>
@@ -1984,7 +2130,7 @@ export default function AdminPage() {
                 {/* Save Appearance */}
                 <div className="flex items-center gap-3">
                   {appearanceError && (
-                    <p className="text-sm text-red-600 flex-1">{appearanceError}</p>
+                    <p className="text-sm text-danger-ink flex-1">{appearanceError}</p>
                   )}
                   <Button
                     onClick={async () => {
@@ -2034,7 +2180,7 @@ export default function AdminPage() {
         {activeTab === 'backups' && (
           <div role="tabpanel" id="tabpanel-backups" aria-labelledby="tab-backups" className="max-w-3xl space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-moss-green">Instance Backups</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">Instance Backups</h2>
               <div className="flex items-center gap-2">
                 <Button
                   onClick={handleCreateBackup}
@@ -2059,22 +2205,22 @@ export default function AdminPage() {
             </div>
 
             {backupCreateError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm flex items-start gap-2">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 text-sm flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{backupCreateError}</span>
               </div>
             )}
 
             {backupsError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 text-sm">
                 {backupsError}
               </div>
             )}
 
             <section className="glass-panel overflow-hidden">
               <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
-                <Database className="w-4 h-4 text-moss-green" />
-                <h3 className="font-semibold text-moss-green text-sm">Available Backups</h3>
+                <Database className="w-4 h-4 text-brand-ink" />
+                <h3 className="font-semibold text-brand-ink text-sm">Available Backups</h3>
                 {backups.length > 0 && (
                   <span className="ml-auto text-xs text-warm-gray">{backups.length} backup{backups.length !== 1 ? 's' : ''}</span>
                 )}
@@ -2082,7 +2228,7 @@ export default function AdminPage() {
 
               {backupsLoading && backups.length === 0 ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-6 h-6 text-moss-green animate-spin" />
+                  <Loader2 className="w-6 h-6 text-brand-ink animate-spin" />
                 </div>
               ) : backups.length === 0 ? (
                 <div className="text-center py-10 text-warm-gray">
@@ -2112,7 +2258,7 @@ export default function AdminPage() {
                               <a
                                 href={adminService.getBackupDownloadUrl(b.filename)}
                                 download={b.filename}
-                                className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-moss-green/30 text-moss-green hover:bg-moss-green/10 transition-colors"
+                                className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-moss-green/30 text-brand-ink hover:bg-moss-green/10 transition-colors"
                               >
                                 <Download className="w-3 h-3" />
                                 Download
@@ -2120,7 +2266,7 @@ export default function AdminPage() {
                               <button
                                 onClick={() => handleDeleteBackup(b.filename)}
                                 disabled={deletingBackupFile === b.filename}
-                                className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                                className="text-xs py-1 px-2 flex items-center gap-1 rounded border border-danger/30 text-danger-ink hover:bg-danger/10 transition-colors disabled:opacity-50"
                               >
                                 {deletingBackupFile === b.filename
                                   ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -2137,15 +2283,15 @@ export default function AdminPage() {
               )}
             </section>
 
-            <section className="glass-panel overflow-hidden border border-red-200/40">
-              <div className="px-4 py-3 border-b border-red-200/30 flex items-center gap-2 bg-red-50/30">
-                <RotateCcw className="w-4 h-4 text-red-600" />
-                <h3 className="font-semibold text-red-700 text-sm">Restore from Backup</h3>
+            <section className="glass-panel overflow-hidden border border-danger/40">
+              <div className="px-4 py-3 border-b border-danger/30 flex items-center gap-2 bg-danger/10">
+                <RotateCcw className="w-4 h-4 text-danger-ink" />
+                <h3 className="font-semibold text-danger-ink text-sm">Restore from Backup</h3>
               </div>
               <div className="p-5 space-y-4">
                 {restoreSuccess ? (
                   <div className="bg-moss-green/10 border border-moss-green/30 rounded-lg p-4 text-center space-y-2">
-                    <p className="text-sm font-semibold text-moss-green">Restore complete!</p>
+                    <p className="text-sm font-semibold text-brand-ink">Restore complete!</p>
                     <p className="text-xs text-warm-gray">
                       The database and files have been restored. Your current session is no longer valid.
                     </p>
@@ -2158,9 +2304,9 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="bg-red-50 border border-red-200/60 rounded-lg p-3 flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-red-700">
+                    <div className="bg-danger/10 border border-danger/60 rounded-lg p-3 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-danger-ink mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-danger-ink">
                         Restoring will <strong>permanently overwrite</strong> the current database and all uploaded files.
                         This cannot be undone. Make sure you have a recent backup before proceeding.
                       </p>
@@ -2192,7 +2338,7 @@ export default function AdminPage() {
                     </div>
 
                     {restoreError && (
-                      <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs flex items-start gap-2">
+                      <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-3 text-xs flex items-start gap-2">
                         <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                         {restoreError}
                       </div>
@@ -2202,7 +2348,7 @@ export default function AdminPage() {
                       <button
                         onClick={handleRestoreBackup}
                         disabled={restoring}
-                        className="flex items-center gap-2 text-sm py-1.5 px-4 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors font-medium"
+                        className="flex items-center gap-2 text-sm py-1.5 px-4 rounded-lg bg-danger text-white hover:bg-danger disabled:opacity-50 transition-colors font-medium"
                       >
                         {restoring
                           ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Restoring…</>
@@ -2221,7 +2367,7 @@ export default function AdminPage() {
         {activeTab === 'activity' && (
           <div role="tabpanel" id="tabpanel-activity" aria-labelledby="tab-activity">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-moss-green">Platform Activity</h2>
+              <h2 className="text-xl font-semibold text-brand-ink">Platform Activity</h2>
               <Button
                 onClick={loadActivity}
                 disabled={activityLoading}
@@ -2233,7 +2379,7 @@ export default function AdminPage() {
             </div>
 
             {activityError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-6 text-sm">
+              <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-4 mb-6 text-sm">
                 {activityError}
               </div>
             )}
@@ -2252,10 +2398,10 @@ export default function AdminPage() {
                 {/* Currently Online */}
                 <section className="glass-panel overflow-hidden">
                   <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
-                    <Wifi className="w-4 h-4 text-green-500" />
-                    <h3 className="font-semibold text-moss-green text-sm">Currently Online</h3>
+                    <Wifi className="w-4 h-4 text-success-ink" />
+                    <h3 className="font-semibold text-brand-ink text-sm">Currently Online</h3>
                     {activity?.onlineUsers && (
-                      <span className="ml-auto text-xs font-medium text-green-600">
+                      <span className="ml-auto text-xs font-medium text-success-ink">
                         {activity.onlineUsers.length} active {activity.onlineUsers.length === 1 ? 'session' : 'sessions'}
                       </span>
                     )}
@@ -2279,7 +2425,7 @@ export default function AdminPage() {
                             <tr key={u.id} className="border-b border-warm-gray/10 hover:bg-moss-green/5">
                               <td className="px-4 py-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                                  <span className="inline-block w-2 h-2 rounded-full bg-success flex-shrink-0" />
                                   <span className="font-medium text-stone-gray">{u.displayName}</span>
                                 </div>
                               </td>
@@ -2287,7 +2433,7 @@ export default function AdminPage() {
                               <td className="px-4 py-2">
                                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                                   u.platformRole === PlatformRole.ADMIN
-                                    ? 'bg-moss-green/20 text-moss-green'
+                                    ? 'bg-moss-green/20 text-brand-ink'
                                     : 'bg-warm-gray/20 text-warm-gray'
                                 }`}>
                                   {u.platformRole}
@@ -2307,7 +2453,7 @@ export default function AdminPage() {
                 <section className="glass-panel overflow-hidden">
                   <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-warm-amber" />
-                    <h3 className="font-semibold text-moss-green text-sm">Recent Admin Actions</h3>
+                    <h3 className="font-semibold text-brand-ink text-sm">Recent Admin Actions</h3>
                     <span className="text-xs text-warm-gray ml-auto">last 100</span>
                   </div>
                   {!activity?.recentLogs?.length ? (
@@ -2343,8 +2489,8 @@ export default function AdminPage() {
                 {/* Recent Registrations */}
                 <section className="glass-panel overflow-hidden">
                   <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-moss-green" />
-                    <h3 className="font-semibold text-moss-green text-sm">Recent Registrations</h3>
+                    <Users className="w-4 h-4 text-brand-ink" />
+                    <h3 className="font-semibold text-brand-ink text-sm">Recent Registrations</h3>
                     <span className="text-xs text-warm-gray ml-auto">50 most recent</span>
                   </div>
                   <div className="overflow-x-auto">
@@ -2372,14 +2518,14 @@ export default function AdminPage() {
                               <td className="px-4 py-2">
                                 <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                                   u.platformRole === PlatformRole.ADMIN
-                                    ? 'bg-moss-green/20 text-moss-green'
+                                    ? 'bg-moss-green/20 text-brand-ink'
                                     : 'bg-warm-gray/20 text-warm-gray'
                                 }`}>
                                   {u.platformRole}
                                 </span>
                               </td>
                               <td className="px-4 py-2">
-                                <span className={`text-xs ${u.mfaEnabled ? 'text-green-600' : 'text-warm-gray'}`}>
+                                <span className={`text-xs ${u.mfaEnabled ? 'text-success-ink' : 'text-warm-gray'}`}>
                                   {u.mfaEnabled ? 'On' : 'Off'}
                                 </span>
                               </td>
@@ -2396,8 +2542,8 @@ export default function AdminPage() {
                 {/* Recent Game Sessions */}
                 <section className="glass-panel overflow-hidden">
                   <div className="px-4 py-3 border-b border-warm-gray/20 flex items-center gap-2">
-                    <CalendarDays className="w-4 h-4 text-blue-500" />
-                    <h3 className="font-semibold text-moss-green text-sm">Recent Game Sessions</h3>
+                    <CalendarDays className="w-4 h-4 text-info-ink" />
+                    <h3 className="font-semibold text-brand-ink text-sm">Recent Game Sessions</h3>
                     <span className="text-xs text-warm-gray ml-auto">20 most recent</span>
                   </div>
                   <div className="overflow-x-auto">
@@ -2424,7 +2570,7 @@ export default function AdminPage() {
                               <td className="px-4 py-2 text-xs">
                                 {s.endedAt
                                   ? <span className="text-warm-gray">{formatDate(s.endedAt)}</span>
-                                  : <span className="text-green-600 font-medium">In progress</span>
+                                  : <span className="text-success-ink font-medium">In progress</span>
                                 }
                               </td>
                             </tr>
@@ -2450,9 +2596,9 @@ export default function AdminPage() {
         >
           <div className="bg-paper rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b border-warm-gray/20">
-              <h2 className="text-lg font-semibold text-moss-green flex items-center gap-2">
-                <UserPlus className="w-5 h-5" />
-                Create User
+              <h2 className="text-lg font-semibold text-brand-ink flex items-center gap-2">
+                {createUserMode === 'invite' ? <Mail className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
+                {createUserMode === 'invite' ? 'Invite User' : 'Create User'}
               </h2>
               {!newUserPassword && (
                 <button onClick={closeCreateUserModal} className="text-warm-gray hover:text-stone-gray transition-colors">
@@ -2462,12 +2608,27 @@ export default function AdminPage() {
             </div>
 
             <div className="p-5">
-              {newUserPassword ? (
+              {createUserSuccess ? (
+                /* Invited, or created with the details emailed — no password to show */
+                <div className="space-y-4">
+                  <div className="flex items-start gap-2">
+                    <Check className="w-4 h-4 text-success-ink mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-success-ink font-medium">{createUserSuccess}</p>
+                  </div>
+                  <p className="text-xs text-warm-gray">
+                    They choose their own password, so no one else ever sees it.
+                  </p>
+                  <Button onClick={closeCreateUserModal} className="w-full">
+                    Done
+                  </Button>
+                </div>
+              ) : newUserPassword ? (
                 /* Success — show temp password */
                 <div>
-                  <p className="text-sm text-green-700 font-medium mb-1">User created successfully!</p>
+                  <p className="text-sm text-success-ink font-medium mb-1">User created successfully!</p>
                   <p className="text-xs text-warm-gray mb-4">
-                    Share this temporary password securely. The user must change it on first login.
+                    Share this temporary password securely — it is shown only once, and they will be
+                    required to replace it before they can use their account.
                   </p>
                   <div className="flex items-center gap-2 mb-4">
                     <code className="flex-1 bg-warm-amber/10 border border-warm-amber/30 rounded px-3 py-2 text-sm font-mono text-stone-gray select-all">
@@ -2477,7 +2638,7 @@ export default function AdminPage() {
                       onClick={() => handleCopyToClipboard(newUserPassword, setNewUserPasswordCopied)}
                       variant="secondary" className="flex items-center gap-1 text-xs py-2 px-3"
                     >
-                      {newUserPasswordCopied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      {newUserPasswordCopied ? <Check className="w-3.5 h-3.5 text-success-ink" /> : <Copy className="w-3.5 h-3.5" />}
                       {newUserPasswordCopied ? 'Copied' : 'Copy'}
                     </Button>
                   </div>
@@ -2488,15 +2649,23 @@ export default function AdminPage() {
               ) : (
                 /* Form */
                 <div className="space-y-4">
+                  <p className="text-xs text-warm-gray">
+                    {createUserMode === 'invite'
+                      ? 'They receive an email with a link to choose their own password. No password is created, so nobody else ever sees one.'
+                      : serverConfig?.smtp.configured
+                        ? 'A temporary password is generated and emailed to them. They must replace it before they can use the account.'
+                        : 'A temporary password is generated for you to pass on. They must replace it before they can use the account.'}
+                  </p>
+
                   {createUserError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+                    <div className="bg-danger/10 border border-danger/30 text-danger-ink rounded-lg p-3 text-sm">
                       {createUserError}
                     </div>
                   )}
 
                   <div>
                     <label className="block text-sm font-medium text-stone-gray mb-1">
-                      Email <span className="text-red-500">*</span>
+                      Email <span className="text-danger-ink">*</span>
                     </label>
                     <input
                       type="email"
@@ -2551,7 +2720,7 @@ export default function AdminPage() {
                       className="flex-1 flex items-center justify-center gap-2"
                     >
                       {creatingUser && <Loader2 className="w-4 h-4 animate-spin" />}
-                      Create User
+                      {createUserMode === 'invite' ? 'Send Invitation' : 'Create User'}
                     </Button>
                     <Button
                       onClick={closeCreateUserModal}

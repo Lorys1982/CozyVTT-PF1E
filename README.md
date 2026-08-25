@@ -50,9 +50,10 @@ If you find a security issue, please report it privately per [SECURITY.md](SECUR
 - **NPC right-click rolls** — DMs right-click any NPC token to roll abilities, saves, skills, attacks, and damage parsed from its stat block; advantage/disadvantage selector for d20 systems; free-form custom roll fallback for non-5e systems
 - **Campaign export/import** — export campaigns as portable `.cozyvtt` archives; import on any CozyVTT instance; includes maps, tokens, creatures, templates, and assets; multi-step preview flow; optional audio toggle; secured against path traversal, zip bombs, and malicious files
 - **Walls & dynamic lighting** — DM-drawn wall segments (walls, doors, windows) with raycasting visibility; draw, polygon, and brush drawing modes; snap-to-grid and snap-to-endpoint; split, select, erase, and merge point tools; snap-to-wall door/window placement (auto-splits existing walls); players only see what their character can; door interactions for both DM and players; bright/dim light radii matching D&D 5e and PF2e rules; named light presets (Candle, Torch, Lamp, Lantern, Campfire); overlapping dim zones combine to bright
-- **Fog of war** — DM-controlled fog brush reveals the map square by square; animated fade transitions
+- **Fog of war** — drag a box to reveal or hide chunks of the map; the selection snaps to whole grid squares, with animated fade transitions
 - **Spirit layer** — a second canvas layer for ethereal / astral / out-of-body scenes, hidden from players by default
-- **Initiative tracker** — real-time combat turn order; DM controls, players watch live
+- **Initiative tracker** — real-time combat turn order; DM controls, players watch live. The acting token is ringed on the map for everyone, and hovering a name highlights its token (and vice versa)
+- **Map pings** — press Tab to mark a spot for the whole table; a dot with radiating rings in your own colour, labelled with your name
 - **Vibe tracker** — time-of-day atmosphere presets with custom color filters and ambient audio
 - **Ambient atmosphere** — six visual effects (rain, mist, leaves, sparkles, snow, wind) and ambient audio independently per campaign
 - **Session management** — start, pause, resume, and end sessions with full state capture (token positions, map, vibe)
@@ -82,7 +83,7 @@ If you find a security issue, please report it privately per [SECURITY.md](SECUR
 - **8 font families** — open-source Google Fonts including medieval, elegant, modern, handwritten, and scholarly options
 - **Live preview** — theme and font changes preview instantly before saving
 - **Default theme** — admin selects the theme shown on the login page and applied to brand-new users
-- **Custom branding** — admins can upload a custom logo, mascot, and favicon
+- **Custom branding** — the instance logo, mascot, and favicon can be replaced (swap the images in `frontend/public/` before building; an admin upload UI is [planned](docs/FUTURE_FEATURES.md))
 
 ### Security
 - **Argon2id password hashing** (64 MB memory cost, timeCost 3)
@@ -180,6 +181,8 @@ All runtime configuration is managed through the Admin dashboard after setup:
 
 | Tab | Setting | Description |
 |-----|---------|-------------|
+| Users | Invite User | Email someone a link to join and choose their own password (needs SMTP; link valid 7 days) |
+| Users | Create User | Generate a temporary password to hand over yourself — for instances without email |
 | Settings | Instance Name | Displayed in the browser title and emails |
 | Settings | Allow Registration | Whether new users can self-register |
 | Settings | Require Admin Approval | New registrations must be approved before login |
@@ -188,16 +191,24 @@ All runtime configuration is managed through the Admin dashboard after setup:
 | Settings | Upload Limits | Per-type file size limits (maps, tokens, audio, avatars) |
 | Appearance | Default Theme | Theme shown on the login page and used for new users (each user can override from their profile) |
 | Appearance | Default Font | Default font family applied alongside the default theme |
-| Appearance | Custom Branding | Upload custom logo, mascot icon, and favicon (always instance-wide) |
+| Appearance | Custom Theme | Build a palette from primary, accent, background, and text colors, with a live readability check |
+
+However an account is added, its first sign-in ends with the person choosing their own password — an
+admin-issued temporary password cannot be used for anything else.
+
+Instance branding (logo, mascot, favicon) is **not** set from the dashboard yet — see
+[Appearance & Theming](docs/USER_GUIDE.md#appearance--theming) for how to change it today.
 
 ### Default Upload Limits
 
-| Type | Default |
-|------|---------|
-| Map images | 50 MB |
-| Token images | 5 MB |
-| Audio files | 20 MB |
-| Avatar images | 2 MB |
+| Type | Default | Environment variable |
+|------|---------|----------------------|
+| Map images | 50 MB | `MAX_MAP_SIZE_MB` |
+| Token images | 5 MB | `MAX_TOKEN_SIZE_MB` |
+| Audio files | 20 MB | `MAX_AUDIO_SIZE_MB` |
+| Avatar images | 2 MB | `MAX_AVATAR_SIZE_MB` |
+
+Set these in `.env` and restart — no rebuild needed. If you raise one, raise your reverse proxy's body limit to match (`NGINX_MAX_BODY_SIZE` for the bundled Nginx). See [Upload Size Limits](docs/DEPLOYMENT.md#upload-size-limits).
 
 ---
 

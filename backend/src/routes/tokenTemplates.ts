@@ -15,12 +15,8 @@ import {
   UpdateTokenTemplateSchema,
   SaveTokenAsTemplateSchema,
 } from '../validators/tokenTemplates';
+import { jsonOrNull } from '../utils/prisma-json';
 import logger from '../utils/logger';
-
-/** Convert a nullable value to a Prisma-compatible JSON input. */
-function jsonOrNull(val: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  return val == null ? Prisma.JsonNull : (val as Prisma.InputJsonValue);
-}
 
 const router = Router({ mergeParams: true });
 

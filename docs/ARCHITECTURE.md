@@ -61,6 +61,7 @@ src/
 ├── config/            Configuration loading (env vars, validation)
 ├── middleware/
 │   ├── auth.ts        Passport.js session middleware, requireAuth guards
+│   ├── passwordChange.ts  Gates every route until an admin-issued password is replaced
 │   ├── rateLimit.ts   Per-route rate limiters (auth, dice, chat, file upload)
 │   └── upload.ts      Multer configuration, magic byte validation
 ├── routes/            HTTP route handlers
@@ -74,6 +75,7 @@ src/
 │   ├── invitations.ts Campaign invitation lifecycle
 │   ├── mfa.ts         TOTP setup, verify, disable, backup codes
 │   ├── setup.ts       First-run setup wizard
+│   ├── config.ts      Public client config (upload limits)
 │   └── admin.ts       Admin: stats, settings, users, backups, logs
 ├── services/          Business logic (called by routes and WebSocket handlers)
 ├── validators/        Zod validation schemas (one per domain, incl. game-systems/)
@@ -91,6 +93,8 @@ src/
 │   ├── spirit-layer.ts   Spirit-layer + dynamic-lighting token filtering
 │   ├── serverRaycasting.ts  Server-side vision raycasting for lighting
 │   ├── asset-urls.ts     Asset URL normalization
+│   ├── fileUtils.ts      Upload paths + MAX_*_SIZE_MB limit resolution
+│   ├── proxyLimits.ts    Proxy body-cap parsing and startup warnings
 │   └── logger.ts         Winston logger configuration
 └── types/             Shared TypeScript interfaces
 ```
@@ -134,14 +138,14 @@ src/
 │   ├── WebSocketContext.tsx  Socket.io connection lifecycle and event subscriptions
 │   └── CampaignContext.tsx   Per-campaign metadata (campaign, current map, vibe, session status, roster)
 ├── stores/
-│   └── gameStore.ts   Zustand store for live socket-fed session state (token positions, walls, fog, lights, initiative)
+│   └── gameStore.ts   Zustand store for live socket-fed session state (token positions, combat/initiative, hover cross-highlight)
 ├── lib/
 │   └── queryClient.ts  React Query client configuration
 ├── pages/             One file per route (thin; delegates to components, contexts, and query hooks)
 ├── components/
 │   ├── ui/            Shared UI primitives (Button, Modal, Input, Field, Tooltip)
 │   ├── campaign/      Campaign page panels (ChatPanel, DiceRoller, SessionSidebar, MapCanvas, etc.)
-│   │   └── map/       MapCanvas render layers, vision cache, and animation/render-loop hooks
+│   │   └── map/       MapCanvas render layers, coordinate conversions, fog selection, vision cache, and animation/render-loop hooks
 │   ├── character-sheets/  Game system sheet renderers
 │   ├── common/        Reusable primitives (Toast, ConfirmDialog, EmptyState, etc.)
 │   └── admin/         Admin panel tabs
@@ -163,10 +167,43 @@ CozyVTT uses three complementary state layers, each with a clear boundary. The r
 | Layer | Owns | Examples |
 |-------|------|----------|
 | **React Query** (`@tanstack/react-query`) | Server resources fetched over REST | Campaign lists/detail, characters, assets, map metadata |
-| **Zustand** (`stores/gameStore.ts`) | Live, high-frequency state fed by WebSocket events | Token positions, walls, fog, lights, initiative |
+| **Zustand** (`stores/gameStore.ts`) | Live, high-frequency state fed by WebSocket events | Token positions and list, combat/initiative, hover cross-highlight (walls, fog and lights are still MapCanvas-local; walls additionally keep their own undo/redo history) |
 | **React Context** | App/session wiring and metadata | Auth state, socket connection, campaign metadata + vibe/session status |
 
 The split exists for performance. Live token movement is written to the Zustand store from **outside** React, so a `token.moved` event re-renders only the components subscribed to that token (the map canvas) — the roster, initiative tracker, and side panels don't re-render per movement frame. All three context provider values are memoized so unrelated socket traffic doesn't cascade re-renders through the campaign subtree.
+
+### Theming
+
+Every color in the themed UI comes from a CSS variable, so switching themes repaints the app without
+re-rendering anything. Tailwind maps each token with `rgb(var(--color-x) / <alpha-value>)`
+([tailwind.config.js](../frontend/tailwind.config.js)), which is why opacity modifiers such as
+`bg-danger/10` still follow the theme.
+
+| Group | Tokens | Use for |
+|---|---|---|
+| Brand / accent | `brand`, `brand-dark`, `accent`, `accent-hover`, `accent-text` | Fills: buttons, borders, highlights |
+| Text | `ink`, `ink-secondary`, `ink-muted` | Body, secondary and muted text |
+| Surfaces | `canvas`, `surface`, `surface-light`, `surface-dark`, `paper` | Page and panel backgrounds |
+| **Ink variants** | `brand-ink`, `accent-ink`, `spirit-ink`, `danger-ink`, `success-ink`, `warning-ink`, `info-ink` | **Text** in that color |
+| States | `danger`, `success`, `warning`, `info`, `spirit` | Status fills, borders, tints |
+
+**Two rules keep themes readable:**
+
+1. **Use `-ink` when the color is text.** `accent` is a fill — as text it measured as low as 1.84:1.
+   The `-ink` variants are derived per theme by `deriveReadableTokens`
+   ([themes.ts](../frontend/src/themes.ts)) via `ensureReadable`
+   ([utils/color.ts](../frontend/src/utils/color.ts)), which walks the color's lightness until it
+   clears WCAG AA against that theme's surfaces. Authored values that already pass are left alone.
+   Custom themes get the same treatment, so a user-picked palette cannot produce unreadable text.
+2. **Never use a raw Tailwind palette color on a themed surface.** `bg-red-50` stays pale pink on a
+   dark theme. Use the state tokens, or the `.alert-*` / `.badge-*` classes in
+   [index.css](../frontend/src/index.css).
+
+Both rules are enforced by tests rather than review:
+`utils/__tests__/themes.contrast.test.ts` checks every preset theme against every text/background
+pair the UI renders, and `utils/__tests__/themeTokens.test.ts` fails if raw palette colors appear
+outside the two exempt areas (character sheets, which are deliberately styled as light "paper" cards,
+and the dark DM map overlays).
 
 ### Data Flow (Campaign Page)
 
@@ -204,6 +241,7 @@ erDiagram
         string displayName
         PlatformRole platformRole
         bool isGlobalAssetManager
+        bool templateEditor
         bool approved
         bool mustChangePassword
         string bio
@@ -231,6 +269,16 @@ erDiagram
         GameSystem gameSystem
         json data
         string tokenImageUrl
+    }
+
+    CharacterTemplate {
+        string id PK
+        string name
+        string description
+        GameSystem gameSystem
+        json data
+        string tokenImageUrl
+        string createdById FK
     }
 
     Map {
@@ -295,6 +343,7 @@ erDiagram
     User ||--o{ CampaignMembership : "belongs to"
     Campaign ||--o{ CampaignMembership : "has"
     User ||--o{ Character : "owns"
+    User ||--o{ CharacterTemplate : "published"
     Campaign ||--o{ Character : "has assigned"
     Campaign ||--o{ Map : "has"
     Campaign ||--o{ Message : "has"
@@ -499,7 +548,7 @@ JWTs are stateless, which makes revocation difficult — a compromised token sta
 
 ### Why Zustand + React Query alongside React Context?
 
-Each tool owns what it's good at. React Query handles server resources — caching, deduping, and refetch-on-reconnect for campaigns, characters, and assets — so pages don't hand-roll `useEffect` + loading/error state. Zustand holds live, high-frequency socket state (token positions, fog, lights, initiative) because it can be written from **outside** React, so a token move updates only its subscribers instead of re-rendering the whole campaign tree through a context provider. React Context is kept for genuinely app-wide wiring (auth, the socket connection) and slow-changing campaign metadata. The boundary rule — one layer per datum — keeps the three from fighting over the same state.
+Each tool owns what it's good at. React Query handles server resources — caching, deduping, and refetch-on-reconnect for campaigns, characters, and assets — so pages don't hand-roll `useEffect` + loading/error state. Zustand holds live, high-frequency socket state (token positions, combat/initiative) because it can be written from **outside** React, so a token move updates only its subscribers instead of re-rendering the whole campaign tree through a context provider. React Context is kept for genuinely app-wide wiring (auth, the socket connection) and slow-changing campaign metadata. The boundary rule — one layer per datum — keeps the three from fighting over the same state.
 
 ### Why store tokens in `Map.tokens` JSON instead of a separate table?
 

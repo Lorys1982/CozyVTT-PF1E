@@ -3,7 +3,7 @@
  * Modal dialog for creating a new character with game system templates
  */
 
-import { useState, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect, useRef } from 'react';
 import { Loader2, User, Sparkles } from 'lucide-react';
 import { Modal } from '@/components/ui';
 import { Character, GameSystem, Campaign } from '@/types';
@@ -172,6 +172,14 @@ export default function NewCharacterModal({
     return TEMPLATE_OPTIONS_BY_SYSTEM[gameSystem] || [];
   };
 
+  /**
+   * When true, the sheet is also published as a shared template after the
+   * character is created. Held in a ref rather than state because the second
+   * submit button sets it immediately before the form submits, and a state
+   * update would not have landed by the time handleSubmit reads it.
+   */
+  const alsoPublishTemplate = useRef(false);
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
@@ -217,6 +225,24 @@ export default function NewCharacterModal({
         gameSystem: gameSystem || undefined,
         data: templateData as unknown as import('@/types').CharacterData,
       });
+
+      // Optionally publish the same sheet as a shared template. Done after the
+      // character exists, and failing softly: the character is the thing the
+      // user asked for, so a template error must not lose it.
+      if (alsoPublishTemplate.current) {
+        try {
+          await api.createCharacterTemplate({
+            name: name.trim(),
+            gameSystem: gameSystem || null,
+            data: templateData,
+          });
+        } catch {
+          setError(
+            'Character created, but publishing it as a template failed. You can retry with "Save as Template" in the editor.'
+          );
+        }
+        alsoPublishTemplate.current = false;
+      }
 
       // Reset form
       setName('');
@@ -418,7 +444,7 @@ export default function NewCharacterModal({
                 {/* Info Box */}
                 <div className="rounded-lg p-4 bg-moss-green/10 border border-moss-green/30">
                   <p className="text-sm text-ink">
-                    <strong className="text-moss-green">Note:</strong> After
+                    <strong className="text-brand-ink">Note:</strong> After
                     creation, you'll be redirected to the character editor where
                     you can customize all details and save when ready.
                   </p>
@@ -451,6 +477,20 @@ export default function NewCharacterModal({
                         Create Character
                       </>
                     )}
+                  </Button>
+                </div>
+
+                {/* Publish the same sheet for others to copy, in one step. */}
+                <div className="pt-1">
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    disabled={loading || !isFormValid}
+                    onClick={() => { alsoPublishTemplate.current = true; }}
+                    title="Create this character and also publish it as a template others can copy"
+                    className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Create &amp; Publish as Template
                   </Button>
                 </div>
               </form>

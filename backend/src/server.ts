@@ -10,11 +10,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { sessionConfig } from './config/session';
 import { requireSetupComplete } from './middleware/setup';
+import { requirePasswordChanged } from './middleware/passwordChange';
 import setupRoutes from './routes/setup';
 import authRoutes from './routes/auth';
 import campaignRoutes from './routes/campaigns';
 import userRoutes from './routes/users';
 import characterRoutes from './routes/characters';
+import characterTemplateRoutes from './routes/characterTemplates';
 import invitationRoutes from './routes/invitations';
 import assetRoutes from './routes/assets';
 import mapRoutes from './routes/maps';
@@ -22,9 +24,12 @@ import creatureRoutes from './routes/creatures';
 import tokenTemplateRoutes from './routes/tokenTemplates';
 import adminRoutes from './routes/admin';
 import rulesRoutes from './routes/rules';
+import configRoutes from './routes/config';
 import { initializeWebSocket } from './websocket';
 import logger from './utils/logger';
 import { prisma } from './config/database';
+import { FILE_SIZE_LIMITS } from './utils/fileUtils';
+import { getProxyLimitWarnings } from './utils/proxyLimits';
 
 const app = express();
 const httpServer = createServer(app);
@@ -128,8 +133,15 @@ app.get('/health', async (_req, res) => {
 // Apply general rate limiter to all API routes
 app.use('/api', generalApiLimiter);
 
+// Accounts flagged `mustChangePassword` (admin-created, or admin-reset) can do
+// nothing but change it until they do — see middleware/passwordChange.ts
+app.use('/api', requirePasswordChanged);
+
 // Setup wizard (accessible before setup is complete)
 app.use('/api/setup', setupRoutes);
+
+// Public client configuration (upload limits)
+app.use('/api/config', configRoutes);
 
 // Authentication: login, register, password reset, MFA
 app.use('/api/auth', authRoutes);
@@ -145,6 +157,9 @@ app.use('/api/campaigns', campaignRoutes);
 
 // Characters
 app.use('/api/characters', characterRoutes);
+// Distinct from GET /api/characters/templates/:system/:name, which serves the
+// hardcoded starter presets rather than these user-published ones.
+app.use('/api/character-templates', characterTemplateRoutes);
 
 // Rules lookups (authenticated proxy/cache for external system references)
 app.use('/api/rules', rulesRoutes);
@@ -199,6 +214,18 @@ httpServer.listen(PORT, () => {
   logger.info(`CozyVTT Backend running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`CORS origin: ${process.env.CORS_ORIGIN || 'http://localhost:3000'}`);
+
+  const uploadLimits = Object.entries(FILE_SIZE_LIMITS)
+    .map(([type, bytes]) => `${type} ${Math.round(bytes / (1024 * 1024))}MB`)
+    .join(', ');
+  logger.info(`Upload limits: ${uploadLimits}`);
+
+  // A proxy body-size cap below the configured limits turns uploads into 413s
+  // that never reach this process — surface it at startup rather than in a
+  // bug report.
+  for (const warning of getProxyLimitWarnings()) {
+    logger.warn(warning);
+  }
 });
 
 export default app;

@@ -63,7 +63,9 @@ Navigate to your CozyVTT URL and enter your email and password. If Multi-Factor 
 
 *GIF pending — Login flow with MFA step.*
 
-**Forgot your password?** Contact your platform administrator — they can generate a temporary password from the Admin Panel.
+**Forgot your password?** If your instance has email configured, use **Forgot password** on the login page. Otherwise contact your platform administrator, who can email you a reset link or generate a temporary password from the Admin Panel.
+
+**First time signing in?** An account someone else created for you always ends its first sign-in with you choosing your own password. Until you do, the temporary password you were given won't open anything else — so nobody, including the admin who created the account, keeps a way in.
 
 ---
 
@@ -224,6 +226,29 @@ The Character Editor is where you fill in every detail about your character — 
 Click **Save** (or use the keyboard shortcut) to save your progress. A timestamp in the header shows when your character was last saved. An unsaved changes indicator appears if you've made changes you haven't saved yet — don't close the tab without saving!
 
 You can also **Export to JSON** from the editor header at any time to grab a backup copy.
+
+### Character Templates
+
+A template is a starter sheet somebody has already filled in and shared. If you're new to a system — or your DM has prepared something for you — starting from one saves you a blank page.
+
+Open **Character Templates** from the dashboard. Every template on the instance is listed; filter by game system, search by name, or tick **Only mine** to see just your own.
+
+**Using one.** Click **Use** on any template. That creates a character that belongs entirely to you — you can rename it and change anything you like, and the original template is untouched. Whoever published it has no control over your character.
+
+**Publishing one.** There are four ways:
+
+- **New Template** on the templates page, which starts from a blank sheet for the system you pick
+- **Save as Template** in the character editor, which publishes the sheet you're looking at
+- while creating a character, if you want to keep the character and share it at the same time
+- **Import** on the templates page, which publishes a character JSON file as a template
+
+Templates you publish are visible to everyone on your instance. You can edit or delete your own at any time.
+
+**Importing from another instance.** The **Import** button accepts any character JSON — one you exported from this instance, one you wrote yourself, or one exported from a *different* CozyVTT server. That last case is the useful one: export a character from wherever you built it, bring the file to a new instance, and publish it there for that group to copy. Character exports and templates hold the same thing — a sheet plus a game system — so no conversion is involved. You'll see a preview before anything is published, and you can set the name and description at that point.
+
+> **A note on template images.** A template's picture has to be a **global** asset, because everyone who can see the template needs to be able to load it — a personal asset would show as broken for everyone but you. If you don't have permission to upload global assets, pick an existing global one or leave the image blank.
+
+> **Template editors.** Admins can grant a user the **template editor** permission, which lets them tidy up or correct anyone's template. Nobody has it by default. If someone edits a template you published, that's why.
 
 ### Assigning a Character to a Campaign
 
@@ -407,6 +432,8 @@ When combat starts, the **Initiative Tracker** appears (or is revealed by the DM
 
 During your turn, you'll see your name highlighted. Use your token to move and the chat to narrate your actions!
 
+Whoever's turn it is also gets a pulsing gold ring around their token on the map, so it's clear which creature is acting even when several look alike. Hovering a name in the tracker outlines that token on the map, and hovering a token on the map tints its row in the list.
+
 ---
 
 ## Advanced Features
@@ -456,10 +483,20 @@ CozyVTT theming works in two layers:
 
 - **Default theme** — 16 built-in themes spanning warm, cool, dark, neutral, and vibrant palettes
 - **Default font** — 8 open-source font families (Quicksand + Inter default, plus medieval, elegant, handwritten, etc.)
-- **Custom theme builder** — primary, accent, background, and text colors; complementary shades derived automatically
-- **Custom branding** — logo, mascot, and favicon shown on the login page and across the instance (always system-wide regardless of user theme)
-
+- **Custom theme builder** — primary, accent, background, and text colors; complementary shades derived automatically. The picker shows a live **Readability** check with the contrast ratio of each key text/background pair, flagging anything below the 4.5:1 minimum, and CozyVTT adjusts text shades automatically where it can
 Changes preview live as you configure them.
+
+**Custom branding (logo, mascot, favicon)** is not part of the Appearance panel yet. The instance
+already honours custom images — they appear on the login page and across the app, system-wide
+regardless of each user's theme — but there is no upload screen, so a self-hoster sets them one of
+two ways:
+
+- **Replace the default images** in `frontend/public/` (`default-logo.png`, `default-mascot.png`,
+  `favicon-32.png`, `favicon-192.png`) and rebuild, or
+- **Point the instance at hosted images** by sending `customLogoUrl`, `customMascotUrl` and
+  `customFaviconUrl` to `PUT /api/admin/settings` as URLs
+
+An admin upload UI is on the roadmap — see [Future Features](FUTURE_FEATURES.md).
 
 ---
 

@@ -28,6 +28,7 @@ import type {
   UpdateTokenRequest,
   Token,
   CreatureTemplate,
+  CharacterTemplate,
   TokenTemplate,
   CampaignImportPreview,
   CampaignImportResult,
@@ -42,6 +43,7 @@ import type {
   AdminBackup,
   AppearanceSettings,
   UserPreferences,
+  ServerConfig,
 } from '@/types';
 
 // ============================================
@@ -107,7 +109,16 @@ class ApiClient {
 
           // Forbidden
           if (status === 403) {
-            console.error('Permission denied:', data.message);
+            // The account must replace an admin-issued password before it can
+            // do anything else. Covers tabs left open when the flag was set.
+            const code = (data as { code?: string })?.code;
+            if (code === 'PASSWORD_CHANGE_REQUIRED') {
+              if (window.location.pathname !== '/auth/change-password') {
+                window.location.href = '/auth/change-password';
+              }
+            } else {
+              console.error('Permission denied:', data.message);
+            }
           }
 
           // Rate limited
@@ -159,6 +170,15 @@ class ApiClient {
 
   async getAppearance(): Promise<AppearanceSettings> {
     const response = await this.client.get<AppearanceSettings>('/api/auth/appearance');
+    return response.data;
+  }
+
+  /**
+   * Server-enforced upload limits (from the MAX_*_SIZE_MB environment variables).
+   * Fetched at runtime so limit changes don't require rebuilding the SPA.
+   */
+  async getServerConfig(): Promise<ServerConfig> {
+    const response = await this.client.get<ServerConfig>('/api/config');
     return response.data;
   }
 
@@ -308,12 +328,33 @@ class ApiClient {
     return response.data;
   }
 
+  /**
+   * Create a user with a temporary password. `temporaryPassword` is only
+   * returned when the welcome email could not be sent (no SMTP, or delivery
+   * failed) — otherwise the user has it and the admin does not need it.
+   */
   async createAdminUser(data: {
     email: string;
     displayName?: string;
     platformRole?: string;
-  }): Promise<{ message: string; user: User; temporaryPassword: string }> {
+  }): Promise<{ message: string; user: User; emailSent: boolean; temporaryPassword?: string }> {
     const response = await this.client.post('/api/admin/users', data);
+    return response.data;
+  }
+
+  /** Invite a user by email — no password is created or returned. */
+  async inviteAdminUser(data: {
+    email: string;
+    displayName?: string;
+    platformRole?: string;
+  }): Promise<{ message: string; user: User; expiresInDays: number }> {
+    const response = await this.client.post('/api/admin/users/invite', data);
+    return response.data;
+  }
+
+  /** Issue a fresh invitation link, invalidating any outstanding one. */
+  async resendAdminUserInvite(userId: string): Promise<{ message: string; expiresInDays: number }> {
+    const response = await this.client.post(`/api/admin/users/${userId}/resend-invite`);
     return response.data;
   }
 
@@ -665,6 +706,57 @@ class ApiClient {
   // Creature Library
   // ============================================
 
+  // ── Character templates ──────────────────────────────────────────────────
+  // Server-wide starter sheets any user can publish and copy. Distinct from
+  // GET /api/characters/templates/:system/:name, which serves the hardcoded
+  // presets compiled into the backend.
+
+  async listCharacterTemplates(params?: {
+    search?: string;
+    /** A GameSystem value, or 'flexible' for the system-agnostic ones. */
+    gameSystem?: string;
+    mine?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ templates: CharacterTemplate[]; total: number; limit: number; offset: number }> {
+    const response = await this.client.get('/api/character-templates', { params });
+    return response.data;
+  }
+
+  async getCharacterTemplate(id: string): Promise<CharacterTemplate> {
+    const response = await this.client.get(`/api/character-templates/${id}`);
+    return response.data;
+  }
+
+  async createCharacterTemplate(data: {
+    name: string;
+    description?: string | null;
+    gameSystem?: string | null;
+    tokenImageUrl?: string | null;
+    data?: unknown;
+  }): Promise<CharacterTemplate> {
+    const response = await this.client.post('/api/character-templates', data);
+    return response.data;
+  }
+
+  async updateCharacterTemplate(
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      tokenImageUrl?: string | null;
+      data?: unknown;
+    }
+  ): Promise<CharacterTemplate> {
+    const response = await this.client.put(`/api/character-templates/${id}`, data);
+    return response.data;
+  }
+
+  async deleteCharacterTemplate(id: string): Promise<{ message: string }> {
+    const response = await this.client.delete(`/api/character-templates/${id}`);
+    return response.data;
+  }
+
   async listCreatures(
     campaignId: string,
     params?: { search?: string; source?: string; cr?: string; gameSystem?: string; limit?: number; offset?: number }
@@ -698,7 +790,7 @@ class ApiClient {
     return response.data;
   }
 
-  async seedSrdCreatures(campaignId: string): Promise<{ message: string; fetched: number; created: number; skipped: number; alreadyExisted: number }> {
+  async seedSrdCreatures(campaignId: string): Promise<{ message: string; fetched: number; created: number; updated: number; skipped: number; alreadyExisted: number }> {
     const response = await this.client.post(`/api/campaigns/${campaignId}/creatures/seed`);
     return response.data;
   }
