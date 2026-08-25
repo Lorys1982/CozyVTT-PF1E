@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GameSystem, type Character } from '../../../types';
 import Pathfinder1eCharacterSheet from './Pathfinder1eCharacterSheet';
 import { api } from '../../../services/api';
+import type { PF1eCharacterData } from '../../../types/game-systems/pathfinder1e';
 
 const character: Character = {
   id: 'character-1',
@@ -37,7 +38,7 @@ describe('Pathfinder1eCharacterSheet', () => {
     const user = userEvent.setup();
     render(<Pathfinder1eCharacterSheet character={character} mode="edit" onSave={vi.fn()} />);
     await user.click(screen.getByRole('button',{name:'Features & Bio'}));
-    const description = screen.getByLabelText('Feats description');
+    const description = screen.getByLabelText('Feat Description');
 
     await user.type(description, 'Trade attack bonus for damage.');
 
@@ -93,5 +94,27 @@ describe('Pathfinder1eCharacterSheet', () => {
 
     expect(await screen.findByDisplayValue('evocation [fire]')).toBeInTheDocument();
     expect(screen.getByText('Deals fire damage.')).toBeInTheDocument();
+  });
+
+  it('imports official feats while keeping their fields editable',async()=>{
+    const search=vi.spyOn(api,'searchPathfinder1eFeats').mockResolvedValue([{
+      name:'Power Attack',itemName:'Power Attack',sourceUrl:'https://www.aonprd.com/FeatDisplay.aspx?ItemName=Power%20Attack',
+    }]);
+    const detail=vi.spyOn(api,'getPathfinder1eFeat').mockResolvedValue({
+      name:'Power Attack',itemName:'Power Attack',sourceUrl:'https://www.aonprd.com/FeatDisplay.aspx?ItemName=Power%20Attack',
+      source:'Core Rulebook pg. 131',prerequisites:'Str 13',benefit:'Trade attack bonus for damage.',
+    });
+    const featCharacter:Character={...character,data:{...(character.data as PF1eCharacterData),feats:[{name:''}]}};
+    const user=userEvent.setup();
+    render(<Pathfinder1eCharacterSheet character={featCharacter} mode="edit" onSave={vi.fn()}/>);
+    await user.click(screen.getByRole('button',{name:'Features & Bio'}));
+    const input=screen.getByPlaceholderText('Search Archives of Nethys or enter a custom feat…');
+    await user.type(input,'Power');
+    await waitFor(()=>expect(search).toHaveBeenCalledWith('Power'));
+    await user.click(await screen.findByRole('button',{name:'Power Attack'}));
+    await waitFor(()=>expect(detail).toHaveBeenCalledWith('Power Attack'));
+    expect(screen.getByLabelText('Feat Prerequisites')).toHaveValue('Str 13');
+    expect(screen.getByLabelText('Feat Benefit')).toHaveValue('Trade attack bonus for damage.');
+    expect(screen.getByRole('link',{name:/Archives of Nethys/})).toBeInTheDocument();
   });
 });

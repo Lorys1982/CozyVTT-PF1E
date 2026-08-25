@@ -1,4 +1,4 @@
-import { parseAonSpellIndex, parseAonSpellPage } from './pathfinder1eSpellService';
+import { formatAonRulesText, parseAonSpellIndex, parseAonSpellPage } from './pathfinder1eSpellService';
 
 describe('Archives of Nethys PF1e spell parsing', () => {
   it('parses spell search entries with their real ItemName', () => {
@@ -21,5 +21,10 @@ describe('Archives of Nethys PF1e spell parsing', () => {
       range:'long',area:'20-ft.-radius spread',duration:'instantaneous',savingThrow:'Reflex half',
       spellResistance:'yes',description:'Deals 1d6 fire damage per caster level.',
     });
+  });
+
+  it('preserves headings, paragraphs, emphasis, and lists as safe structured text',()=>{
+    expect(formatAonRulesText(`<p>Opening paragraph.</p><h3>Augmented</h3><b>3rd Level:</b> Improved effect.<ul><li>First option</li><li>Second option</li></ul>`))
+      .toBe('Opening paragraph.\n\n## Augmented\n\n**3rd Level:** Improved effect.\n- First option\n- Second option');
   });
 });

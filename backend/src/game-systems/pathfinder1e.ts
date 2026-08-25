@@ -57,6 +57,14 @@ export interface PF1eFeature {
   name: string;
   type?: string;
   description?: string;
+  itemName?: string;
+  source?: string;
+  sourceUrl?: string;
+  rulesSource?: 'Archives of Nethys';
+  prerequisites?: string;
+  benefit?: string;
+  normal?: string;
+  special?: string;
 }
 
 export interface PF1eACItem {

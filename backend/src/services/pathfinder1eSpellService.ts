@@ -43,6 +43,21 @@ function plainText(value:string):string {
     .replace(/[ \t]+/g,' ').replace(/\s*\n\s*/g,'\n').trim();
 }
 
+/** Convert AoN's trusted presentation HTML into a small, inert text format. */
+export function formatAonRulesText(value:string):string {
+  const formatted=value
+    .replace(/<h[2-6][^>]*>([\s\S]*?)<\/h[2-6]>/gi,'\n\n## $1\n\n')
+    .replace(/<br\s*\/?>\s*<br\s*\/?>/gi,'\n\n')
+    .replace(/<\/?p[^>]*>/gi,'\n\n')
+    .replace(/<li[^>]*>/gi,'\n- ')
+    .replace(/<\/li>/gi,'')
+    .replace(/<(?:b|strong)[^>]*>([\s\S]*?)<\/(?:b|strong)>/gi,'**$1**')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<[^>]+>/g,' ');
+  return decodeHtml(formatted).split('\n').map(line=>line.replace(/[ \t]+/g,' ').trim())
+    .join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+
 function field(html:string,label:string):string|undefined {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const value = html.match(new RegExp(`<b>${escaped}<\\/b>\\s*([\\s\\S]*?)(?=<br\\s*\\/?>|<h3|<b>(?:Target|Area|Effect|Duration|Saving Throw|Spell Resistance)<\\/b>|$)`,'i'))?.[1];
@@ -89,7 +104,7 @@ export function parseAonSpellPage(html:string,fallback:AonSpellSummary):AonSpell
     range: field(content,'Range'), target: field(content,'Target'), area: field(content,'Area'),
     effect: field(content,'Effect'), duration: field(content,'Duration'),
     savingThrow: field(content,'Saving Throw'), spellResistance: field(content,'Spell Resistance'),
-    description: description ? plainText(description) : fallback.summary,
+    description: description ? formatAonRulesText(description) : fallback.summary,
   };
 }
 

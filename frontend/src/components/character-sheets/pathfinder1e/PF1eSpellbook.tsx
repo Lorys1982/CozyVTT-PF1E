@@ -7,6 +7,7 @@ import type {
   PF1eSpellReference,
 } from '../../../types/game-systems/pathfinder1e';
 import { PF1E_ABILITIES, numberOrUndefined, signed } from './pathfinder1eDefaults';
+import PF1eRulesText from './PF1eRulesText';
 
 interface Props {
   data:PF1eCharacterData;
@@ -141,10 +142,10 @@ function SpellCard({spell,editable,onChange,onRemove}:{spell:PF1eSpell;editable:
         )}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {editable && <label className="text-xs font-semibold text-stone-600">School<input value={spell.school ?? ''} onChange={event=>onChange({...spell,school:event.target.value})} className={`${inputClass} mt-1`} /></label>}
-        <label className="text-xs font-semibold text-stone-600">Prepared<input disabled={!editable} type="number" min="0" value={spell.prepared ?? ''} onChange={event=>onChange({...spell,prepared:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1`} /></label>
-        <label className="text-xs font-semibold text-stone-600">Cast<input disabled={!editable} type="number" min="0" value={spell.cast ?? ''} onChange={event=>onChange({...spell,cast:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1`} /></label>
+      <div className="mt-3 grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {editable && <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">School</span><input value={spell.school ?? ''} onChange={event=>onChange({...spell,school:event.target.value})} className={`${inputClass} mt-1 min-h-10`} /></label>}
+        <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">Prepared</span><input disabled={!editable} type="number" min="0" value={spell.prepared ?? ''} onChange={event=>onChange({...spell,prepared:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 min-h-10`} /></label>
+        <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">Cast</span><input disabled={!editable} type="number" min="0" value={spell.cast ?? ''} onChange={event=>onChange({...spell,cast:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 min-h-10`} /></label>
         <label className="flex items-center gap-2 self-end rounded-lg bg-stone-50 px-3 py-2 text-sm font-medium text-stone-700"><input disabled={!editable} type="checkbox" checked={!!spell.atWill} onChange={event=>onChange({...spell,atWill:event.target.checked})} />At will</label>
       </div>
 
@@ -165,7 +166,7 @@ function SpellCard({spell,editable,onChange,onRemove}:{spell:PF1eSpell;editable:
       {editable ? (
         <label className="mt-3 block text-xs font-semibold text-stone-600">Notes<input value={spell.notes ?? ''} onChange={event=>onChange({...spell,notes:event.target.value})} className={`${inputClass} mt-1`} /></label>
       ) : spell.notes ? <div className="mt-3 text-sm italic text-stone-600">{spell.notes}</div> : null}
-      {spell.description && <div className="mt-3 whitespace-pre-wrap border-t border-stone-100 pt-3 text-sm leading-relaxed text-stone-700">{spell.description}</div>}
+      {spell.description && <div className="mt-3 border-t border-stone-100 pt-3"><PF1eRulesText text={spell.description}/></div>}
     </article>
   );
 }

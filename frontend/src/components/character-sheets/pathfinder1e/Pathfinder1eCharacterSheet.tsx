@@ -11,6 +11,7 @@ import type {
 } from '../../../types/game-systems/pathfinder1e';
 import { calculatePF1eDerived, pf1eAbilityCheckModifier, pf1eAbilityModifier } from '../../../utils/pathfinder1eCalculations';
 import PF1eSpellbook from './PF1eSpellbook';
+import PF1eFeatList from './PF1eFeatList';
 import { createPF1eSheetData, numberOrUndefined, PF1E_ABILITIES, preparePF1eDataForSave, signed } from './pathfinder1eDefaults';
 
 type TabId = 'overview'|'combat'|'skills'|'spells'|'inventory'|'features';
@@ -42,8 +43,8 @@ interface InputProps {
 
 function SheetInput({label,value,editable,type='text',min,placeholder,onChange}:InputProps) {
   return (
-    <label className="block text-xs font-semibold uppercase tracking-wide text-stone-500">
-      {label}
+    <label className="flex h-full min-w-0 flex-col text-xs font-semibold uppercase tracking-wide text-stone-500">
+      <span className="flex min-h-8 items-end leading-tight">{label}</span>
       <input
         aria-label={label}
         disabled={!editable}
@@ -52,7 +53,7 @@ function SheetInput({label,value,editable,type='text',min,placeholder,onChange}:
         value={value ?? ''}
         placeholder={placeholder}
         onChange={event=>onChange(type==='number'?numberOrUndefined(event.target.value):event.target.value)}
-        className={`${inputClass} mt-1 text-base font-medium normal-case tracking-normal`}
+        className={`${inputClass} mt-1 min-h-10 text-base font-medium normal-case tracking-normal`}
       />
     </label>
   );
@@ -77,6 +78,10 @@ function RollValue({label,value,onRoll}:{label:string;value:number;onRoll?:(expr
 function OverviewTab({data,editable,onSet,onRoll}:{data:PF1eCharacterData;editable:boolean;onSet:(path:string,value:unknown)=>void;onRoll?:Pathfinder1eCharacterSheetProps['onRoll']}) {
   return <div className="space-y-6">
     <Panel title="Ability Scores" icon={Sparkles}>
+      <p className="mb-4 rounded-lg bg-stone-100 px-3 py-2 text-xs leading-relaxed text-stone-600">
+        <strong>Temp score</strong> replaces the normal score while a buff, penalty, or condition is active.
+        <strong className="ml-1">Misc check</strong> and <strong>temp check</strong> are bonuses only to raw ability checks; they do not change attacks, saves, skills, or other derived values.
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {PF1E_ABILITIES.map(({key,label,short})=>{
           const ability=data.abilities?.[key];
@@ -85,9 +90,9 @@ function OverviewTab({data,editable,onSet,onRoll}:{data:PF1eCharacterData;editab
           return <div key={key} className="flex flex-col items-center rounded-xl border border-stone-200 bg-white p-3">
             <div className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-stone-500">{short}</div>
             <button type="button" disabled={!onRoll} onClick={()=>onRoll?.(`1d20${signed(checkModifier)}`,`${label} Check`)} className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-950 bg-gradient-to-br from-red-700 to-red-950 text-2xl font-black text-white shadow-lg enabled:hover:from-red-600 enabled:hover:to-red-900" title={onRoll?`Roll ${label} check (${signed(checkModifier)})`:undefined}>{signed(modifier)}</button>
-            <input aria-label={`${label} score`} disabled={!editable} type="number" value={ability?.score??10} onChange={event=>onSet(`abilities.${key}.score`,numberOrUndefined(event.target.value))} className="mt-2 w-16 rounded-md border border-stone-300 px-2 py-1 text-center font-bold disabled:border-transparent disabled:bg-transparent" />
-            <label className="mt-2 text-center text-[10px] font-semibold uppercase text-stone-400">Temporary<input aria-label={`${label} temporary score`} disabled={!editable} type="number" value={ability?.tempScore??''} onChange={event=>onSet(`abilities.${key}.tempScore`,numberOrUndefined(event.target.value)??null)} className="mt-1 w-16 rounded-md border border-stone-300 px-2 py-1 text-center text-sm font-medium disabled:border-transparent disabled:bg-transparent" /></label>
-            <div className="mt-2 grid w-full grid-cols-2 gap-1"><label className="text-center text-[9px] font-semibold uppercase text-stone-400">Check misc<input aria-label={`${label} check misc`} disabled={!editable} type="number" value={ability?.checkMiscModifier??''} onChange={event=>onSet(`abilities.${key}.checkMiscModifier`,numberOrUndefined(event.target.value))} className="mt-1 w-full rounded border border-stone-300 px-1 py-1 text-center text-xs disabled:border-transparent disabled:bg-transparent" /></label><label className="text-center text-[9px] font-semibold uppercase text-stone-400">Check temp<input aria-label={`${label} check temporary`} disabled={!editable} type="number" value={ability?.checkTempModifier??''} onChange={event=>onSet(`abilities.${key}.checkTempModifier`,numberOrUndefined(event.target.value))} className="mt-1 w-full rounded border border-stone-300 px-1 py-1 text-center text-xs disabled:border-transparent disabled:bg-transparent" /></label></div>
+            <label className="mt-2 w-full text-center text-[10px] font-semibold uppercase text-stone-400">Score<input aria-label={`${label} score`} disabled={!editable} type="number" value={ability?.score??10} onChange={event=>onSet(`abilities.${key}.score`,numberOrUndefined(event.target.value))} className="mt-1 w-full rounded-md border border-stone-300 px-2 py-1 text-center font-bold disabled:border-transparent disabled:bg-transparent" /></label>
+            <label title="Replacement ability score while a temporary effect is active; leave blank to use the normal score." className="mt-2 w-full text-center text-[10px] font-semibold uppercase text-stone-400">Temp score<input aria-label={`${label} temporary score`} disabled={!editable} type="number" value={ability?.tempScore??''} onChange={event=>onSet(`abilities.${key}.tempScore`,numberOrUndefined(event.target.value)??null)} className="mt-1 w-full rounded-md border border-stone-300 px-2 py-1 text-center text-sm font-medium disabled:border-transparent disabled:bg-transparent" /></label>
+            <div className="mt-2 grid w-full grid-cols-2 gap-2"><label title="Permanent or long-running bonus that applies only to this ability check." className="flex flex-col text-center text-[9px] font-semibold uppercase leading-tight text-stone-400"><span className="flex min-h-6 items-end justify-center">Misc check</span><input aria-label={`${label} check misc`} disabled={!editable} type="number" value={ability?.checkMiscModifier??''} onChange={event=>onSet(`abilities.${key}.checkMiscModifier`,numberOrUndefined(event.target.value))} className="mt-1 w-full rounded border border-stone-300 px-1 py-1 text-center text-xs disabled:border-transparent disabled:bg-transparent" /></label><label title="Short-lived situational bonus that applies only to this ability check." className="flex flex-col text-center text-[9px] font-semibold uppercase leading-tight text-stone-400"><span className="flex min-h-6 items-end justify-center">Temp check</span><input aria-label={`${label} check temporary`} disabled={!editable} type="number" value={ability?.checkTempModifier??''} onChange={event=>onSet(`abilities.${key}.checkTempModifier`,numberOrUndefined(event.target.value))} className="mt-1 w-full rounded border border-stone-300 px-1 py-1 text-center text-xs disabled:border-transparent disabled:bg-transparent" /></label></div>
             {(ability?.checkMiscModifier||ability?.checkTempModifier)&&<div className="mt-1 text-[10px] font-semibold text-red-800">Check {signed(checkModifier)}</div>}
           </div>;
         })}
@@ -154,8 +159,8 @@ function AttackList({title,items,ranged,editable,onSet,onRoll}:{title:string;ite
           <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><SheetInput label="Weapon" value={attack.weapon} editable={editable} onChange={value=>update(index,'weapon',value)} /></div>{editable&&<button type="button" aria-label={`Remove ${attack.weapon||'attack'}`} onClick={()=>onSet(path,items.filter((_,itemIndex)=>itemIndex!==index))} className="mt-6 rounded p-1 text-stone-400 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}</div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <SheetInput label="Base damage" value={attack.baseDamage} editable={editable} placeholder="1d8 (enables calculation)" onChange={value=>update(index,'baseDamage',value)} />
-            <label className="text-xs font-semibold uppercase tracking-wide text-stone-500">Attack ability<select disabled={!editable} value={attack.attackAbility??(ranged?'dex':'str')} onChange={event=>update(index,'attackAbility',event.target.value)} className={`${inputClass} mt-1 text-base normal-case`} >{PF1E_ABILITIES.map(ability=><option key={ability.key} value={ability.key}>{ability.label}</option>)}</select></label>
-            <label className="text-xs font-semibold uppercase tracking-wide text-stone-500">Damage ability<select disabled={!editable} value={attack.damageAbility??(ranged?'none':'str')} onChange={event=>update(index,'damageAbility',event.target.value)} className={`${inputClass} mt-1 text-base normal-case`}><option value="none">None</option>{PF1E_ABILITIES.map(ability=><option key={ability.key} value={ability.key}>{ability.label}</option>)}</select></label>
+            <label className="flex h-full flex-col text-xs font-semibold uppercase tracking-wide text-stone-500"><span className="flex min-h-8 items-end">Attack ability</span><select disabled={!editable} value={attack.attackAbility??(ranged?'dex':'str')} onChange={event=>update(index,'attackAbility',event.target.value)} className={`${inputClass} mt-1 min-h-10 text-base normal-case`} >{PF1E_ABILITIES.map(ability=><option key={ability.key} value={ability.key}>{ability.label}</option>)}</select></label>
+            <label className="flex h-full flex-col text-xs font-semibold uppercase tracking-wide text-stone-500"><span className="flex min-h-8 items-end">Damage ability</span><select disabled={!editable} value={attack.damageAbility??(ranged?'none':'str')} onChange={event=>update(index,'damageAbility',event.target.value)} className={`${inputClass} mt-1 min-h-10 text-base normal-case`}><option value="none">None</option>{PF1E_ABILITIES.map(ability=><option key={ability.key} value={ability.key}>{ability.label}</option>)}</select></label>
             <SheetInput label="Ability multiplier" value={attack.damageAbilityMultiplier??1} editable={editable} type="number" onChange={value=>update(index,'damageAbilityMultiplier',value)} />
             <SheetInput label="Enhancement" value={attack.enhancementBonus} editable={editable} type="number" onChange={value=>update(index,'enhancementBonus',value)} />
             <SheetInput label="Attack misc" value={attack.attackMiscModifier} editable={editable} type="number" onChange={value=>update(index,'attackMiscModifier',value)} />
@@ -229,7 +234,7 @@ function FeatureList({title,values,editable,onChange}:{title:string;values:PF1eF
 }
 
 function FeaturesTab({data,editable,onSet}:{data:PF1eCharacterData;editable:boolean;onSet:(path:string,value:unknown)=>void}) {
-  return <div className="space-y-6"><FeatureList title="Feats" values={data.feats??[]} editable={editable} onChange={values=>onSet('feats',values)} /><FeatureList title="Special Abilities" values={data.specialAbilities??[]} editable={editable} onChange={values=>onSet('specialAbilities',values)} /><FeatureList title="Traits" values={data.traits??[]} editable={editable} onChange={values=>onSet('traits',values)} /><Panel title="Biography & Notes" icon={NotebookPen}><textarea aria-label="Character notes" disabled={!editable} value={data.notes??''} onChange={event=>onSet('notes',event.target.value)} className={`${inputClass} min-h-56 resize-y whitespace-pre-wrap`} /></Panel></div>;
+  return <div className="space-y-6"><Panel title="Feats"><PF1eFeatList values={data.feats??[]} editable={editable} onChange={values=>onSet('feats',values)} /></Panel><FeatureList title="Special Abilities" values={data.specialAbilities??[]} editable={editable} onChange={values=>onSet('specialAbilities',values)} /><FeatureList title="Traits" values={data.traits??[]} editable={editable} onChange={values=>onSet('traits',values)} /><Panel title="Biography & Notes" icon={NotebookPen}><textarea aria-label="Character notes" disabled={!editable} value={data.notes??''} onChange={event=>onSet('notes',event.target.value)} className={`${inputClass} min-h-56 resize-y whitespace-pre-wrap`} /></Panel></div>;
 }
 
 export default function Pathfinder1eCharacterSheet({character,mode,onSave,onCancel,onRoll}:Pathfinder1eCharacterSheetProps) {

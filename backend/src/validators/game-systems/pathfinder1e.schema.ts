@@ -59,6 +59,14 @@ const feature = z.object({
   name: z.string().min(1),
   type: z.string().optional(),
   description: z.string().optional(),
+  itemName: z.string().optional(),
+  source: z.string().optional(),
+  sourceUrl: z.string().url().optional(),
+  rulesSource: z.literal('Archives of Nethys').optional(),
+  prerequisites: z.string().optional(),
+  benefit: z.string().optional(),
+  normal: z.string().optional(),
+  special: z.string().optional(),
 });
 
 const acItem = z.object({
