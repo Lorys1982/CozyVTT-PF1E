@@ -74,6 +74,7 @@ Ask your DM which system you're playing:
 | System | What it's for |
 |--------|--------------|
 | D&D 5e | Dungeons & Dragons 5th Edition |
+| Pathfinder 1e | Pathfinder 1st Edition |
 | Pathfinder 2e | Pathfinder 2nd Edition |
 | Call of Cthulhu 7e | Horror and investigation (Lovecraftian) |
 | Flexible | Homebrew or rules-light systems |

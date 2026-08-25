@@ -56,6 +56,17 @@ export function registerCharacterHandlers(io: Server, socket: AuthenticatedSocke
       let temp: number;
 
       switch (character.gameSystem) {
+        case 'PATHFINDER_1E': {
+          if (!charData.hp || typeof charData.hp.total !== 'number') {
+            socket.emit('error', { message: 'Character does not have HP tracking' });
+            return;
+          }
+          max = charData.hp.total;
+          temp = typeof charData.hp.temporary === 'number' ? charData.hp.temporary : 0;
+          current = Math.max(0, Math.min(max, (typeof charData.hp.current === 'number' ? charData.hp.current : max) + delta));
+          charData.hp.current = current;
+          break;
+        }
         case 'DND_5E':
         case 'PATHFINDER_2E': {
           if (!charData.hp || typeof charData.hp.maximum !== 'number') {

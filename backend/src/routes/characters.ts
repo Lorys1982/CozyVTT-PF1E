@@ -55,6 +55,7 @@ router.post('/', authenticated, async (req: AuthenticatedRequest, res: Response)
     if (finalGameSystem !== undefined && finalGameSystem !== null) {
       const validSystems: string[] = [
         GameSystem.DND_5E,
+        GameSystem.PATHFINDER_1E,
         GameSystem.PATHFINDER_2E,
         GameSystem.SHADOWRUN_6E,
         GameSystem.CALL_OF_CTHULHU_7E,

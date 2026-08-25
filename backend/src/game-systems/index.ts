@@ -7,6 +7,8 @@
 export * from './dnd5e';
 // Export all Pathfinder 2e types
 export * from './pathfinder2e';
+// Export all Pathfinder 1e types
+export * from './pathfinder1e';
 // Export all Shadowrun 6e types
 export * from './shadowrun6e';
 // Export all Call of Cthulhu 7e types
@@ -14,6 +16,7 @@ export * from './callOfCthulhu7e';
 
 import { DnD5eCharacterData } from './dnd5e';
 import { PF2eCharacterData } from './pathfinder2e';
+import { PF1eCharacterData } from './pathfinder1e';
 import { SR6CharacterData } from './shadowrun6e';
 import { CoC7eCharacterData } from './callOfCthulhu7e';
 
@@ -22,6 +25,7 @@ import { CoC7eCharacterData } from './callOfCthulhu7e';
  */
 export enum GameSystem {
   DND_5E = 'DND_5E',
+  PATHFINDER_1E = 'PATHFINDER_1E',
   PATHFINDER_2E = 'PATHFINDER_2E',
   SHADOWRUN_6E = 'SHADOWRUN_6E',
   CALL_OF_CTHULHU_7E = 'CALL_OF_CTHULHU_7E',
@@ -32,6 +36,7 @@ export enum GameSystem {
  */
 export type CharacterDataBySystem = {
   [GameSystem.DND_5E]: DnD5eCharacterData;
+  [GameSystem.PATHFINDER_1E]: PF1eCharacterData;
   [GameSystem.PATHFINDER_2E]: PF2eCharacterData;
   [GameSystem.SHADOWRUN_6E]: SR6CharacterData;
   [GameSystem.CALL_OF_CTHULHU_7E]: CoC7eCharacterData;
@@ -42,6 +47,7 @@ export type CharacterDataBySystem = {
  */
 export type GameSystemCharacterData =
   | DnD5eCharacterData
+  | PF1eCharacterData
   | PF2eCharacterData
   | SR6CharacterData
   | CoC7eCharacterData;
@@ -104,6 +110,23 @@ export function isPathfinder2eData(
     'armorClass' in candidate &&
     typeof candidate.armorClass === 'object' &&
     'proficiencyRank' in candidate.armorClass
+  );
+}
+
+/** Type guard for Pathfinder 1e character data. */
+export function isPathfinder1eData(
+  data: unknown,
+  gameSystem?: string
+): data is PF1eCharacterData {
+  if (gameSystem && gameSystem !== GameSystem.PATHFINDER_1E) {
+    return false;
+  }
+
+  const candidate = data as PF1eCharacterData;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    typeof candidate.characterName === 'string'
   );
 }
 
@@ -184,6 +207,8 @@ export function getTypedCharacterData<T extends GameSystem>(
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return isDnD5eData(data) ? (data as CharacterDataBySystem[T]) : null;
+    case GameSystem.PATHFINDER_1E:
+      return isPathfinder1eData(data) ? (data as CharacterDataBySystem[T]) : null;
     case GameSystem.PATHFINDER_2E:
       return isPathfinder2eData(data) ? (data as CharacterDataBySystem[T]) : null;
     case GameSystem.SHADOWRUN_6E:
@@ -208,6 +233,8 @@ export function validateCharacterData(
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return isDnD5eData(data, gameSystem);
+    case GameSystem.PATHFINDER_1E:
+      return isPathfinder1eData(data, gameSystem);
     case GameSystem.PATHFINDER_2E:
       return isPathfinder2eData(data, gameSystem);
     case GameSystem.SHADOWRUN_6E:

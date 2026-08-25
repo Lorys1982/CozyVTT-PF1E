@@ -12,6 +12,7 @@
  */
 export enum GameSystem {
   DND_5E = 'DND_5E',
+  PATHFINDER_1E = 'PATHFINDER_1E',
   PATHFINDER_2E = 'PATHFINDER_2E',
   SHADOWRUN_6E = 'SHADOWRUN_6E',
   CALL_OF_CTHULHU_7E = 'CALL_OF_CTHULHU_7E',
@@ -120,6 +121,8 @@ export interface NpcStatBlock {
   challengeRating?: string;
   /** XP value */
   xp?: number;
+  /** Maximum hit points, used when placing imported creatures */
+  hitPoints?: number;
   /** Special traits/abilities (name + description pairs) */
   traits?: Array<{ name: string; description: string }>;
   /** Actions (name + description pairs) */
@@ -130,6 +133,12 @@ export interface NpcStatBlock {
   reactions?: Array<{ name: string; description: string }>;
   /** Legendary actions */
   legendaryActions?: Array<{ name: string; description: string }>;
+  /** PF1e spellcasting groups imported from the creature's official stat block */
+  spellcasting?: Array<{
+    name: string;
+    description: string;
+    spells: Array<{ name: string; sourceUrl?: string }>;
+  }>;
   /** Creature type, e.g. "Medium humanoid (goblinoid)" */
   creatureType?: string;
   /** Alignment, e.g. "neutral evil" */
@@ -138,6 +147,10 @@ export interface NpcStatBlock {
   gameSystem?: string;
   /** Any extra freeform notes */
   notes?: string;
+  /** Canonical rules reference for imported creatures */
+  sourceUrl?: string;
+  /** Internal import marker returned by the backend */
+  _aonHydrated?: boolean;
 }
 
 /** Creature template from the library (DB model). */
@@ -467,6 +480,7 @@ export interface Character {
  */
 export type CharacterData =
   | import('./game-systems').DnD5eCharacterData
+  | import('./game-systems').PF1eCharacterData
   | import('./game-systems').PF2eCharacterData
   | import('./game-systems').SR6CharacterData
   | import('./game-systems').CoC7eCharacterData;

@@ -60,6 +60,7 @@ If you find a security issue, please report it privately per [SECURITY.md](SECUR
 
 ### Character Sheets
 - **D&D 5th Edition** — full sheet with stats, skills, saving throws, attacks, spells, inventory
+- **Pathfinder 1st Edition** — calculated combat/skills, tabbed sheet, and Archives of Nethys spell import
 - **Pathfinder 2nd Edition** — attributes, saves, perception, skills, lore skills, strikes
 - **Call of Cthulhu 7th Edition** — characteristics, skills, weapons, sanity, luck
 - **Flexible / Custom** — JSON-based freeform character sheets for any system
@@ -102,6 +103,7 @@ If you find a security issue, please report it privately per [SECURITY.md](SECUR
 | System | Character Sheet | Status |
 |--------|----------------|--------|
 | D&D 5th Edition | Full | Available |
+| Pathfinder 1st Edition | Full | Available |
 | Pathfinder 2nd Edition | Full | Available |
 | Call of Cthulhu 7th Edition | Full | Available |
 | Flexible / Custom | JSON freeform | Available |

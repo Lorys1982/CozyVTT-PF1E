@@ -14,6 +14,10 @@ import {
   type PF2eCharacterData,
 } from './pathfinder2e.schema';
 import {
+  pathfinder1eCharacterDataSchema,
+  type PF1eCharacterData,
+} from './pathfinder1e.schema';
+import {
   shadowrun6eCharacterDataSchema,
   type SR6CharacterData,
 } from './shadowrun6e.schema';
@@ -25,6 +29,7 @@ import {
 // Re-export schemas
 export {
   dnd5eCharacterDataSchema,
+  pathfinder1eCharacterDataSchema,
   pathfinder2eCharacterDataSchema,
   shadowrun6eCharacterDataSchema,
   callOfCthulhu7eCharacterDataSchema,
@@ -33,6 +38,7 @@ export {
 // Re-export types
 export type {
   DnD5eCharacterData,
+  PF1eCharacterData,
   PF2eCharacterData,
   SR6CharacterData,
   CoC7eCharacterData,
@@ -56,6 +62,7 @@ export function validateCharacterData(
   data: unknown
 ): ValidationResult<
   | DnD5eCharacterData
+  | PF1eCharacterData
   | PF2eCharacterData
   | SR6CharacterData
   | CoC7eCharacterData
@@ -64,6 +71,10 @@ export function validateCharacterData(
     switch (gameSystem) {
       case GameSystem.DND_5E: {
         const validated = dnd5eCharacterDataSchema.parse(data);
+        return { success: true, data: validated };
+      }
+      case GameSystem.PATHFINDER_1E: {
+        const validated = pathfinder1eCharacterDataSchema.parse(data);
         return { success: true, data: validated };
       }
       case GameSystem.PATHFINDER_2E: {
@@ -109,12 +120,15 @@ export function getBlankCharacterTemplate(
   gameSystem: GameSystem
 ):
   | DnD5eCharacterData
+  | PF1eCharacterData
   | PF2eCharacterData
   | SR6CharacterData
   | CoC7eCharacterData {
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return createBlankDnD5eCharacter();
+    case GameSystem.PATHFINDER_1E:
+      return createBlankPF1eCharacter();
     case GameSystem.PATHFINDER_2E:
       return createBlankPF2eCharacter();
     case GameSystem.SHADOWRUN_6E:
@@ -122,6 +136,30 @@ export function getBlankCharacterTemplate(
     case GameSystem.CALL_OF_CTHULHU_7E:
       return createBlankCoC7eCharacter();
   }
+}
+
+/** Create a blank Pathfinder 1e character. */
+function createBlankPF1eCharacter(): PF1eCharacterData {
+  return {
+    characterName: 'New Character',
+    abilities: {
+      str: { score: 10 },
+      dex: { score: 10 },
+      con: { score: 10 },
+      int: { score: 10 },
+      wis: { score: 10 },
+      cha: { score: 10 },
+    },
+    melee: [],
+    ranged: [],
+    skills: [],
+    feats: [],
+    specialAbilities: [],
+    traits: [],
+    gear: [],
+    spells: Array.from({ length: 10 }, () => ({ slotted: [] })),
+    spellLikes: [],
+  };
 }
 
 /**

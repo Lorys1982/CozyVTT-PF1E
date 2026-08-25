@@ -2,7 +2,7 @@
 
 This guide explains how to add a new tabletop game system to CozyVTT end to end. It reflects the code as it actually ships — file names, the exact functions you extend, and the reference systems to copy from.
 
-CozyVTT currently ships four systems: **D&D 5e**, **Pathfinder 2e**, **Call of Cthulhu 7e**, and **Shadowrun 6e** (backend-complete; its sheet UI is a placeholder — see [Reference systems](#reference-systems)). Adding a fifth means touching a fixed set of registration points, all of which are plain `switch` statements and enums — no dynamic plugin loader, no config file. If you add your system to every switch the compiler and tests point you at, it works.
+CozyVTT currently ships five systems: **D&D 5e**, **Pathfinder 1e**, **Pathfinder 2e**, **Call of Cthulhu 7e**, and **Shadowrun 6e** (backend-complete; its sheet UI is a placeholder — see [Reference systems](#reference-systems)). Adding another means touching a fixed set of registration points, all of which are plain `switch` statements and enums — no dynamic plugin loader, no config file. If you add your system to every switch the compiler and tests point you at, it works.
 
 ---
 
@@ -86,6 +86,7 @@ Add the value to `backend/prisma/schema.prisma`:
 ```prisma
 enum GameSystem {
   DND_5E
+  PATHFINDER_1E
   PATHFINDER_2E
   SHADOWRUN_6E
   CALL_OF_CTHULHU_7E
@@ -159,6 +160,7 @@ import { MySystemCharacterData } from './mySystem';
 // 3. Add the enum value (must match Prisma + the frontend enum)
 export enum GameSystem {
   DND_5E = 'DND_5E',
+  PATHFINDER_1E = 'PATHFINDER_1E',
   PATHFINDER_2E = 'PATHFINDER_2E',
   SHADOWRUN_6E = 'SHADOWRUN_6E',
   CALL_OF_CTHULHU_7E = 'CALL_OF_CTHULHU_7E',
@@ -328,6 +330,7 @@ The frontend keeps its own copy of the types (TypeScript doesn't cross the front
    ```typescript
    export enum GameSystem {
      DND_5E = 'DND_5E',
+     PATHFINDER_1E = 'PATHFINDER_1E',
      PATHFINDER_2E = 'PATHFINDER_2E',
      SHADOWRUN_6E = 'SHADOWRUN_6E',
      CALL_OF_CTHULHU_7E = 'CALL_OF_CTHULHU_7E',

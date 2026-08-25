@@ -331,6 +331,7 @@ describe('Game Systems Validation', () => {
     it('should create valid blank template for all game systems', () => {
       const systems = [
         GameSystem.DND_5E,
+        GameSystem.PATHFINDER_1E,
         GameSystem.PATHFINDER_2E,
         GameSystem.SHADOWRUN_6E,
         GameSystem.CALL_OF_CTHULHU_7E,

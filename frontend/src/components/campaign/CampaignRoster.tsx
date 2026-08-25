@@ -201,6 +201,8 @@ export default function CampaignRoster() {
     switch (gameSystem) {
       case 'DND_5E':
         return 'bg-red-100 text-red-700';
+      case 'PATHFINDER_1E':
+        return 'bg-amber-100 text-amber-700';
       case 'PATHFINDER_2E':
         return 'bg-blue-100 text-blue-700';
       case 'SHADOWRUN_6E':
@@ -217,6 +219,8 @@ export default function CampaignRoster() {
     switch (gameSystem) {
       case 'DND_5E':
         return 'D&D 5e';
+      case 'PATHFINDER_1E':
+        return 'PF1e';
       case 'PATHFINDER_2E':
         return 'PF2e';
       case 'SHADOWRUN_6E':

@@ -13,6 +13,7 @@ import type { Character, GameSystem, CampaignMembership } from '@/types';
 
 // Import view components
 import { DnD5eCharacterView } from '../character-sheets/dnd5e/DnD5eCharacterView';
+import Pathfinder1eCharacterSheet from '../character-sheets/pathfinder1e/Pathfinder1eCharacterSheet';
 import Pathfinder2eCharacterView from '../character-sheets/pathfinder2e/Pathfinder2eCharacterView';
 import Shadowrun6eCharacterSheet from '../character-sheets/shadowrun6e/Shadowrun6eCharacterSheet';
 import CallOfCthulhu7eCharacterView from '../character-sheets/call-of-cthulhu-7e/CallOfCthulhu7eCharacterView';
@@ -109,6 +110,8 @@ export default function CharacterSheetViewerModal({
     switch (gameSystem) {
       case 'DND_5E':
         return 'D&D 5th Edition';
+      case 'PATHFINDER_1E':
+        return 'Pathfinder 1st Edition';
       case 'PATHFINDER_2E':
         return 'Pathfinder 2nd Edition';
       case 'SHADOWRUN_6E':
@@ -134,6 +137,8 @@ export default function CharacterSheetViewerModal({
     switch (character.gameSystem) {
       case 'DND_5E':
         return <DnD5eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
+      case 'PATHFINDER_1E':
+        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} />;
       case 'PATHFINDER_2E':
         return <Pathfinder2eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'SHADOWRUN_6E':

@@ -15,6 +15,10 @@ import {
   getPF2eTemplate,
 } from './pathfinder2e-templates';
 import {
+  getPF1eTemplates,
+  getPF1eTemplate,
+} from './pathfinder1e-templates';
+import {
   getSR6Templates,
   getSR6Template,
 } from './shadowrun6e-templates';
@@ -36,6 +40,8 @@ export function getTemplatesForGameSystem(
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return getDnD5eTemplates();
+    case GameSystem.PATHFINDER_1E:
+      return getPF1eTemplates();
     case GameSystem.PATHFINDER_2E:
       return getPF2eTemplates();
     case GameSystem.SHADOWRUN_6E:
@@ -60,6 +66,8 @@ export function getCharacterTemplate(
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return getDnD5eTemplate(templateName);
+    case GameSystem.PATHFINDER_1E:
+      return getPF1eTemplate(templateName);
     case GameSystem.PATHFINDER_2E:
       return getPF2eTemplate(templateName);
     case GameSystem.SHADOWRUN_6E:
@@ -87,6 +95,7 @@ export function getBlankTemplate(gameSystem: GameSystem): CharacterTemplate {
 export function getAllTemplates(): Record<string, CharacterTemplate[]> {
   return {
     [GameSystem.DND_5E]: getDnD5eTemplates(),
+    [GameSystem.PATHFINDER_1E]: getPF1eTemplates(),
     [GameSystem.PATHFINDER_2E]: getPF2eTemplates(),
     [GameSystem.SHADOWRUN_6E]: getSR6Templates(),
     [GameSystem.CALL_OF_CTHULHU_7E]: getCoC7eTemplates(),

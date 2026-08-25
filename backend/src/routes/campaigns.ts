@@ -304,6 +304,16 @@ function extractCharacterHp(
       }
       return null;
     }
+    case 'PATHFINDER_1E': {
+      if (d.hp && typeof d.hp.total === 'number' && d.hp.total > 0) {
+        return {
+          current: typeof d.hp.current === 'number' ? d.hp.current : d.hp.total,
+          max: d.hp.total,
+          temp: typeof d.hp.temporary === 'number' ? d.hp.temporary : 0,
+        };
+      }
+      return null;
+    }
     case 'CALL_OF_CTHULHU_7E': {
       const hp = d.derivedStats?.hp;
       if (hp && typeof hp.maximum === 'number' && hp.maximum > 0) {
@@ -417,6 +427,7 @@ router.put('/:campaignId', campaignDM, async (req: AuthenticatedRequest, res: Re
       if (gameSystem !== null) {
         const validSystems: string[] = [
           GameSystem.DND_5E,
+          GameSystem.PATHFINDER_1E,
           GameSystem.PATHFINDER_2E,
           GameSystem.SHADOWRUN_6E,
           GameSystem.CALL_OF_CTHULHU_7E,

@@ -10,6 +10,7 @@ import { GameSystem } from '../types';
  */
 export const GAME_SYSTEM_LABELS: Record<GameSystem, string> = {
   [GameSystem.DND_5E]: 'Dungeons & Dragons 5th Edition',
+  [GameSystem.PATHFINDER_1E]: 'Pathfinder 1st Edition',
   [GameSystem.PATHFINDER_2E]: 'Pathfinder 2nd Edition',
   [GameSystem.SHADOWRUN_6E]: 'Shadowrun 6th Edition',
   [GameSystem.CALL_OF_CTHULHU_7E]: 'Call of Cthulhu 7th Edition',
@@ -20,6 +21,7 @@ export const GAME_SYSTEM_LABELS: Record<GameSystem, string> = {
  */
 export const GAME_SYSTEM_SHORT_LABELS: Record<GameSystem, string> = {
   [GameSystem.DND_5E]: 'D&D 5e',
+  [GameSystem.PATHFINDER_1E]: 'PF1e',
   [GameSystem.PATHFINDER_2E]: 'PF2e',
   [GameSystem.SHADOWRUN_6E]: 'SR6',
   [GameSystem.CALL_OF_CTHULHU_7E]: 'CoC 7e',
@@ -31,6 +33,8 @@ export const GAME_SYSTEM_SHORT_LABELS: Record<GameSystem, string> = {
 export const GAME_SYSTEM_DESCRIPTIONS: Record<GameSystem, string> = {
   [GameSystem.DND_5E]:
     'The world\'s most popular tabletop RPG. High fantasy adventures with heroic characters.',
+  [GameSystem.PATHFINDER_1E]:
+    'Classic Pathfinder character sheets with skills, CMB/CMD, spells, feats, and equipment.',
   [GameSystem.PATHFINDER_2E]:
     'A deep and customizable fantasy RPG with tactical combat and character building.',
   [GameSystem.SHADOWRUN_6E]:
@@ -61,6 +65,12 @@ export const GAME_SYSTEM_OPTIONS: GameSystemOption[] = [
     label: GAME_SYSTEM_LABELS[GameSystem.PATHFINDER_2E],
     shortLabel: GAME_SYSTEM_SHORT_LABELS[GameSystem.PATHFINDER_2E],
     description: GAME_SYSTEM_DESCRIPTIONS[GameSystem.PATHFINDER_2E],
+  },
+  {
+    value: GameSystem.PATHFINDER_1E,
+    label: GAME_SYSTEM_LABELS[GameSystem.PATHFINDER_1E],
+    shortLabel: GAME_SYSTEM_SHORT_LABELS[GameSystem.PATHFINDER_1E],
+    description: GAME_SYSTEM_DESCRIPTIONS[GameSystem.PATHFINDER_1E],
   },
   // Shadowrun 6e - Temporarily disabled until further notice
   // {

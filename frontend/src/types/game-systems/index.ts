@@ -8,6 +8,8 @@
 export * from './dnd5e';
 // Export all Pathfinder 2e types
 export * from './pathfinder2e';
+// Export all Pathfinder 1e types
+export * from './pathfinder1e';
 // Export all Shadowrun 6e types
 export * from './shadowrun6e';
 // Export all Call of Cthulhu 7e types
@@ -15,6 +17,7 @@ export * from './callOfCthulhu7e';
 
 import type { DnD5eCharacterData } from './dnd5e';
 import type { PF2eCharacterData } from './pathfinder2e';
+import type { PF1eCharacterData } from './pathfinder1e';
 import type { SR6CharacterData } from './shadowrun6e';
 import type { CoC7eCharacterData } from './callOfCthulhu7e';
 
@@ -23,6 +26,7 @@ import type { CoC7eCharacterData } from './callOfCthulhu7e';
  */
 export enum GameSystem {
   DND_5E = 'DND_5E',
+  PATHFINDER_1E = 'PATHFINDER_1E',
   PATHFINDER_2E = 'PATHFINDER_2E',
   SHADOWRUN_6E = 'SHADOWRUN_6E',
   CALL_OF_CTHULHU_7E = 'CALL_OF_CTHULHU_7E',
@@ -33,6 +37,7 @@ export enum GameSystem {
  */
 export type CharacterDataBySystem = {
   [GameSystem.DND_5E]: DnD5eCharacterData;
+  [GameSystem.PATHFINDER_1E]: PF1eCharacterData;
   [GameSystem.PATHFINDER_2E]: PF2eCharacterData;
   [GameSystem.SHADOWRUN_6E]: SR6CharacterData;
   [GameSystem.CALL_OF_CTHULHU_7E]: CoC7eCharacterData;
@@ -43,6 +48,7 @@ export type CharacterDataBySystem = {
  */
 export type GameSystemCharacterData =
   | DnD5eCharacterData
+  | PF1eCharacterData
   | PF2eCharacterData
   | SR6CharacterData
   | CoC7eCharacterData;

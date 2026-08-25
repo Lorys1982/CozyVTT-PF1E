@@ -1141,7 +1141,7 @@ paths:
                   type: string
                 gameSystem:
                   type: string
-                  enum: [DND_5E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
+                  enum: [DND_5E, PATHFINDER_1E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
                   nullable: true
                   description: Optional game system for the campaign
       responses:
@@ -1213,7 +1213,7 @@ paths:
                   enum: [PREPARATION, ACTIVE, PAUSED, COMPLETED, ARCHIVED]
                 gameSystem:
                   type: string
-                  enum: [DND_5E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
+                  enum: [DND_5E, PATHFINDER_1E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
                   nullable: true
                   description: Game system for the campaign (warning logged if characters exist)
                 vibeSettings:
@@ -1930,7 +1930,7 @@ paths:
                   type: string
                 gameSystem:
                   type: string
-                  enum: [DND_5E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
+                  enum: [DND_5E, PATHFINDER_1E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
                   nullable: true
                   description: Optional game system (auto-inherited from campaign if campaignId provided)
                 campaignId:
@@ -5344,7 +5344,7 @@ components:
           nullable: true
         gameSystem:
           type: string
-          enum: [DND_5E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
+          enum: [DND_5E, PATHFINDER_1E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
           nullable: true
           description: Primary game system for this campaign (optional)
         ownerId:
@@ -5449,7 +5449,7 @@ components:
           type: string
         gameSystem:
           type: string
-          enum: [DND_5E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
+          enum: [DND_5E, PATHFINDER_1E, PATHFINDER_2E, SHADOWRUN_6E, CALL_OF_CTHULHU_7E]
           nullable: true
           description: Game system for this character (determines data structure)
         data:

@@ -13,6 +13,7 @@ import { CharacterSheetErrorBoundary } from './ErrorBoundary';
 
 // Lazy-loaded game system character sheets
 const DnD5eSheet = lazy(() => import('./dnd5e/DnD5eCharacterSheet'));
+const Pathfinder1eSheet = lazy(() => import('./pathfinder1e/Pathfinder1eCharacterSheet'));
 const Pathfinder2eSheet = lazy(() => import('./pathfinder2e/Pathfinder2eCharacterSheet'));
 const Shadowrun6eSheet = lazy(() => import('./shadowrun6e/Shadowrun6eCharacterSheet'));
 const CallOfCthulhu7eSheet = lazy(() => import('./call-of-cthulhu-7e/CallOfCthulhu7eCharacterSheet'));
@@ -42,6 +43,9 @@ export const CharacterSheetRouter: React.FC<CharacterSheetRouterProps> = (
     switch (character.gameSystem) {
       case GameSystem.DND_5E:
         return <DnD5eSheet {...props} />;
+
+      case GameSystem.PATHFINDER_1E:
+        return <Pathfinder1eSheet {...props} />;
 
       case GameSystem.PATHFINDER_2E:
         return <Pathfinder2eSheet {...props} />;

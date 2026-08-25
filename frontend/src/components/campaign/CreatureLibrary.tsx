@@ -43,12 +43,6 @@ const CR_OPTIONS = [
   '25', '26', '27', '28', '29', '30',
 ];
 
-const SOURCE_FILTERS = [
-  { value: '', label: 'All Sources' },
-  { value: 'srd', label: 'SRD (Official)' },
-  { value: 'custom', label: 'Custom / Homebrew' },
-];
-
 // ============================================
 // Props
 // ============================================
@@ -113,6 +107,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
         search: searchQuery || undefined,
         source: sourceFilter || undefined,
         cr: crFilter || undefined,
+        gameSystem: campaign.gameSystem || undefined,
         limit: LIMIT,
         offset: newOffset,
       });
@@ -167,12 +162,15 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
 
     try {
       const result = await api.seedSrdCreatures(campaign.id);
-      setSeedResult(`Seeded ${result.created} SRD creatures (${result.skipped} already existed).`);
+      const sourceName = campaign.gameSystem === GameSystem.PATHFINDER_1E
+        ? 'Archives of Nethys PF1e creatures'
+        : 'D&D 5e SRD creatures';
+      setSeedResult(`Imported ${result.created} ${sourceName} (${result.skipped} already existed).`);
       setSrdCount((result.alreadyExisted || 0) + result.created);
       // Refresh the list
       fetchCreatures(true);
-    } catch {
-      setError('Failed to seed SRD creatures. Check that the server can reach api.open5e.com.');
+    } catch (importError: any) {
+      setError(importError.response?.data?.message || 'Failed to import official creatures.');
     } finally {
       setIsSeeding(false);
     }
@@ -188,18 +186,19 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       y: Math.floor(currentMap.height / 2),
     };
 
-    // Default HP — DM can adjust after placement via NpcQuickEditor
-    const hpMax = 10;
-
     try {
+      const resolvedCreature = creature.source === 'aon-pf1e'
+        ? await api.getCreature(campaign.id, creature.id)
+        : creature;
+      const hpMax = resolvedCreature.statBlock.hitPoints || 10;
       const tokenPayload = {
-        name: creature.name,
-        imageUrl: creature.imageUrl || '',
+        name: resolvedCreature.name,
+        imageUrl: resolvedCreature.imageUrl || '',
         position,
-        size: creature.size || { width: 1, height: 1 },
+        size: resolvedCreature.size || { width: 1, height: 1 },
         type: TokenType.NPC,
-        displayMode: creature.displayMode || 'pog',
-        disposition: creature.disposition || 'hostile',
+        displayMode: resolvedCreature.displayMode || 'pog',
+        disposition: resolvedCreature.disposition || 'hostile',
         hp: { current: hpMax, max: hpMax, temp: 0 },
         showHpBar: true,
         visible: true,
@@ -207,8 +206,8 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
         conditions: [],
         notes: '',
         initiative: null,
-        statBlock: creature.statBlock,
-        creatureTemplateId: creature.id,
+        statBlock: resolvedCreature.statBlock,
+        creatureTemplateId: resolvedCreature.id,
       };
 
       const result = await api.addToken(
@@ -218,12 +217,30 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       );
       useGameStore.getState().addToken(result.token);
       socket?.emitMapChange(currentMap.id);
-    } catch {
-      setError('Failed to place creature on map');
+    } catch (placeError: any) {
+      setError(placeError.response?.data?.message || placeError.message || 'Failed to place creature on map');
     } finally {
       setPlacingId(null);
     }
   }, [campaign, currentMap, socket]);
+
+  const handleToggleCreature = useCallback(async (creature: CreatureTemplate) => {
+    if (!campaign) return;
+    if (expandedId === creature.id) {
+      setExpandedId(null);
+      return;
+    }
+
+    setExpandedId(creature.id);
+    if (creature.source !== 'aon-pf1e' || creature.statBlock._aonHydrated) return;
+    try {
+      const hydrated = await api.getCreature(campaign.id, creature.id);
+      setCreatures((items) => items.map((item) => item.id === hydrated.id ? hydrated : item));
+      setFavoriteCreatures((items) => items.map((item) => item.id === hydrated.id ? hydrated : item));
+    } catch (hydrateError: any) {
+      setError(hydrateError.response?.data?.message || 'Failed to load the official PF1e stat block.');
+    }
+  }, [campaign, expandedId]);
 
   // ── Duplicate creature ──
   const handleDuplicate = useCallback(async (creatureId: string) => {
@@ -379,7 +396,13 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                     onChange={(e) => setSourceFilter(e.target.value)}
                     className="input-cozy text-xs flex-1"
                   >
-                    {SOURCE_FILTERS.map((f) => (
+                    {[
+                      { value: '', label: 'All Sources' },
+                      campaign?.gameSystem === GameSystem.PATHFINDER_1E
+                        ? { value: 'aon-pf1e', label: 'Archives of Nethys' }
+                        : { value: 'srd', label: 'SRD (Official)' },
+                      { value: 'custom', label: 'Custom / Homebrew' },
+                    ].map((f) => (
                       <option key={f.value} value={f.value}>{f.label}</option>
                     ))}
                   </select>
@@ -413,7 +436,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                     {isSeeding ? (
                       <><Loader2 className="w-3 h-3 animate-spin" /> Seeding...</>
                     ) : (
-                      <><BookOpen className="w-3 h-3" /> Import SRD Creatures</>
+                      <><BookOpen className="w-3 h-3" /> Import Official Creatures</>
                     )}
                   </button>
                 )}
@@ -468,7 +491,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                           isPlacing={placingId === creature.id}
                           isFavorite={true}
                           gameSystem={campaign?.gameSystem ?? null}
-                          onToggle={() => setExpandedId(expandedId === creature.id ? null : creature.id)}
+                          onToggle={() => handleToggleCreature(creature)}
                           onPlace={() => handlePlace(creature)}
                           onDuplicate={() => handleDuplicate(creature.id)}
                           onDelete={() => handleDelete(creature.id)}
@@ -501,7 +524,9 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                   {!searchQuery && srdCount === 0 && (
                     <div className="mt-4 space-y-2">
                       <p className="text-xs text-stone-gray/60">
-                        Import ~320 official D&D 5e SRD creatures with full stat blocks.
+                        {campaign?.gameSystem === GameSystem.PATHFINDER_1E
+                          ? 'Import the official PF1e monster catalogue from Archives of Nethys. Stat blocks load on demand.'
+                          : 'Import official D&D 5e SRD creatures with full stat blocks.'}
                       </p>
                       <Button
                         onClick={handleSeedSrd}
@@ -511,11 +536,13 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                         {isSeeding ? (
                           <><Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Importing from Open5e...</>
                         ) : (
-                          'Import SRD Creatures'
+                          'Import Official Creatures'
                         )}
                       </Button>
                       <p className="text-[10px] text-stone-gray/40">
-                        SRD content used under the Open Game License v1.0a.
+                        {campaign?.gameSystem === GameSystem.PATHFINDER_1E
+                          ? 'Rules data provided by Archives of Nethys, Paizo’s official PRD partner.'
+                          : 'SRD content used under the Open Game License v1.0a.'}
                       </p>
                     </div>
                   )}
@@ -535,7 +562,7 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
                       isPlacing={placingId === creature.id}
                       isFavorite={favoriteIds.has(creature.id)}
                       gameSystem={campaign?.gameSystem ?? null}
-                      onToggle={() => setExpandedId(expandedId === creature.id ? null : creature.id)}
+                      onToggle={() => handleToggleCreature(creature)}
                       onPlace={() => handlePlace(creature)}
                       onDuplicate={() => handleDuplicate(creature.id)}
                       onDelete={() => handleDelete(creature.id)}
@@ -658,11 +685,11 @@ function CreatureRow({
 
         {/* Source badge */}
         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-          creature.source === 'srd'
+          creature.source !== 'custom'
             ? 'bg-blue-500/10 text-blue-600'
             : 'bg-moss-green/10 text-moss-green'
         }`}>
-          {creature.source === 'srd' ? 'SRD' : 'Custom'}
+          {creature.source === 'aon-pf1e' ? 'AoN' : creature.source === 'srd' ? 'SRD' : 'Custom'}
         </span>
 
         {/* Favorite star */}
@@ -703,7 +730,7 @@ function CreatureRow({
               )}
               {isPlacing ? 'Placing...' : 'Place on Map'}
             </button>
-            {creature.source !== 'srd' && (
+            {creature.source === 'custom' && (
               <button
                 onClick={onEdit}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-moss-green/20 text-moss-green hover:bg-moss-green/10 transition-colors"
@@ -719,7 +746,7 @@ function CreatureRow({
             >
               <Copy className="w-3 h-3" /> Duplicate
             </button>
-            {creature.source !== 'srd' && (
+            {creature.source === 'custom' && (
               <button
                 onClick={onDelete}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs rounded-cozy border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-colors"

@@ -20,6 +20,8 @@ export default function StatBlockViewer({ statBlock, tokenName, gameSystem }: St
   switch (gameSystem) {
     case GameSystem.DND_5E:
       return <Dnd5eStatBlock statBlock={statBlock} tokenName={tokenName} />;
+    case GameSystem.PATHFINDER_1E:
+      return <Pf1eStatBlock statBlock={statBlock} tokenName={tokenName} />;
     case GameSystem.PATHFINDER_2E:
       return <Pf2eStatBlock statBlock={statBlock} tokenName={tokenName} />;
     case GameSystem.CALL_OF_CTHULHU_7E:
@@ -27,6 +29,64 @@ export default function StatBlockViewer({ statBlock, tokenName, gameSystem }: St
     default:
       return <GenericStatBlock statBlock={statBlock} tokenName={tokenName} />;
   }
+}
+
+// ─── Pathfinder 1e ───────────────────────────────────────────────
+function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; tokenName: string }) {
+  const modifier = (score: number) => {
+    const value = Math.floor((score - 10) / 2);
+    return value >= 0 ? `+${value}` : `${value}`;
+  };
+
+  return (
+    <div className="space-y-2 text-xs text-stone-700">
+      <div className="border-b-2 border-red-900/50 pb-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-serif text-base font-black text-red-950">{tokenName}</h3>
+            <div className="italic text-stone-600">
+              {statBlock.alignment && `${statBlock.alignment} `}{statBlock.creatureType || 'Creature'}
+            </div>
+          </div>
+          {statBlock.challengeRating && (
+            <div className="rounded bg-red-950 px-2 py-1 font-bold text-amber-50">CR {statBlock.challengeRating}</div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-red-900/20 pb-2">
+        <div><b className="text-red-950">AC</b> {statBlock.ac || '—'}</div>
+        {statBlock.hitPoints != null && <div><b className="text-red-950">hp</b> {statBlock.hitPoints}</div>}
+        <div><b className="text-red-950">Speed</b> {statBlock.speed}</div>
+        {statBlock.xp != null && <div><b className="text-red-950">XP</b> {statBlock.xp.toLocaleString()}</div>}
+      </div>
+
+      <div className="grid grid-cols-6 gap-1 rounded bg-red-950/5 p-1.5 text-center">
+        {(['str', 'dex', 'con', 'int', 'wis', 'cha'] as const).map((ability) => (
+          <div key={ability}>
+            <div className="text-[9px] font-black uppercase text-red-950">{ability}</div>
+            <div className="font-semibold">{statBlock.abilities[ability]}</div>
+            <div className="text-[10px] text-stone-500">{modifier(statBlock.abilities[ability])}</div>
+          </div>
+        ))}
+      </div>
+
+      <StatBlockDetailLines statBlock={statBlock} accentColor="red" />
+      <StatBlockActionSections statBlock={statBlock} accentColor="red" />
+      {statBlock.spellcasting?.map((group,index)=><div key={`${group.name}-${index}`} className="rounded border border-purple-900/15 bg-purple-50/60 p-2">
+        <div className="font-bold text-purple-950">{group.name}</div>
+        <div className="mt-1 leading-relaxed text-stone-600">{group.description}</div>
+        {!!group.spells.length&&<div className="mt-1 flex flex-wrap gap-1.5">{group.spells.map((spell,spellIndex)=>spell.sourceUrl ?
+          <a key={`${spell.name}-${spellIndex}`} href={spell.sourceUrl} target="_blank" rel="noreferrer" className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900 underline hover:bg-purple-900/20">{spell.name}</a> :
+          <span key={`${spell.name}-${spellIndex}`} className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900">{spell.name}</span>)}</div>}
+      </div>)}
+      {statBlock.sourceUrl && (
+        <a href={statBlock.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex text-[10px] font-semibold text-red-800 underline hover:text-red-600">
+          View official stat block on Archives of Nethys
+        </a>
+      )}
+    </div>
+  );
 }
 
 // ─── Pathfinder 2e ───────────────────────────────────────────────

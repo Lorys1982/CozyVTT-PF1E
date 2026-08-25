@@ -10,6 +10,11 @@ import { AuthenticatedRequest } from '../middleware/rbac';
 import { campaignMember, campaignDM } from '../middleware/compose';
 import { prisma } from '../config/database';
 import { seedSrdCreatures, getSrdSeedStatus } from '../services/creatureSeed';
+import {
+  PF1E_SOURCE,
+  hydratePf1eCreature,
+  seedPf1eCreatureIndex,
+} from '../services/pathfinder1eCreatureSeed';
 import logger from '../utils/logger';
 
 const router = Router({ mergeParams: true });
@@ -23,9 +28,22 @@ let seedInProgress = false;
 // Any campaign member can check.
 // ============================================
 
-router.get('/seed/status', campaignMember, async (_req: AuthenticatedRequest, res: Response) => {
+router.get('/seed/status', campaignMember, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const status = await getSrdSeedStatus(prisma);
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: req.params.campaignId },
+      select: { gameSystem: true },
+    });
+    const status = campaign?.gameSystem === 'PATHFINDER_1E'
+      ? {
+          srdCount: await prisma.creatureTemplate.count({
+            where: { source: PF1E_SOURCE, gameSystem: 'PATHFINDER_1E' },
+          }),
+          customCount: await prisma.creatureTemplate.count({
+            where: { source: 'custom', campaignId: req.params.campaignId },
+          }),
+        }
+      : await getSrdSeedStatus(prisma);
     return res.json({
       ...status,
       seedInProgress,
@@ -42,7 +60,7 @@ router.get('/seed/status', campaignMember, async (_req: AuthenticatedRequest, re
 // DM only. Safe to call multiple times.
 // ============================================
 
-router.post('/seed', campaignDM, async (_req: AuthenticatedRequest, res: Response) => {
+router.post('/seed', campaignDM, async (req: AuthenticatedRequest, res: Response) => {
   if (seedInProgress) {
     return res.status(409).json({
       error: 'Conflict',
@@ -52,16 +70,28 @@ router.post('/seed', campaignDM, async (_req: AuthenticatedRequest, res: Respons
 
   seedInProgress = true;
   try {
-    const result = await seedSrdCreatures(prisma);
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: req.params.campaignId },
+      select: { gameSystem: true },
+    });
+    if (!campaign) {
+      return res.status(404).json({ error: 'Not Found', message: 'Campaign not found' });
+    }
+
+    const result = campaign.gameSystem === 'PATHFINDER_1E'
+      ? await seedPf1eCreatureIndex(prisma)
+      : await seedSrdCreatures(prisma);
     return res.json({
-      message: 'SRD creature seeding complete',
+      message: campaign.gameSystem === 'PATHFINDER_1E'
+        ? 'Archives of Nethys PF1e creature catalogue imported'
+        : 'SRD creature seeding complete',
       ...result,
     });
   } catch (error) {
     logger.error('Error seeding SRD creatures:', error);
     return res.status(500).json({
       error: 'Internal Server Error',
-      message: 'Failed to seed SRD creatures. Check that the server can reach api.open5e.com.',
+      message: 'Failed to import official creatures. Check the backend logs and upstream availability.',
     });
   } finally {
     seedInProgress = false;
@@ -82,10 +112,16 @@ router.get('/', campaignMember, async (req: AuthenticatedRequest, res: Response)
     const take = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 50));
     const skip = Math.max(0, parseInt(offset as string, 10) || 0);
 
-    // Build where clause: include SRD (campaignId null) + this campaign's customs
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { gameSystem: true },
+    });
+
+    // Global creatures must match the campaign system. Campaign-owned custom
+    // creatures remain visible even when their legacy gameSystem is null.
     const where: Record<string, unknown> = {
       OR: [
-        { campaignId: null },
+        { campaignId: null, gameSystem: campaign?.gameSystem ?? undefined },
         { campaignId },
       ],
     };
@@ -141,7 +177,8 @@ router.get('/:creatureId', campaignMember, async (req: AuthenticatedRequest, res
       return res.status(404).json({ error: 'Not Found', message: 'Creature template not found' });
     }
 
-    return res.json(template);
+    const hydrated = await hydratePf1eCreature(prisma, template);
+    return res.json(hydrated);
   } catch (error) {
     logger.error('Error getting creature template:', error);
     return res.status(500).json({ error: 'Internal Server Error', message: 'Failed to get creature template' });
@@ -212,7 +249,7 @@ router.put('/:creatureId', campaignDM, async (req: AuthenticatedRequest, res: Re
     }
 
     // Prevent editing SRD creatures
-    if (existing.source === 'srd') {
+    if (existing.source !== 'custom') {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Cannot edit SRD creatures. Duplicate it first to create a custom version.',
@@ -264,7 +301,7 @@ router.delete('/:creatureId', campaignDM, async (req: AuthenticatedRequest, res:
       return res.status(404).json({ error: 'Not Found', message: 'Creature template not found' });
     }
 
-    if (existing.source === 'srd') {
+    if (existing.source !== 'custom') {
       return res.status(403).json({ error: 'Forbidden', message: 'Cannot delete SRD creatures' });
     }
 

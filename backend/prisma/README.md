@@ -39,7 +39,7 @@ The schema is in [`schema.prisma`](./schema.prisma) — 16 models grouped by dom
 | `PlatformRole` | `ADMIN`, `USER` |
 | `CampaignStatus` | `PREPARATION`, `ACTIVE`, `PAUSED`, `INACTIVE`, `COMPLETED`, `ARCHIVED` |
 | `CampaignRole` | `DM`, `PLAYER`, `SPECTATOR` |
-| `GameSystem` | `DND_5E`, `PATHFINDER_2E`, `SHADOWRUN_6E`, `CALL_OF_CTHULHU_7E` |
+| `GameSystem` | `DND_5E`, `PATHFINDER_1E`, `PATHFINDER_2E`, `SHADOWRUN_6E`, `CALL_OF_CTHULHU_7E` |
 | `AssetType` | `MAP`, `TOKEN`, `AUDIO`, `AVATAR`, `DOCUMENT`, `OTHER` |
 | `AssetScope` | `GLOBAL`, `USER`, `CAMPAIGN` |
 | `MessageType` | `PLAYER`, `DM`, `SYSTEM`, `DICE_ROLL`, `CHARACTER_ACTION` |

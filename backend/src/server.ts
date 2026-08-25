@@ -21,6 +21,7 @@ import mapRoutes from './routes/maps';
 import creatureRoutes from './routes/creatures';
 import tokenTemplateRoutes from './routes/tokenTemplates';
 import adminRoutes from './routes/admin';
+import rulesRoutes from './routes/rules';
 import { initializeWebSocket } from './websocket';
 import logger from './utils/logger';
 import { prisma } from './config/database';
@@ -144,6 +145,9 @@ app.use('/api/campaigns', campaignRoutes);
 
 // Characters
 app.use('/api/characters', characterRoutes);
+
+// Rules lookups (authenticated proxy/cache for external system references)
+app.use('/api/rules', rulesRoutes);
 
 // Campaign invitations
 app.use('/api/invitations', invitationRoutes);

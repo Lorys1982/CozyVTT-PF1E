@@ -21,6 +21,11 @@ const GAME_SYSTEM_COLORS: Record<GameSystem, { bg: string; text: string; border:
     text: 'text-red-800',
     border: 'border-red-300',
   },
+  PATHFINDER_1E: {
+    bg: 'bg-amber-100',
+    text: 'text-amber-800',
+    border: 'border-amber-300',
+  },
   PATHFINDER_2E: {
     bg: 'bg-blue-100',
     text: 'text-blue-800',
@@ -43,6 +48,7 @@ const GAME_SYSTEM_COLORS: Record<GameSystem, { bg: string; text: string; border:
  */
 const SHORT_LABELS: Record<GameSystem, string> = {
   DND_5E: 'D&D 5e',
+  PATHFINDER_1E: 'PF1e',
   PATHFINDER_2E: 'PF2e',
   SHADOWRUN_6E: 'SR6',
   CALL_OF_CTHULHU_7E: 'CoC 7e',

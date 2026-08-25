@@ -517,6 +517,20 @@ class ApiClient {
     return response.data;
   }
 
+  async searchPathfinder1eSpells(query: string): Promise<import('@/types/game-systems/pathfinder1e').PF1eSpellReference[]> {
+    const response = await this.client.get<{ spells: import('@/types/game-systems/pathfinder1e').PF1eSpellReference[] }>(
+      '/api/rules/pathfinder1e/spells', { params: { q: query } },
+    );
+    return response.data.spells;
+  }
+
+  async getPathfinder1eSpell(itemName: string): Promise<import('@/types/game-systems/pathfinder1e').PF1eSpellReference> {
+    const response = await this.client.get<{ spell: import('@/types/game-systems/pathfinder1e').PF1eSpellReference }>(
+      `/api/rules/pathfinder1e/spells/${encodeURIComponent(itemName)}`,
+    );
+    return response.data.spell;
+  }
+
   async copyCharacter(id: string): Promise<{ message: string; character: Character }> {
     const response = await this.client.post(`/api/characters/${id}/copy`);
     return response.data;

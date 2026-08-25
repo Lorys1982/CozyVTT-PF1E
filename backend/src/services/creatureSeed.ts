@@ -186,7 +186,7 @@ export interface SeedResult {
 export async function seedSrdCreatures(prisma: PrismaClient): Promise<SeedResult> {
   // Check how many SRD creatures already exist
   const existing = await prisma.creatureTemplate.findMany({
-    where: { source: 'srd' },
+    where: { source: 'srd', gameSystem: 'DND_5E' },
     select: { name: true },
   });
   const existingNames = new Set(existing.map((e) => e.name));
@@ -243,7 +243,7 @@ export async function seedSrdCreatures(prisma: PrismaClient): Promise<SeedResult
  */
 export async function getSrdSeedStatus(prisma: PrismaClient): Promise<{ srdCount: number; customCount: number }> {
   const [srdCount, customCount] = await Promise.all([
-    prisma.creatureTemplate.count({ where: { source: 'srd' } }),
+    prisma.creatureTemplate.count({ where: { source: 'srd', gameSystem: 'DND_5E' } }),
     prisma.creatureTemplate.count({ where: { source: 'custom' } }),
   ]);
   return { srdCount, customCount };

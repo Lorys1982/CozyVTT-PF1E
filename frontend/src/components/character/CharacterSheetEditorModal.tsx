@@ -12,6 +12,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 
 // Import editor components
 import DnD5eCharacterEditor from '../character-sheets/dnd5e/DnD5eCharacterEditor';
+import Pathfinder1eCharacterSheet from '../character-sheets/pathfinder1e/Pathfinder1eCharacterSheet';
 import Pathfinder2eCharacterEditor from '../character-sheets/pathfinder2e/Pathfinder2eCharacterEditor';
 import CallOfCthulhu7eCharacterEditor from '../character-sheets/call-of-cthulhu-7e/CallOfCthulhu7eCharacterEditor';
 import { FlexibleCharacterSheetEdit } from '../character-sheets/flexible/FlexibleCharacterSheetEdit';
@@ -82,6 +83,15 @@ export default function CharacterSheetEditorModal({
         return (
           <DnD5eCharacterEditor
             character={character}
+            onSave={handleSave}
+            onCancel={handleCancel}
+          />
+        );
+      case 'PATHFINDER_1E':
+        return (
+          <Pathfinder1eCharacterSheet
+            character={character}
+            mode="edit"
             onSave={handleSave}
             onCancel={handleCancel}
           />

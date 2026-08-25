@@ -102,6 +102,8 @@ export default function InvitationModal({
     switch (gameSystem) {
       case 'DND_5E':
         return 'D&D 5th Edition';
+      case 'PATHFINDER_1E':
+        return 'Pathfinder 1st Edition';
       case 'PATHFINDER_2E':
         return 'Pathfinder 2nd Edition';
       case 'SHADOWRUN_6E':

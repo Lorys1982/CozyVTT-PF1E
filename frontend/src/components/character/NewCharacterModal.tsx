@@ -40,6 +40,13 @@ const TEMPLATE_OPTIONS_BY_SYSTEM: Record<string, TemplateOption[]> = {
       description: 'A pre-built Fighter with standard array stats',
     },
   ],
+  [GameSystem.PATHFINDER_1E]: [
+    {
+      value: 'blank',
+      label: 'Blank Character Sheet',
+      description: 'Start with a blank Pathfinder 1e character',
+    },
+  ],
   [GameSystem.PATHFINDER_2E]: [
     {
       value: 'blank',

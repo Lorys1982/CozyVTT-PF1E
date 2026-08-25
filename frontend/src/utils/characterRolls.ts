@@ -173,6 +173,101 @@ function extractDnd5eRolls(data: any): CharacterRolls {
 }
 
 // ---------------------------------------------------------------------------
+// Pathfinder 1e
+// ---------------------------------------------------------------------------
+
+const PF1E_ABILITY_NAMES: Record<string, string> = {
+  str: 'Strength',
+  dex: 'Dexterity',
+  con: 'Constitution',
+  int: 'Intelligence',
+  wis: 'Wisdom',
+  cha: 'Charisma',
+};
+
+function pf1eAbilityModifier(data: any, key: string): number {
+  const ability = data.abilities?.[key];
+  const score = ability?.tempScore ?? ability?.score ?? 10;
+  return Math.floor((score - 10) / 2);
+}
+
+function extractPf1eRolls(data: any): CharacterRolls {
+  const abilities: RollOption[] = [];
+  const skills: RollOption[] = [];
+  const saves: RollOption[] = [];
+  const combat: RollOption[] = [];
+
+  for (const [key, name] of Object.entries(PF1E_ABILITY_NAMES)) {
+    const ability=data.abilities?.[key];
+    const bonus = pf1eAbilityModifier(data, key)+(ability?.checkMiscModifier??0)+(ability?.checkTempModifier??0);
+    abilities.push({
+      label: `${name.slice(0, 3).toUpperCase()} ${fmt(bonus)}`,
+      expression: `1d20${fmt(bonus)}`,
+      purpose: `${name} Check`,
+      supportsAdvantage: false,
+    });
+  }
+
+  const saveAbilities: Record<string, string> = { fort: 'con', reflex: 'dex', will: 'wis' };
+  const saveNames: Record<string, string> = { fort: 'Fortitude', reflex: 'Reflex', will: 'Will' };
+  for (const [key, abilityKey] of Object.entries(saveAbilities)) {
+    const save = data.saves?.[key];
+    if (!save) continue;
+    const bonus = typeof save.total === 'number'
+      ? save.total
+      : (save.base ?? 0) + pf1eAbilityModifier(data, abilityKey) +
+        (save.magicModifier ?? 0) + (save.miscModifier ?? 0) + (save.tempModifier ?? 0);
+    saves.push({
+      label: `${saveNames[key]} ${fmt(bonus)}`,
+      expression: `1d20${fmt(bonus)}`,
+      purpose: `${saveNames[key]} Save`,
+      supportsAdvantage: false,
+    });
+  }
+
+  if (Array.isArray(data.skills)) {
+    for (const skill of data.skills) {
+      if (!skill?.name) continue;
+      const bonus = typeof skill.total === 'number'
+        ? skill.total
+        : (skill.ranks ?? 0) + (skill.classSkill && (skill.ranks ?? 0) > 0 ? 3 : 0) +
+          pf1eAbilityModifier(data, skill.ability) + (skill.racial ?? 0) +
+          (skill.trait ?? 0) + (skill.misc ?? 0) + (skill.temp ?? 0);
+      skills.push({
+        label: `${skill.name} ${fmt(bonus)}`,
+        expression: `1d20${fmt(bonus)}`,
+        purpose: `${skill.name} Check`,
+        supportsAdvantage: false,
+      });
+    }
+  }
+
+  for (const attack of [...(data.melee ?? []), ...(data.ranged ?? [])]) {
+    if (!attack?.weapon) continue;
+    const attackBonus = String(attack.attackBonus ?? '').match(/[+-]?\d+/)?.[0];
+    if (attackBonus !== undefined) {
+      const bonus = Number(attackBonus);
+      combat.push({
+        label: `${attack.weapon} Attack ${fmt(bonus)}`,
+        expression: `1d20${fmt(bonus)}`,
+        purpose: `${attack.weapon} Attack`,
+        supportsAdvantage: false,
+      });
+    }
+    if (typeof attack.damage === 'string' && isValidDiceExpression(attack.damage)) {
+      combat.push({
+        label: `${attack.weapon} Damage (${attack.damage})`,
+        expression: attack.damage,
+        purpose: `${attack.weapon} Damage`,
+        supportsAdvantage: false,
+      });
+    }
+  }
+
+  return { abilities, skills, savingThrows: saves, combat };
+}
+
+// ---------------------------------------------------------------------------
 // Pathfinder 2e
 // ---------------------------------------------------------------------------
 
@@ -539,6 +634,11 @@ export function getInitiativeExpression(gameSystem: string | null, data: any): s
       const mod = data?.combatStats?.initiative ?? 0;
       return `1d20${fmt(mod)}`;
     }
+    case 'PATHFINDER_1E': {
+      const bonus = data?.initiative?.total ?? pf1eAbilityModifier(data, 'dex') +
+        (data?.initiative?.miscModifier ?? 0)+(data?.initiative?.tempModifier??0);
+      return `1d20${fmt(bonus)}`;
+    }
     case 'PATHFINDER_2E': {
       // PF2e defaults to Perception for initiative, fall back to initiative.bonus
       const perceptionBonus = data?.perception?.bonus ?? 0;
@@ -569,6 +669,8 @@ export function getCharacterRolls(gameSystem: string | null, data: any): Charact
   switch (gameSystem) {
     case 'DND_5E':
       return extractDnd5eRolls(data);
+    case 'PATHFINDER_1E':
+      return extractPf1eRolls(data);
     case 'PATHFINDER_2E':
       return extractPf2eRolls(data);
     case 'CALL_OF_CTHULHU_7E':

@@ -265,6 +265,20 @@ The action-economy tactician's dream:
 
 *Screenshot pending — Pathfinder 2e character sheet.*
 
+#### Pathfinder 1st Edition
+
+The classic Pathfinder sheet includes:
+
+- Ability scores and temporary modifiers
+- AC, hit points, saving throws, CMB, and CMD
+- Skills with ranks and class-skill bonuses
+- Melee and ranged attacks calculated from BAB, abilities, size, enhancement, and misc modifiers
+- Automatic AC, touch/flat-footed AC, saves, initiative, skills, CMB/CMD, concentration, spell DCs, and bonus spells
+- Searchable spell import from Archives of Nethys with complete casting and rules details
+- Feats, traits, special abilities, equipment, money, and spell-like abilities
+
+*Screenshot pending — Pathfinder 1e character sheet.*
+
 #### Call of Cthulhu 7th Edition
 
 For when the vibes turn from cozy to eldritch:
