@@ -11,6 +11,8 @@ import { useToast } from '@/contexts/ToastContext';
 import { canEditCharacter } from '@/services/permissions';
 import { api } from '@/services/api';
 import type { Character, GameSystem, CampaignMembership } from '@/types';
+import type { PF1eSpell } from '@/types/game-systems/pathfinder1e';
+import type { SpellAoEConfig } from '@/utils/pathfinder1eSpellAoE';
 
 // Import view components
 import { DnD5eCharacterView } from '../character-sheets/dnd5e/DnD5eCharacterView';
@@ -28,6 +30,7 @@ interface CharacterSheetViewerModalProps {
   campaignId: string;
   membership: CampaignMembership;
   onClose: () => void;
+  onPlaceSpellAoE?: (config: SpellAoEConfig, spell: PF1eSpell) => void;
 }
 
 export default function CharacterSheetViewerModal({
@@ -35,6 +38,7 @@ export default function CharacterSheetViewerModal({
   campaignId: _campaignId,
   membership,
   onClose,
+  onPlaceSpellAoE,
 }: CharacterSheetViewerModalProps) {
   const { user } = useAuth();
   const { socket } = useWebSocket();
@@ -149,7 +153,7 @@ export default function CharacterSheetViewerModal({
       case 'DND_5E':
         return <DnD5eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'PATHFINDER_1E':
-        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} onDataChange={canEdit?handleQuickDataChange:undefined} />;
+        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} onDataChange={canEdit?handleQuickDataChange:undefined} onPlaceAoE={onPlaceSpellAoE} />;
       case 'PATHFINDER_2E':
         return <Pathfinder2eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'SHADOWRUN_6E':

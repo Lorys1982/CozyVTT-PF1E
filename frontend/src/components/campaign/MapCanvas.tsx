@@ -9,6 +9,7 @@ import { useCampaign } from '@/contexts/CampaignContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGameStore, useTokenList, useCurrentTurnTokenId, useMapPeekTokenId } from '@/stores/gameStore';
+import { useCampaignToolStore } from '@/stores/campaignToolStore';
 import { useMapControls } from '@/hooks/useMapControls';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import type {
@@ -248,6 +249,9 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   const [nearEndpoint, setNearEndpoint] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<{ x: number; y: number } | null>(null);
   const { toast, showToast, hideToast } = useToast();
+  const aoeRequest = useCampaignToolStore((state) => state.aoeRequest);
+  const openSpellAoE = useCampaignToolStore((state) => state.openSpellAoE);
+  const clearAoERequest = useCampaignToolStore((state) => state.clearAoERequest);
   /** DM "Preview player view" toggle — when true, DM sees lighting as players do. */
   const [dmPreviewPlayerView, setDmPreviewPlayerView] = useState(false);
 
@@ -270,6 +274,21 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // pixels, so the box never touches the bottom-left grid convention.
   const fogDragAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const [fogDragCurrent, setFogDragCurrent] = useState<{ x: number; y: number } | null>(null);
+
+  // Spell cards elsewhere in the campaign tree can arm this canvas through a
+  // one-shot request. Placement deliberately remains uncommitted: the spell
+  // supplies geometry, while the player supplies its target on the board.
+  useEffect(() => {
+    if (!aoeRequest || !currentMap) return;
+    setAoEConfig(aoeRequest.config);
+    setAoEAnchor(null);
+    setShowRuler(false);
+    setRulerOrigin(null);
+    setShowAoE(true);
+    setViewingCharacter(null);
+    showToast(`${aoeRequest.spellName} loaded in the AoE tool. Click the map to place it.`, 'success');
+    clearAoERequest(aoeRequest.id);
+  }, [aoeRequest, currentMap, clearAoERequest, showToast]);
 
   // Token socket handlers read/write live token state synchronously via
   // useGameStore.getState() — no stale-closure ref bookkeeping needed.
@@ -3200,7 +3219,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
 
           {/* Shape selector */}
           <div className="flex flex-wrap gap-1.5">
-            {(['sphere', 'cone', 'line', 'cube'] as AoEShape[]).map((shape) => (
+            {(['sphere', 'cylinder', 'cone', 'line', 'cube'] as AoEShape[]).map((shape) => (
               <button
                 key={shape}
                 onClick={() => setAoEConfig((prev) => ({ ...prev, shape }))}
@@ -3218,12 +3237,11 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           {/* Size input */}
           <div className="space-y-1">
             <label className="text-xs font-medium text-stone-gray">
-              {aoeConfig.shape === 'sphere' ? 'Radius' : 'Length'} (ft)
+              {aoeConfig.shape === 'sphere' || aoeConfig.shape === 'cylinder' ? 'Radius' : 'Length'} (ft)
             </label>
             <input
               type="number"
               min={5}
-              max={500}
               step={5}
               value={aoeConfig.sizeFt}
               onChange={(e) => setAoEConfig((prev) => ({ ...prev, sizeFt: Math.max(5, parseInt(e.target.value) || 5) }))}
@@ -3681,6 +3699,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
             campaignId={campaign.id}
             membership={membership}
             onClose={() => setViewingCharacter(null)}
+            onPlaceSpellAoE={(config, spell) => openSpellAoE(config, spell.name)}
           />
         );
       })()}

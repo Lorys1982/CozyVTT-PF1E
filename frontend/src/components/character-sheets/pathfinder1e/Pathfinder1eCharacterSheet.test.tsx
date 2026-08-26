@@ -159,6 +159,44 @@ describe('Pathfinder1eCharacterSheet', () => {
     expect(screen.getByText('Deals fire damage.')).toBeInTheDocument();
   });
 
+  it('offers an imported spell area to the campaign AoE tool', async () => {
+    const onPlaceAoE = vi.fn();
+    const spellCharacter: Character = {
+      ...character,
+      data: {
+        ...(character.data as PF1eCharacterData),
+        spells: [{ slotted: [{ name: 'Fireball', area: '20-ft.-radius spread' }] }],
+      },
+    };
+    const user = userEvent.setup();
+    render(<Pathfinder1eCharacterSheet character={spellCharacter} mode="view" onPlaceAoE={onPlaceAoE} />);
+
+    await user.click(screen.getByRole('button', { name: /Place circle/ }));
+
+    expect(onPlaceAoE).toHaveBeenCalledWith(
+      { shape: 'sphere', sizeFt: 20 },
+      expect.objectContaining({ name: 'Fireball' }),
+    );
+  });
+
+  it('adds a new spell at the top of its level', async () => {
+    const spellCharacter: Character = {
+      ...character,
+      data: {
+        ...(character.data as PF1eCharacterData),
+        spells: [{ slotted: [{ name: 'Existing spell' }] }],
+      },
+    };
+    const user = userEvent.setup();
+    render(<Pathfinder1eCharacterSheet character={spellCharacter} mode="edit" onSave={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Spells' }));
+    await user.click(screen.getByRole('button', { name: 'Add spell' }));
+
+    const names = screen.getAllByLabelText('Spell name');
+    expect(names[0]).toHaveValue('');
+    expect(names[1]).toHaveValue('Existing spell');
+  });
+
   it('imports official feats while keeping their fields editable',async()=>{
     const search=vi.spyOn(api,'searchPathfinder1eFeats').mockResolvedValue([{
       name:'Power Attack',itemName:'Power Attack',sourceUrl:'https://www.aonprd.com/FeatDisplay.aspx?ItemName=Power%20Attack',

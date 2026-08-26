@@ -8,6 +8,7 @@ import type { CharacterSheetProps } from '../types';
 import type {
   PF1eACItem, PF1eAbilityKey, PF1eAttack, PF1eCharacterData, PF1eFeature,
   PF1eGearItem, PF1eSkill,
+  PF1eSpell,
 } from '../../../types/game-systems/pathfinder1e';
 import { calculatePF1eDerived, pf1eAbilityCheckModifier, pf1eAbilityModifier, pf1eSizeModifier } from '../../../utils/pathfinder1eCalculations';
 import PF1eSpellbook from './PF1eSpellbook';
@@ -18,6 +19,7 @@ import { api } from '../../../services/api';
 import { AssetType } from '../../../types';
 import { useServerConfigQuery } from '@/hooks/queries';
 import { formatUploadLimit, getUploadLimit } from '@/utils/uploadLimits';
+import type { SpellAoEConfig } from '@/utils/pathfinder1eSpellAoE';
 
 type TabId = 'overview'|'combat'|'skills'|'spells'|'inventory'|'features';
 
@@ -35,6 +37,7 @@ const inputClass = 'w-full rounded-lg border border-stone-300 bg-white px-3 py-2
 interface Pathfinder1eCharacterSheetProps extends CharacterSheetProps {
   onRoll?:(expression:string,purpose:string)=>void;
   onDataChange?:(data:PF1eCharacterData)=>void|Promise<void>;
+  onPlaceAoE?:(config:SpellAoEConfig,spell:PF1eSpell)=>void;
 }
 
 interface InputProps {
@@ -150,7 +153,7 @@ function ArmorList({data,editable,onSet}:{data:PF1eCharacterData;editable:boolea
       <SheetInput label="Spell failure %" value={item.spellFailure} editable={editable} type="number" min={0} onChange={value=>update(index,'spellFailure',value)} />
       <div className="flex items-end gap-2 pb-2"><label className="flex flex-1 items-center gap-2 text-sm font-medium text-stone-600"><input disabled={!editable} type="checkbox" checked={item.equipped!==false} onChange={event=>update(index,'equipped',event.target.checked)} />Equipped</label>{editable&&<button type="button" aria-label={`Remove ${item.name||'armor'}`} onClick={()=>onSet('ac.items',items.filter((_,itemIndex)=>itemIndex!==index))} className="text-stone-400 hover:text-red-700"><Trash2 className="h-4 w-4" /></button>}</div>
     </div>)}
-    {editable&&<button type="button" onClick={()=>onSet('ac.items',[...items,{name:'',type:'Armor',equipped:true}])} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-100">+ Armor or shield</button>}
+    {editable&&<button type="button" onClick={()=>onSet('ac.items',[{name:'',type:'Armor',equipped:true},...items])} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-100">+ Armor or shield</button>}
   </div>;
 }
 
@@ -179,13 +182,13 @@ function AttackList({title,items,ranged,editable,onSet,onRoll}:{title:string;ite
             <SheetInput label={ranged?'Range':'Critical'} value={ranged?attack.range:attack.critical} editable={editable} onChange={value=>update(index,ranged?'range':'critical',value)} />
           </div>
           {!calculated&&editable&&<div className="mt-3 grid gap-3 sm:grid-cols-2"><SheetInput label="Manual attack bonus" value={attack.attackBonus} editable onChange={value=>update(index,'attackBonus',value)} /><SheetInput label="Manual damage" value={attack.damage} editable onChange={value=>update(index,'damage',value)} /></div>}
-          {editable&&<div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3"><div className="text-xs font-bold uppercase text-stone-500">Additional typed damage</div>{(attack.additionalDamage??[]).map((part,partIndex)=><div key={partIndex} className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]"><input aria-label={`Additional damage ${partIndex+1} formula`} value={part.formula} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,formula:event.target.value}:value))} placeholder="1d6" className={inputClass}/><input aria-label={`Additional damage ${partIndex+1} type`} value={part.type??''} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,type:event.target.value}:value))} placeholder="Acid" className={inputClass}/><input aria-label={`Additional damage ${partIndex+1} notes`} value={part.notes??''} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,notes:event.target.value}:value))} placeholder="Conditional notes" className={inputClass}/><button type="button" aria-label={`Remove additional damage ${partIndex+1}`} onClick={()=>update(index,'additionalDamage',(attack.additionalDamage??[]).filter((_,valueIndex)=>valueIndex!==partIndex))} className="rounded p-2 text-stone-400 hover:text-red-700"><Trash2 className="h-4 w-4"/></button></div>)}<button type="button" onClick={()=>update(index,'additionalDamage',[...(attack.additionalDamage??[]),{formula:'1d6',type:''}])} className="mt-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700">+ Damage component</button></div>}
+          {editable&&<div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3"><div className="text-xs font-bold uppercase text-stone-500">Additional typed damage</div>{(attack.additionalDamage??[]).map((part,partIndex)=><div key={partIndex} className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]"><input aria-label={`Additional damage ${partIndex+1} formula`} value={part.formula} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,formula:event.target.value}:value))} placeholder="1d6" className={inputClass}/><input aria-label={`Additional damage ${partIndex+1} type`} value={part.type??''} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,type:event.target.value}:value))} placeholder="Acid" className={inputClass}/><input aria-label={`Additional damage ${partIndex+1} notes`} value={part.notes??''} onChange={event=>update(index,'additionalDamage',(attack.additionalDamage??[]).map((value,valueIndex)=>valueIndex===partIndex?{...value,notes:event.target.value}:value))} placeholder="Conditional notes" className={inputClass}/><button type="button" aria-label={`Remove additional damage ${partIndex+1}`} onClick={()=>update(index,'additionalDamage',(attack.additionalDamage??[]).filter((_,valueIndex)=>valueIndex!==partIndex))} className="rounded p-2 text-stone-400 hover:text-red-700"><Trash2 className="h-4 w-4"/></button></div>)}<button type="button" onClick={()=>update(index,'additionalDamage',[{formula:'1d6',type:''},...(attack.additionalDamage??[])])} className="mt-2 rounded border border-stone-300 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700">+ Damage component</button></div>}
           <div className="mt-3 grid gap-3 sm:grid-cols-2"><div className="flex flex-wrap gap-2">{(attack.attackBonus?.match(/[+-]?\d+/g)??[]).map((bonus,attackIndex)=><button key={`${bonus}-${attackIndex}`} type="button" disabled={!onRoll} onClick={()=>onRoll?.(`1d20${Number(bonus)>=0?'+':''}${Number(bonus)}`,`${attack.weapon||title} Attack ${attackIndex+1}`)} className="min-w-20 rounded-lg bg-red-800 px-4 py-3 text-left text-white disabled:cursor-default"><span className="block text-xs uppercase text-red-200">Attack {attackIndex+1}</span><strong className="text-xl">{Number(bonus)>=0?'+':''}{Number(bonus)}</strong></button>)}</div><div className="flex flex-wrap gap-2">{attack.damage&&<button type="button" disabled={!onRoll} onClick={()=>onRoll?.(attack.damage!,`${attack.weapon||title} ${attack.damageType||'untyped'} Damage`)} className="rounded-lg bg-stone-800 px-4 py-3 text-left text-white disabled:cursor-default"><span className="block text-xs uppercase text-stone-300">{attack.damageType||'Untyped'} damage</span><strong className="text-xl">{attack.damage}</strong></button>}{(attack.additionalDamage??[]).filter(part=>part.formula.trim()).map((part,partIndex)=><button key={partIndex} type="button" disabled={!onRoll} onClick={()=>onRoll?.(part.formula,`${attack.weapon||title} ${part.type||'untyped'} Damage`)} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-left text-stone-800"><span className="block text-xs uppercase text-stone-500">{part.type||'Untyped'}</span><strong>{part.formula}</strong></button>)}</div></div>
           <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-stone-500">Weapon notes<textarea aria-label={`${attack.weapon||'Weapon'} notes`} disabled={!editable} value={attack.notes??''} onChange={event=>update(index,'notes',event.target.value)} placeholder="Special properties, ammunition, effects, or reminders" className={`${inputClass} mt-1 min-h-20 resize-y normal-case`} /></label>
         </article>;
       })}
       {!items.length&&<div className="rounded-xl border-2 border-dashed border-stone-200 py-8 text-center text-sm text-stone-500">No {title.toLocaleLowerCase()} added.</div>}
-      {editable&&<button type="button" onClick={()=>onSet(path,[...items,{weapon:'',baseDamage:'1d8',attackAbility:ranged?'dex':'str',damageAbility:ranged?'none':'str',damageAbilityMultiplier:1}])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white hover:bg-red-900">+ {title}</button>}
+      {editable&&<button type="button" onClick={()=>onSet(path,[{weapon:'',baseDamage:'1d8',attackAbility:ranged?'dex':'str',damageAbility:ranged?'none':'str',damageAbilityMultiplier:1},...items])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white hover:bg-red-900">+ {title}</button>}
     </div>
   </Panel>;
 }
@@ -245,7 +248,7 @@ export function GearList({data,editable,onSet}:{data:PF1eCharacterData;editable:
   const [layout,setLayout]=useState<'list'|'grid'>('list');
   const gear=data.gear??[];
   const update=(index:number,key:keyof PF1eGearItem,value:unknown)=>onSet('gear',gear.map((item,itemIndex)=>itemIndex===index?{...item,[key]:value}:item));
-  return <div className="space-y-3"><div className="flex justify-end"><div className="flex rounded-lg border border-stone-200 bg-white p-1"><button type="button" aria-label="List items" aria-pressed={layout==='list'} onClick={()=>setLayout('list')} className={`rounded p-1.5 ${layout==='list'?'bg-red-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><List className="h-4 w-4"/></button><button type="button" aria-label="Cluster items" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')} className={`rounded p-1.5 ${layout==='grid'?'bg-red-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><LayoutGrid className="h-4 w-4"/></button></div></div><div className={layout==='grid'?'grid gap-3 md:grid-cols-2':'space-y-3'}>{gear.map((item,index)=><GearCard key={index} item={item} index={index} editable={editable} clustered={layout==='grid'} onUpdate={(key,value)=>update(index,key,value)} onRemove={()=>onSet('gear',gear.filter((_,itemIndex)=>itemIndex!==index))}/>)}</div>{editable&&<button type="button" onClick={()=>onSet('gear',[...gear,{name:'',quantity:1}])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white">+ Item</button>}</div>;
+  return <div className="space-y-3"><div className="flex justify-end"><div className="flex rounded-lg border border-stone-200 bg-white p-1"><button type="button" aria-label="List items" aria-pressed={layout==='list'} onClick={()=>setLayout('list')} className={`rounded p-1.5 ${layout==='list'?'bg-red-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><List className="h-4 w-4"/></button><button type="button" aria-label="Cluster items" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')} className={`rounded p-1.5 ${layout==='grid'?'bg-red-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><LayoutGrid className="h-4 w-4"/></button></div></div><div className={layout==='grid'?'grid gap-3 md:grid-cols-2':'space-y-3'}>{gear.map((item,index)=><GearCard key={index} item={item} index={index} editable={editable} clustered={layout==='grid'} onUpdate={(key,value)=>update(index,key,value)} onRemove={()=>onSet('gear',gear.filter((_,itemIndex)=>itemIndex!==index))}/>)}</div>{editable&&<button type="button" onClick={()=>onSet('gear',[{name:'',quantity:1},...gear])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white">+ Item</button>}</div>;
 }
 
 function InventoryTab({data,editable,onSet}:{data:PF1eCharacterData;editable:boolean;onSet:(path:string,value:unknown)=>void}) {
@@ -270,7 +273,7 @@ function FeatureCard({title,feature,index,editable,onChange,onRemove}:{title:str
 
 function FeatureList({title,values,editable,onChange}:{title:string;values:PF1eFeature[];editable:boolean;onChange:(values:PF1eFeature[])=>void}) {
   const update=(index:number,key:keyof PF1eFeature,value:string)=>onChange(values.map((item,itemIndex)=>itemIndex===index?{...item,[key]:value}:item));
-  return <Panel title={title}><div className="grid gap-3 md:grid-cols-2">{values.map((feature,index)=><FeatureCard key={index} title={title} feature={feature} index={index} editable={editable} onChange={(key,value)=>update(index,key,value)} onRemove={()=>onChange(values.filter((_,itemIndex)=>itemIndex!==index))}/>)}{!values.length&&<div className="col-span-full rounded-xl border-2 border-dashed border-stone-200 py-8 text-center text-sm text-stone-500">Nothing recorded yet.</div>}</div>{editable&&<button type="button" onClick={()=>onChange([...values,{name:''}])} className="mt-3 rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white">+ {title}</button>}</Panel>;
+  return <Panel title={title}><div className="grid gap-3 md:grid-cols-2">{values.map((feature,index)=><FeatureCard key={index} title={title} feature={feature} index={index} editable={editable} onChange={(key,value)=>update(index,key,value)} onRemove={()=>onChange(values.filter((_,itemIndex)=>itemIndex!==index))}/>)}{!values.length&&<div className="col-span-full rounded-xl border-2 border-dashed border-stone-200 py-8 text-center text-sm text-stone-500">Nothing recorded yet.</div>}</div>{editable&&<button type="button" onClick={()=>onChange([{name:''},...values])} className="mt-3 rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white">+ {title}</button>}</Panel>;
 }
 
 function FeaturesTab({data,editable,onSet}:{data:PF1eCharacterData;editable:boolean;onSet:(path:string,value:unknown)=>void}) {
@@ -367,6 +370,6 @@ function Pathfinder1eCharacterEditor({character,mode,onSave,onCancel,onRoll}:Pat
 }
 
 export default function Pathfinder1eCharacterSheet(props:Pathfinder1eCharacterSheetProps) {
-  if(props.mode==='view')return <Pathfinder1eCharacterView character={props.character} onRoll={props.onRoll} onDataChange={props.onDataChange}/>;
+  if(props.mode==='view')return <Pathfinder1eCharacterView character={props.character} onRoll={props.onRoll} onDataChange={props.onDataChange} onPlaceAoE={props.onPlaceAoE}/>;
   return <Pathfinder1eCharacterEditor {...props}/>;
 }

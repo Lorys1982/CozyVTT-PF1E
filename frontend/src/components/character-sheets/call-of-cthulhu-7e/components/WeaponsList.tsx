@@ -63,7 +63,7 @@ export const WeaponsList: React.FC<WeaponsListProps> = ({
       malfunction: null,
       notes: '',
     };
-    onChange([...weapons, newWeapon]);
+    onChange([newWeapon, ...weapons]);
   };
 
   const handleDeleteWeapon = (index: number) => {

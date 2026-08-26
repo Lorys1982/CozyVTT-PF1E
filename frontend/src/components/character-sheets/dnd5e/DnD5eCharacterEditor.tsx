@@ -1180,8 +1180,8 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
           <button
             onClick={() => {
               const newAttacks = [
-                ...(formData.attacks || []),
                 { name: '', attackBonus: 0, damageRoll: '', damageType: '', range: 0, properties: [], notes: '' },
+                ...(formData.attacks || []),
               ];
               updateField('attacks', newAttacks);
             }}
@@ -1366,8 +1366,8 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
           <button
             onClick={() => {
               const newSpells = [
-                ...(formData.spellcasting?.spells || []),
                 { level: 1, name: '', prepared: false, ritual: false, concentration: false },
+                ...(formData.spellcasting?.spells || []),
               ];
               updateField('spellcasting.spells', newSpells);
             }}
@@ -1478,7 +1478,6 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
           <button
             onClick={() => {
               const newInventory = [
-                ...(formData.inventory || []),
                 {
                   name: '',
                   quantity: 1,
@@ -1490,6 +1489,7 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
                   attuned: false,
                   value: 0,
                 },
+                ...(formData.inventory || []),
               ];
               updateField('inventory', newInventory);
             }}

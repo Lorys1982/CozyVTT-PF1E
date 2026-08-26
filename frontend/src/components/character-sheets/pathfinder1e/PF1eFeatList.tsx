@@ -104,6 +104,6 @@ export default function PF1eFeatList({values,editable,onChange}:{values:PF1eFeat
       {values.map((feat,index)=><FeatCard key={index} feat={feat} index={index} editable={editable} onUpdate={next=>update(index,next)} onRemove={()=>onChange(values.filter((_,featIndex)=>featIndex!==index))}/>)}
       {!values.length&&<div className="col-span-full rounded-xl border-2 border-dashed border-stone-200 py-8 text-center text-sm text-stone-500">No feats recorded yet.</div>}
     </div>
-    {editable&&<button type="button" onClick={()=>onChange([...values,{name:''}])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white hover:bg-red-900">+ Feat</button>}
+    {editable&&<button type="button" onClick={()=>onChange([{name:''},...values])} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-semibold text-white hover:bg-red-900">+ Feat</button>}
   </div>;
 }

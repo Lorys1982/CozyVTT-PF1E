@@ -264,4 +264,5 @@ export interface DnD5eCharacterData {
   alliesAndOrganizations?: DnD5eAlliesAndOrganizations;
   treasure?: string;
   additionalFeaturesAndTraits?: string;
+  notes?: string;
 }

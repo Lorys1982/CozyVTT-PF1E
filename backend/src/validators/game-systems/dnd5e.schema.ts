@@ -273,6 +273,7 @@ export const dnd5eCharacterDataSchema = z.object({
   alliesAndOrganizations: alliesAndOrganizationsSchema.optional(),
   treasure: z.string().optional(),
   additionalFeaturesAndTraits: z.string().optional(),
+  notes: z.string().max(50000).optional(),
 });
 
 /**

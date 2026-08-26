@@ -9,15 +9,17 @@ import { useCampaign } from '@/contexts/CampaignContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/services/api';
-import { Users, Crown, Gamepad2, Eye, Edit, UserPlus, X, Minus, Plus, Dices } from 'lucide-react';
+import { Users, Crown, Gamepad2, Eye, Edit, UserPlus, X, Minus, Plus, Dices, NotebookPen } from 'lucide-react';
 import type { CharacterHpInfo } from '@/utils/characterHp';
 import CharacterSheetViewerModal from '../character/CharacterSheetViewerModal';
 import CharacterSheetEditorModal from '../character/CharacterSheetEditorModal';
+import CharacterNotesModal from '../character/CharacterNotesModal';
 import CharacterContextMenu from './CharacterContextMenu';
 import CharacterRollPicker from './CharacterRollPicker';
 import Toast, { useToast } from '@/components/Toast';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import type { CampaignRole, GameSystem, Character } from '@/types';
+import { useCampaignToolStore } from '@/stores/campaignToolStore';
 
 interface RosterMember {
   userId: string;
@@ -44,10 +46,12 @@ export default function CampaignRoster() {
   const [loading, setLoading] = useState(true);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [editorCharacter, setEditorCharacter] = useState<Character | null>(null);
+  const [notesCharacter, setNotesCharacter] = useState<Character | null>(null);
   const [_viewerLoading, setViewerLoading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; characterId: string; characterUserId: string } | null>(null);
   const [rollPicker, setRollPicker] = useState<{ x: number; y: number; characterId: string } | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const openSpellAoE = useCampaignToolStore((state) => state.openSpellAoE);
 
   // Fetch roster data
   const fetchRoster = async () => {
@@ -143,6 +147,16 @@ export default function CampaignRoster() {
         console.error('Error fetching character for editing:', error);
         showToast('Failed to load character for editing', 'error');
       }
+    }
+  };
+
+  const handleOpenNotes = async (characterId: string) => {
+    try {
+      const { character } = await api.getCharacter(characterId);
+      setNotesCharacter(character);
+    } catch (error) {
+      console.error('Error fetching character notes:', error);
+      showToast('Failed to load character notes', 'error');
     }
   };
 
@@ -266,7 +280,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.DM.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
                 ))}
               </div>
             </div>
@@ -280,7 +294,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.PLAYER.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
                 ))}
               </div>
             </div>
@@ -294,7 +308,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.SPECTATOR.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
                 ))}
               </div>
             </div>
@@ -310,6 +324,10 @@ export default function CampaignRoster() {
           campaignId={campaign.id}
           membership={userMembership}
           onClose={handleCloseViewer}
+          onPlaceSpellAoE={(config, spell) => {
+            openSpellAoE(config, spell.name);
+            setSelectedCharacter(null);
+          }}
         />
       )}
 
@@ -380,6 +398,14 @@ export default function CampaignRoster() {
         />
       )}
 
+      {notesCharacter && (
+        <CharacterNotesModal
+          character={notesCharacter}
+          onClose={() => setNotesCharacter(null)}
+          onSaved={() => { void fetchRoster(); }}
+        />
+      )}
+
       <Toast message={toast.message} type={toast.type} show={toast.show} onClose={hideToast} />
 
       <ConfirmDialog
@@ -402,13 +428,14 @@ interface MemberCardProps {
   getSystemShortName: (gameSystem: GameSystem | null) => string;
   onCharacterClick: (characterId: string) => void;
   onCharacterRightClick: (e: React.MouseEvent, characterId: string, characterUserId: string) => void;
+  onNotesClick: (characterId: string) => void;
   isDM: boolean;
   currentUserId: string;
   characterHpCache: Record<string, CharacterHpInfo>;
   onHpDelta: (characterId: string, delta: number) => void;
 }
 
-function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortName, onCharacterClick, onCharacterRightClick, isDM, currentUserId, characterHpCache, onHpDelta }: MemberCardProps) {
+function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortName, onCharacterClick, onCharacterRightClick, onNotesClick, isDM, currentUserId, characterHpCache, onHpDelta }: MemberCardProps) {
   const RoleIcon = getRoleIcon(member.role);
 
   return (
@@ -489,6 +516,8 @@ function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortNa
               <p className="text-xs font-medium text-stone-gray flex-1 truncate">
                 {character.name}
               </p>
+
+              {(isDM || character.userId === currentUserId) && <button type="button" onClick={event=>{event.stopPropagation();onNotesClick(character.id);}} onMouseDown={event=>event.stopPropagation()} draggable={false} title={`Open ${character.name}'s notes`} aria-label={`Open ${character.name}'s notes`} className="rounded p-1 text-stone-gray hover:bg-moss-green/15 hover:text-brand-ink"><NotebookPen className="h-4 w-4"/></button>}
 
               {/* Game System Badge */}
               {character.gameSystem && (

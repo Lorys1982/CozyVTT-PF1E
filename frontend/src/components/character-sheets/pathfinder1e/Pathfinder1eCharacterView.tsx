@@ -8,11 +8,14 @@ import PF1eFeatList from './PF1eFeatList';
 import PF1eRulesText from './PF1eRulesText';
 import PF1eSpellbook from './PF1eSpellbook';
 import { createPF1eSheetData, PF1E_ABILITIES, signed } from './pathfinder1eDefaults';
+import type { SpellAoEConfig } from '../../../utils/pathfinder1eSpellAoE';
+import type { PF1eSpell } from '../../../types/game-systems/pathfinder1e';
 
 interface Props {
   character:Character;
   onRoll?:(expression:string,purpose:string)=>void;
   onDataChange?:(data:PF1eCharacterData)=>void|Promise<void>;
+  onPlaceAoE?:(config:SpellAoEConfig,spell:PF1eSpell)=>void;
 }
 
 interface RollMenuState { x:number;y:number;expression:string;purpose:string }
@@ -59,7 +62,7 @@ function InventoryCards({data}:{data:PF1eCharacterData}) {
   return <><div className="mb-3 flex justify-end"><div className="flex rounded-lg border border-stone-200 bg-white p-1"><button type="button" aria-label="List items" aria-pressed={layout==='list'} onClick={()=>setLayout('list')} className={`rounded p-1.5 ${layout==='list'?'bg-red-800 text-white':'text-stone-500'}`}><List className="h-4 w-4"/></button><button type="button" aria-label="Cluster items" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')} className={`rounded p-1.5 ${layout==='grid'?'bg-red-800 text-white':'text-stone-500'}`}><LayoutGrid className="h-4 w-4"/></button></div></div><div className={layout==='grid'?'grid gap-3 md:grid-cols-2':'space-y-2'}>{gear.map((item,index)=><details key={`${item.name}-${index}`} className="min-w-0 rounded-lg border border-stone-200 bg-white p-3"><summary className="cursor-pointer font-bold text-stone-900">{item.name}<span className="ml-2 text-xs font-normal text-stone-500">{[item.type,item.quantity!==undefined?`Qty ${item.quantity}`:undefined,item.location,item.weight?`${item.weight} each`:undefined].filter(Boolean).join(' · ')}</span>{item.notes&&<span className="mt-1 block line-clamp-1 text-xs font-normal text-stone-500">{item.notes}</span>}</summary><div className="mt-3 grid grid-cols-1 gap-2 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2"><Info label="Quantity" value={item.quantity??1}/><Info label="Weight" value={item.weight}/><Info label="Location" value={item.location}/><Info label="Type" value={item.type}/>{item.notes&&<div className="sm:col-span-2 whitespace-pre-wrap text-stone-600">{item.notes}</div>}</div></details>)}</div></>;
 }
 
-export default function Pathfinder1eCharacterView({character,onRoll,onDataChange}:Props) {
+export default function Pathfinder1eCharacterView({character,onRoll,onDataChange,onPlaceAoE}:Props) {
   const data=createPF1eSheetData(character.data as Partial<PF1eCharacterData>,character.name);
   const [rollMenu,setRollMenu]=useState<RollMenuState|null>(null);
   const menuRef=useRef<HTMLDivElement>(null);
@@ -98,7 +101,7 @@ export default function Pathfinder1eCharacterView({character,onRoll,onDataChange
 
       <Section title="Skills" icon={BookOpen}><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(data.skills??[]).map((skill,index)=><Rollable key={`${skill.name}-${index}`} expression={`1d20${signed(skill.total??0)}`} purpose={`${skill.name} Check`} onRoll={onRoll} onMenu={showRollMenu} className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-left hover:border-red-300 hover:bg-red-50"><span><span className="font-semibold text-stone-800">{skill.name}</span><span className="ml-2 text-xs uppercase text-stone-400">{skill.ability}</span></span><strong className="text-red-800">{signed(skill.total??0)}</strong></Rollable>)}</div>{data.skillConditionalModifiers&&<div className="mt-3 text-sm text-stone-600"><strong>Conditional:</strong> {data.skillConditionalModifiers}</div>}</Section>
 
-      <PF1eSpellbook data={data} editable={false} onSet={onDataChange?updateData:noop} canTrackUses={!!onDataChange} onRoll={onRoll} onRollContext={showRollMenu}/>
+      <PF1eSpellbook data={data} editable={false} onSet={onDataChange?updateData:noop} canTrackUses={!!onDataChange} onRoll={onRoll} onRollContext={showRollMenu} onPlaceAoE={onPlaceAoE}/>
       <Section title="Inventory" icon={Backpack}><div className="mb-4 flex flex-wrap gap-2 text-sm">{(['pp','gp','sp','cp'] as const).map(key=><span key={key} className="rounded-full bg-white px-3 py-1 font-semibold uppercase text-stone-700">{key} {money[key]??0}</span>)}</div><InventoryCards data={data}/></Section>
       {!!data.feats?.length&&<Section title="Feats" icon={BookOpen}><PF1eFeatList values={data.feats} editable={false} onChange={noop}/></Section>}
       <FeatureGroup title="Special abilities" values={data.specialAbilities??[]}/><FeatureGroup title="Traits" values={data.traits??[]}/>

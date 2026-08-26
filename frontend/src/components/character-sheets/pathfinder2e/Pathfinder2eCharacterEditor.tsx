@@ -775,7 +775,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
       <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-stone-800">Lore Skills</h3>
-          <button onClick={() => { const newLore = [...(formData.loreSkills || []), { name: 'New Lore', attribute: 'intelligence', proficiencyRank: 'trained', itemBonus: 0, bonus: 0 }]; updateField('loreSkills', newLore); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
+          <button onClick={() => { const newLore = [{ name: 'New Lore', attribute: 'intelligence', proficiencyRank: 'trained', itemBonus: 0, bonus: 0 }, ...(formData.loreSkills || [])]; updateField('loreSkills', newLore); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
             <Plus className="w-4 h-4" />
             <span>Add Lore</span>
           </button>
@@ -975,7 +975,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
       <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-stone-800">Strikes & Attacks</h3>
-          <button onClick={() => { const newStrikes = [...(formData.strikes || []), { name: 'New Attack', type: 'melee', attackBonus: 0, damageRoll: '1d6', damageType: 'bludgeoning', attributeModifier: 'strength', proficiencyRank: 'trained', itemBonus: 0, traits: [], range: null, notes: '' }]; updateField('strikes', newStrikes); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
+          <button onClick={() => { const newStrikes = [{ name: 'New Attack', type: 'melee', attackBonus: 0, damageRoll: '1d6', damageType: 'bludgeoning', attributeModifier: 'strength', proficiencyRank: 'trained', itemBonus: 0, traits: [], range: null, notes: '' }, ...(formData.strikes || [])]; updateField('strikes', newStrikes); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
             <Plus className="w-4 h-4" />
             <span>Add Strike</span>
           </button>
@@ -1093,7 +1093,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-stone-800">Cantrips</h3>
-            <button onClick={() => { const newCantrips = [...(formData.spellcasting.cantrips || []), { name: 'New Cantrip', tradition: formData.spellcasting.tradition }]; updateField('spellcasting.cantrips', newCantrips); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
+            <button onClick={() => { const newCantrips = [{ name: 'New Cantrip', tradition: formData.spellcasting.tradition }, ...(formData.spellcasting.cantrips || [])]; updateField('spellcasting.cantrips', newCantrips); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
               <Plus className="w-4 h-4" />
               <span>Add Cantrip</span>
             </button>
@@ -1136,7 +1136,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-stone-800">Spells {formData.spellcasting.type === 'prepared' ? 'Prepared' : 'Known'}</h3>
-            <button onClick={() => { const newSpells = [...(formData.spellcasting.spells || []), { name: 'New Spell', rank: 1, tradition: formData.spellcasting.tradition, prepared: formData.spellcasting.type === 'prepared' }]; updateField('spellcasting.spells', newSpells); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
+            <button onClick={() => { const newSpells = [{ name: 'New Spell', rank: 1, tradition: formData.spellcasting.tradition, prepared: formData.spellcasting.type === 'prepared' }, ...(formData.spellcasting.spells || [])]; updateField('spellcasting.spells', newSpells); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
               <Plus className="w-4 h-4" />
               <span>Add Spell</span>
             </button>
@@ -1181,7 +1181,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                 <input type="number" min="0" max="3" value={formData.spellcasting.focusSpells?.focusPoints?.current || 0} onChange={(e) => updateField('spellcasting.focusSpells.focusPoints.current', Math.min(parseInt(e.target.value) || 0, 3))} className="w-12 px-2 py-1 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" />
                 <span className="text-sm text-stone-600">/ 3</span>
               </div>
-              <button onClick={() => { const newFocusSpells = [...(formData.spellcasting.focusSpells?.spells || []), { name: 'New Focus Spell', tradition: formData.spellcasting.tradition }]; updateField('spellcasting.focusSpells.spells', newFocusSpells); updateField('spellcasting.focusSpells.focusPoints.total', 3); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
+              <button onClick={() => { const newFocusSpells = [{ name: 'New Focus Spell', tradition: formData.spellcasting.tradition }, ...(formData.spellcasting.focusSpells?.spells || [])]; updateField('spellcasting.focusSpells.spells', newFocusSpells); updateField('spellcasting.focusSpells.focusPoints.total', 3); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
                 <Plus className="w-4 h-4" />
                 <span>Add Focus Spell</span>
               </button>
@@ -1206,7 +1206,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-stone-800">Innate Spells</h3>
-            <button onClick={() => { const newInnateSpells = [...(formData.spellcasting.innateSpells || []), { name: 'New Innate Spell', tradition: formData.spellcasting.tradition, frequency: 'at will' }]; updateField('spellcasting.innateSpells', newInnateSpells); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
+            <button onClick={() => { const newInnateSpells = [{ name: 'New Innate Spell', tradition: formData.spellcasting.tradition, frequency: 'at will' }, ...(formData.spellcasting.innateSpells || [])]; updateField('spellcasting.innateSpells', newInnateSpells); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
               <Plus className="w-4 h-4" />
               <span>Add Innate Spell</span>
             </button>
@@ -1233,7 +1233,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-stone-800">Rituals</h3>
-            <button onClick={() => { const newRituals = [...(formData.spellcasting.rituals || []), { name: 'New Ritual', rank: 1 }]; updateField('spellcasting.rituals', newRituals); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
+            <button onClick={() => { const newRituals = [{ name: 'New Ritual', rank: 1 }, ...(formData.spellcasting.rituals || [])]; updateField('spellcasting.rituals', newRituals); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
               <Plus className="w-4 h-4" />
               <span>Add Ritual</span>
             </button>
@@ -1288,7 +1288,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
       <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-bold text-stone-800">Inventory Items</h3>
-          <button onClick={() => { const newInventory = [...(formData.inventory || []), { name: 'New Item', quantity: 1, bulk: 'L', equippable: false, equipped: false, requiresAttunement: false, attuned: false, invested: false, value: 0, notes: '' }]; updateField('inventory', newInventory); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
+          <button onClick={() => { const newInventory = [{ name: 'New Item', quantity: 1, bulk: 'L', equippable: false, equipped: false, requiresAttunement: false, attuned: false, invested: false, value: 0, notes: '' }, ...(formData.inventory || [])]; updateField('inventory', newInventory); }} className="px-3 py-1 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors flex items-center space-x-1">
             <Plus className="w-4 h-4" />
             <span>Add Item</span>
           </button>
@@ -1343,7 +1343,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-stone-800">Class Features</h3>
-            <button onClick={() => { const newFeatures = [...(formData.classFeatures || []), 'New Class Feature']; updateField('classFeatures', newFeatures); }} className="px-3 py-1 text-sm font-medium text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg transition-colors flex items-center space-x-1">
+            <button onClick={() => { const newFeatures = ['New Class Feature', ...(formData.classFeatures || [])]; updateField('classFeatures', newFeatures); }} className="px-3 py-1 text-sm font-medium text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg transition-colors flex items-center space-x-1">
               <Plus className="w-4 h-4" />
               <span>Add Feature</span>
             </button>
@@ -1368,7 +1368,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
           <div key={key} className="bg-stone-50 border-2 border-stone-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-bold text-stone-800">{label}</h3>
-              <button onClick={() => { const currentFeats = formData.feats?.[key] || []; const newFeats = [...currentFeats, { name: 'New Feat', level: formData.level || 1, description: '' }]; updateField(`feats.${key}`, newFeats); }} className={`px-3 py-1 text-sm font-medium text-white bg-${color}-700 hover:bg-${color}-800 rounded-lg transition-colors flex items-center space-x-1`}>
+              <button onClick={() => { const currentFeats = formData.feats?.[key] || []; const newFeats = [{ name: 'New Feat', level: formData.level || 1, description: '' }, ...currentFeats]; updateField(`feats.${key}`, newFeats); }} className={`px-3 py-1 text-sm font-medium text-white bg-${color}-700 hover:bg-${color}-800 rounded-lg transition-colors flex items-center space-x-1`}>
                 <Plus className="w-4 h-4" />
                 <span>Add Feat</span>
               </button>
