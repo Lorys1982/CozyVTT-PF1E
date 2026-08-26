@@ -5,6 +5,7 @@ import {
   buildNpcRolls,
   extractAttackBonus,
   extractDiceExpressions,
+  extractPf1eAttacks,
   systemSupportsNpcRolls,
 } from '../npcRolls';
 
@@ -156,6 +157,39 @@ describe('buildNpcRolls — Pathfinder 2e', () => {
   });
 });
 
+describe('buildNpcRolls — Pathfinder 1e', () => {
+  const pf1eCreature: NpcStatBlock = {
+    ac: 21,
+    speed: '30 ft.',
+    abilities: { str: 25, dex: 13, con: 24, int: 3, wis: 14, cha: 8 },
+    savingThrows: { fort: 13, reflex: 7, will: 4 },
+    skills: { perception: 13 },
+    actions: [{ name: 'Melee', description: '2 claws +14 (1d6+7), bite +14/+9 (2d6+7 plus grab)' }],
+  };
+
+  it('parses compact PF1 attack notation into readable attack and damage rolls', () => {
+    expect(extractPf1eAttacks(pf1eCreature.actions![0].description)).toEqual([
+      { name: '2 claws', bonuses: [14], damage: ['1d6+7'] },
+      { name: 'bite', bonuses: [14, 9], damage: ['2d6+7'] },
+    ]);
+    const rolls = buildNpcRolls(pf1eCreature, 'PATHFINDER_1E');
+    expect(find(rolls.combat, '2 claws · attack')?.expression).toBe('1d20+14');
+    expect(find(rolls.combat, 'bite · attack 2')?.expression).toBe('1d20+9');
+    expect(find(rolls.combat, 'bite · damage')?.expression).toBe('2d6+7');
+  });
+
+  it('keeps alternatives separated by "or" as distinct attacks', () => {
+    expect(extractPf1eAttacks('bite +11 (1d8+6) or slam +11 (1d6+6)')).toHaveLength(2);
+  });
+
+  it('offers Fortitude, Reflex and Will instead of six D&D ability saves', () => {
+    const rolls = buildNpcRolls(pf1eCreature, 'PATHFINDER_1E');
+    expect(rolls.savingThrows).toHaveLength(3);
+    expect(find(rolls.savingThrows, 'Fortitude')?.expression).toBe('1d20+13');
+    expect(find(rolls.savingThrows, 'Reflex')?.expression).toBe('1d20+7');
+  });
+});
+
 describe('buildNpcRolls — systems without a d20 model', () => {
   // The defect this fixes: a Call of Cthulhu NPC was offered 1d20 + ability
   // modifier rolls for a percentile system with no ability modifiers.
@@ -170,6 +204,7 @@ describe('buildNpcRolls — systems without a d20 model', () => {
 
   it('reports which systems have a modelled structure', () => {
     expect(systemSupportsNpcRolls('DND_5E')).toBe(true);
+    expect(systemSupportsNpcRolls('PATHFINDER_1E')).toBe(true);
     expect(systemSupportsNpcRolls('PATHFINDER_2E')).toBe(true);
     expect(systemSupportsNpcRolls('CALL_OF_CTHULHU_7E')).toBe(false);
     expect(systemSupportsNpcRolls('SHADOWRUN_6E')).toBe(false);

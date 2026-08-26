@@ -150,6 +150,14 @@ export interface NpcStatBlock {
   damageImmunities?: string;
   /** Condition immunities */
   conditionImmunities?: string;
+  /** Pathfinder 1e defensive abilities, such as evasion or channel resistance */
+  defensiveAbilities?: string;
+  /** Pathfinder 1e damage reduction, e.g. "10/cold iron" */
+  damageReduction?: string;
+  /** Pathfinder 1e spell resistance */
+  spellResistance?: string;
+  /** Pathfinder 1e weaknesses */
+  weaknesses?: string;
   /** Senses, e.g. "darkvision 60 ft., passive Perception 15" */
   senses?: string;
   /** Languages */
@@ -197,6 +205,8 @@ export interface NpcStatBlock {
     description: string;
     spells: Array<{ name: string; sourceUrl?: string }>;
   }>;
+  /** Pathfinder 1e feats printed in the Statistics section */
+  feats?: string;
   /** Creature type, e.g. "Medium humanoid (goblinoid)" */
   creatureType?: string;
   /** Alignment, e.g. "neutral evil" */

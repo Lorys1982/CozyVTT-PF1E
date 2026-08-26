@@ -10,6 +10,10 @@ const pf1eBlock:NpcStatBlock={
   savingThrows:{fort:5,reflex:4,will:3},skills:{perception:8},
   actions:[{name:'Melee',description:'bite +7 (1d8+4)'}],
   traits:[{name:'Ferocity',description:'Continues fighting below 0 hp.'}],
+  defensiveAbilities:'ferocity',damageReduction:'5/cold iron',spellResistance:'15',
+  damageImmunities:'poison',damageResistances:'fire 10',weaknesses:'light sensitivity',
+  feats:'Improved Initiative, Toughness',
+  spellcasting:[{name:'Spell-Like Abilities',description:'CL 5th\nAt will—detect magic',spells:[{name:'detect magic',sourceUrl:'https://example.com/spell'}]}],
   bonusActions:[{name:'5e leak',description:'Must not be shown.'}],
   legendaryActions:[{name:'5e legendary leak',description:'Must not be shown.'}],
 };
@@ -21,6 +25,12 @@ describe('PF1e NPC stat blocks',()=>{
     expect(screen.getByText('Special Abilities')).toBeInTheDocument();
     expect(screen.queryByText('Legendary Actions')).not.toBeInTheDocument();
     expect(screen.queryByText('Bonus Actions')).not.toBeInTheDocument();
+    expect(screen.getByText('DR')).toBeInTheDocument();
+    expect(screen.getByText('5/cold iron')).toBeInTheDocument();
+    expect(screen.getByText('Spellcasting')).toBeInTheDocument();
+    expect(screen.getByText('At will')).toHaveClass('font-bold');
+    expect(screen.getByRole('link',{name:'detect magic'})).toHaveClass('font-semibold','italic');
+    expect(screen.getByText('Improved Initiative, Toughness')).toBeInTheDocument();
   });
 
   it('edits printed PF1 save and skill totals without 5e action sections',()=>{

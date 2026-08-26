@@ -245,6 +245,12 @@ export default function StatBlockEditor({
             ['damageResistances', 'Damage Resistances'],
             ['damageImmunities', 'Damage Immunities'],
             ['conditionImmunities', 'Condition Immunities'],
+            ...(isPf1e ? [
+              ['defensiveAbilities', 'Defensive Abilities'],
+              ['damageReduction', 'Damage Reduction'],
+              ['spellResistance', 'Spell Resistance'],
+              ['weaknesses', 'Weaknesses'],
+            ] as const : []),
             ['senses', 'Senses'],
             ['languages', 'Languages'],
           ] as const).map(([field, label]) => (

@@ -113,6 +113,81 @@ function buildCombatRolls(statBlock: NpcStatBlock): RollOption[] {
   return combat;
 }
 
+export interface Pf1eAttack {
+  name: string;
+  bonuses: number[];
+  damage: string[];
+}
+
+/** Parse PF1's compact attack notation: "2 claws +14 (1d6+7), bite +14 (2d6+7)". */
+export function extractPf1eAttacks(description: string): Pf1eAttack[] {
+  if (!description) return [];
+  const chunks: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < description.length; index += 1) {
+    const char = description[index];
+    if (char === '(') depth += 1;
+    else if (char === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0) {
+      const alternative = description.slice(index).match(/^\s+or\s+/i);
+      if (alternative) {
+        chunks.push(description.slice(start, index));
+        index += alternative[0].length - 1;
+        start = index + 1;
+      } else if (char === ',' || char === ';') {
+        chunks.push(description.slice(start, index));
+        start = index + 1;
+      }
+    }
+  }
+  chunks.push(description.slice(start));
+
+  return chunks.flatMap((rawChunk) => {
+    const chunk = rawChunk.trim().replace(/^or\s+/i, '').replace(/−/g, '-');
+    const match = chunk.match(/^(?:(\d+)\s+)?(.+?)\s+((?:[+-]\d+)(?:\s*\/\s*[+-]?\d+)*)\s*\(([^)]*)\)/i);
+    if (!match) return [];
+    const count = match[1] ? `${match[1]} ` : '';
+    const bonuses = match[3].split('/').map(Number).filter(Number.isFinite);
+    return [{
+      name: `${count}${match[2].trim()}`,
+      bonuses,
+      damage: extractDiceExpressions(match[4]),
+    }];
+  });
+}
+
+function buildPf1eCombatRolls(statBlock: NpcStatBlock): RollOption[] {
+  const combat: RollOption[] = [];
+  for (const action of statBlock.actions ?? []) {
+    const attacks = extractPf1eAttacks(action.description ?? '');
+    if (!attacks.length) {
+      for (const expression of extractDiceExpressions(action.description ?? '')) {
+        combat.push({
+          label: `${action.name} · damage`, expression,
+          purpose: `${action.name} Damage`, supportsAdvantage: false,
+        });
+      }
+      continue;
+    }
+    for (const attack of attacks) {
+      attack.bonuses.forEach((bonus, index) => combat.push({
+        label: `${attack.name} · attack${attack.bonuses.length > 1 ? ` ${index + 1}` : ''}`,
+        expression: `1d20${formatModifier(bonus)}`,
+        purpose: `${attack.name} Attack${attack.bonuses.length > 1 ? ` ${index + 1}` : ''}`,
+        supportsAdvantage: true,
+      }));
+      attack.damage.forEach((expression, index) => combat.push({
+        label: `${attack.name} · damage${attack.damage.length > 1 ? ` ${index + 1}` : ''}`,
+        expression,
+        purpose: `${attack.name} Damage${attack.damage.length > 1 ? ` ${index + 1}` : ''}`,
+        supportsAdvantage: false,
+      }));
+    }
+  }
+  return combat;
+}
+
 // ---------------------------------------------------------------------------
 // D&D 5e
 // ---------------------------------------------------------------------------
@@ -175,6 +250,35 @@ function buildDnd5eRolls(statBlock: NpcStatBlock): CharacterRolls {
   }
 
   return { abilities, skills, savingThrows, combat: buildCombatRolls(statBlock) };
+}
+
+// ---------------------------------------------------------------------------
+// Pathfinder 1e
+// ---------------------------------------------------------------------------
+
+const PF1E_SAVE_LABELS: Record<string, string> = {
+  fort: 'Fortitude', fortitude: 'Fortitude', ref: 'Reflex', reflex: 'Reflex', will: 'Will',
+};
+
+function buildPf1eRolls(statBlock: NpcStatBlock): CharacterRolls {
+  const abilities = ABILITY_KEYS.map((ability) => {
+    const bonus = abilityModifier(statBlock.abilities?.[ability] ?? 10);
+    return {
+      label: `${ability.toUpperCase()} check`, expression: `1d20${formatModifier(bonus)}`,
+      purpose: `${ABILITY_LABELS[ability]} Check`, supportsAdvantage: true,
+    };
+  });
+  const savingThrows = Object.entries(statBlock.savingThrows ?? {}).flatMap(([key, bonus]) => {
+    if (typeof bonus !== 'number') return [];
+    const label = PF1E_SAVE_LABELS[key.toLowerCase()] ?? key;
+    return [{ label: `${label} save`, expression: `1d20${formatModifier(bonus)}`, purpose: `${label} Save`, supportsAdvantage: true }];
+  });
+  const skills = Object.entries(statBlock.skills ?? {}).flatMap(([key, bonus]) => {
+    if (typeof bonus !== 'number') return [];
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    return [{ label: `${label} check`, expression: `1d20${formatModifier(bonus)}`, purpose: `${label} Check`, supportsAdvantage: true }];
+  });
+  return { abilities, savingThrows, skills, combat: buildPf1eCombatRolls(statBlock) };
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +355,7 @@ function buildPf2eRolls(statBlock: NpcStatBlock): CharacterRolls {
 
 /** Game systems for which NPC stat blocks have a modelled roll structure. */
 export function systemSupportsNpcRolls(gameSystem: string | null | undefined): boolean {
-  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_2E';
+  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_1E' || gameSystem === 'PATHFINDER_2E';
 }
 
 /**
@@ -274,6 +378,8 @@ export function buildNpcRolls(
   if (!statBlock) return EMPTY_ROLLS;
 
   switch (gameSystem) {
+    case 'PATHFINDER_1E':
+      return buildPf1eRolls(statBlock);
     case 'PATHFINDER_2E':
       return buildPf2eRolls(statBlock);
     case 'DND_5E':

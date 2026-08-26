@@ -52,7 +52,7 @@ function getModeLabels(gameSystem: string | null): Record<RollMode, string> {
 }
 
 function systemSupportsAdvantage(gameSystem: string | null): boolean {
-  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_1E' || gameSystem === 'PATHFINDER_2E';
+  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_2E';
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +79,10 @@ const Section: React.FC<SectionProps> = ({ title, rolls, onRoll }) => {
           className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-stone-gray hover:bg-moss-green/10 transition-colors text-left"
         >
           <Dices className="w-3 h-3 text-brand-ink flex-shrink-0" />
-          <span className="flex-1">{opt.label}</span>
+          <span className="min-w-0 flex-1 leading-tight break-words">{opt.label}</span>
+          <code className="flex-shrink-0 rounded bg-moss-green/10 px-1.5 py-0.5 text-[11px] font-semibold text-brand-ink">
+            {opt.expression}
+          </code>
         </button>
       ))}
     </div>
@@ -108,17 +111,17 @@ export default function NpcRollPicker({
   const [customLabel, setCustomLabel] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
 
-  // The campaign's system decides what can be rolled from a stat block, not
-  // just how the buttons are labelled. Call of Cthulhu and Shadowrun return
-  // nothing and fall through to the custom roll input below, rather than being
-  // offered D&D dice for games that have none.
+  // Prefer an imported block's own system so a PF1 creature borrowed into a
+  // different campaign still gets PF1 rolls. Call of Cthulhu and Shadowrun
+  // return nothing and fall through to the custom roll input below.
+  const effectiveSystem = token.statBlock?.gameSystem ?? gameSystem ?? null;
   const rolls: CharacterRolls = useMemo(
-    () => buildNpcRolls(token.statBlock ?? null, gameSystem ?? null),
-    [token.statBlock, gameSystem]
+    () => buildNpcRolls(token.statBlock ?? null, effectiveSystem),
+    [token.statBlock, effectiveSystem]
   );
 
-  const hasAdvantage = systemSupportsAdvantage(gameSystem ?? null);
-  const modeLabels = getModeLabels(gameSystem ?? null);
+  const hasAdvantage = systemSupportsAdvantage(effectiveSystem);
+  const modeLabels = getModeLabels(effectiveSystem);
 
   const hasAnyRolls =
     rolls.abilities.length > 0 ||
@@ -184,7 +187,7 @@ export default function NpcRollPicker({
         top:        pos ? pos.y : anchorY,
         visibility: pos ? 'visible' : 'hidden',
         minWidth:   260,
-        maxWidth:   320,
+        maxWidth:   380,
         maxHeight:  560,
       }}
     >

@@ -49,8 +49,13 @@ function numeric(value: string | undefined, fallback = 0): number {
 
 function field(html: string, label: string): string | undefined {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = html.match(new RegExp(`<b>${escaped}<\\/b>\\s*([\\s\\S]*?)(?=<br\\s*\\/?>|<h3|$)`, 'i'));
+  const match = html.match(new RegExp(`<b>${escaped}<\\/b>\\s*([\\s\\S]*?)(?=<b>|<br\\s*\\/?>|<h3|$)`, 'i'));
   return match ? text(match[1]) : undefined;
+}
+
+function cleanStatValue(value: string | undefined): string | undefined {
+  const cleaned = value?.replace(/[;,]\s*$/, '').trim();
+  return cleaned || undefined;
 }
 
 function section(html: string, title: string): string {
@@ -148,8 +153,14 @@ export function parseAonMonsterPage(html: string, fallback: AonMonsterIndexEntry
   const ecology = section(content, 'Ecology');
   const acText = field(defense, 'AC');
   const hpText = field(defense, 'hp');
-  const savesFromFort = field(defense, 'Fort');
-  const saves = savesFromFort ? `Fort ${savesFromFort}` : undefined;
+  const savingThrows = ([
+    ['fort', field(defense, 'Fort')],
+    ['reflex', field(defense, 'Ref')],
+    ['will', field(defense, 'Will')],
+  ] as Array<[string, string | undefined]>).reduce<Record<string, number>>((result, [key, value]) => {
+    if (value) result[key] = numeric(value);
+    return result;
+  }, {});
   const abilityLine = statistics.match(/<b>Str<\/b>([\s\S]*?)(?=<br\s*\/?>|<h3|$)/i);
   const melee = field(offense, 'Melee');
   const ranged = field(offense, 'Ranged');
@@ -167,7 +178,7 @@ export function parseAonMonsterPage(html: string, fallback: AonMonsterIndexEntry
     ac: numeric(acText),
     speed: field(offense, 'Speed') ?? '—',
     abilities: parseAbilities(abilityLine ? `Str ${text(abilityLine[1])}` : undefined),
-    savingThrows: parseNamedBonuses(saves),
+    savingThrows: Object.keys(savingThrows).length ? savingThrows : undefined,
     skills: parseNamedBonuses(field(statistics, 'Skills')),
     senses: field(content, 'Senses'),
     languages: field(statistics, 'Languages'),
@@ -180,19 +191,18 @@ export function parseAonMonsterPage(html: string, fallback: AonMonsterIndexEntry
     alignment: identity.alignment,
     gameSystem: GameSystem.PATHFINDER_1E,
     hitPoints: numeric(hpText),
+    defensiveAbilities: cleanStatValue(field(defense, 'Defensive Abilities')),
+    damageReduction: cleanStatValue(field(defense, 'DR')),
+    spellResistance: cleanStatValue(field(defense, 'SR')),
+    damageImmunities: cleanStatValue(field(defense, 'Immune')),
+    damageResistances: cleanStatValue(field(defense, 'Resist')),
+    weaknesses: cleanStatValue(field(defense, 'Weaknesses')),
     sourceUrl,
     source,
     environment: field(ecology, 'Environment') ?? fallback.environment,
-    notes: [
-      field(defense, 'Defensive Abilities') && `Defensive Abilities: ${field(defense, 'Defensive Abilities')}`,
-      field(defense, 'DR') && `DR: ${field(defense, 'DR')}`,
-      field(defense, 'Immune') && `Immune: ${field(defense, 'Immune')}`,
-      field(defense, 'Resist') && `Resist: ${field(defense, 'Resist')}`,
-      field(statistics, 'Feats') && `Feats: ${field(statistics, 'Feats')}`,
-      `Official stat block: ${sourceUrl}`,
-    ].filter(Boolean).join('\n'),
+    feats: cleanStatValue(field(statistics, 'Feats')),
     _aonHydrated: true,
-    _aonVersion: 2,
+    _aonVersion: 3,
     _aonName: fallback.name,
     _aonItemName: fallback.itemName,
   };
@@ -287,7 +297,7 @@ export async function seedPf1eCreatureIndex(prisma: PrismaClient) {
 export async function hydratePf1eCreature(prisma: PrismaClient, creature: any) {
   const statBlock = creature.statBlock as Record<string, unknown>;
   if (creature.source !== PF1E_SOURCE) return creature;
-  if (statBlock?._aonHydrated === true && Number(statBlock?._aonVersion) >= 2 && typeof statBlock?._aonItemName === 'string') return creature;
+  if (statBlock?._aonHydrated === true && Number(statBlock?._aonVersion) >= 3 && typeof statBlock?._aonItemName === 'string') return creature;
 
   // Older catalogue rows stored only the label shown in the index. That label
   // is not always the AoN query key (for example "Zombie, Human Zombie" links

@@ -951,6 +951,11 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   const [damageResistances, setDamageResistances] = useState(sb?.damageResistances ?? '');
   const [damageImmunities, setDamageImmunities] = useState(sb?.damageImmunities ?? '');
   const [conditionImmunities, setConditionImmunities] = useState(sb?.conditionImmunities ?? '');
+  const [defensiveAbilities, setDefensiveAbilities] = useState(sb?.defensiveAbilities ?? '');
+  const [damageReduction, setDamageReduction] = useState(sb?.damageReduction ?? '');
+  const [spellResistance, setSpellResistance] = useState(sb?.spellResistance ?? '');
+  const [weaknesses, setWeaknesses] = useState(sb?.weaknesses ?? '');
+  const [feats, setFeats] = useState(sb?.feats ?? '');
   const [senses, setSenses] = useState(sb?.senses ?? '');
   const [languages, setLanguages] = useState(sb?.languages ?? '');
 
@@ -1016,7 +1021,14 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
       conditionImmunities,
       senses,
       languages,
-    }),gameSystem:gameSystem??undefined,...(isPf1e?{hitPoints:hpMax}:{})};
+    }),gameSystem:gameSystem??undefined,...(isPf1e?{
+      hitPoints:hpMax,
+      defensiveAbilities:defensiveAbilities||undefined,
+      damageReduction:damageReduction||undefined,
+      spellResistance:spellResistance||undefined,
+      weaknesses:weaknesses||undefined,
+      feats:feats||undefined,
+    }:{})};
 
     const payload = {
       name: name.trim(),
@@ -1285,11 +1297,11 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
                 <input type="text" value={damageVulnerabilities} onChange={(e) => setDamageVulnerabilities(e.target.value)} placeholder="fire" className="input-cozy w-full text-[11px]" />
               </div>
               <div>
-                <label className="text-[10px] text-stone-gray block mb-0.5">Damage Resistances</label>
+                <label className="text-[10px] text-stone-gray block mb-0.5">{isPf1e?'Resistances':'Damage Resistances'}</label>
                 <input type="text" value={damageResistances} onChange={(e) => setDamageResistances(e.target.value)} placeholder="cold, bludgeoning" className="input-cozy w-full text-[11px]" />
               </div>
               <div>
-                <label className="text-[10px] text-stone-gray block mb-0.5">Damage Immunities</label>
+                <label className="text-[10px] text-stone-gray block mb-0.5">{isPf1e?'Immunities':'Damage Immunities'}</label>
                 <input type="text" value={damageImmunities} onChange={(e) => setDamageImmunities(e.target.value)} placeholder="poison" className="input-cozy w-full text-[11px]" />
               </div>
               <div>
@@ -1304,6 +1316,13 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
                 <label className="text-[10px] text-stone-gray block mb-0.5">Languages</label>
                 <input type="text" value={languages} onChange={(e) => setLanguages(e.target.value)} placeholder="Common, Goblin" className="input-cozy w-full text-[11px]" />
               </div>
+              {isPf1e&&<>
+                <div><label className="text-[10px] text-stone-gray block mb-0.5">Defensive Abilities</label><input type="text" value={defensiveAbilities} onChange={(e)=>setDefensiveAbilities(e.target.value)} className="input-cozy w-full text-[11px]" /></div>
+                <div><label className="text-[10px] text-stone-gray block mb-0.5">Damage Reduction</label><input type="text" value={damageReduction} onChange={(e)=>setDamageReduction(e.target.value)} placeholder="5/cold iron" className="input-cozy w-full text-[11px]" /></div>
+                <div><label className="text-[10px] text-stone-gray block mb-0.5">Spell Resistance</label><input type="text" value={spellResistance} onChange={(e)=>setSpellResistance(e.target.value)} className="input-cozy w-full text-[11px]" /></div>
+                <div><label className="text-[10px] text-stone-gray block mb-0.5">Weaknesses</label><input type="text" value={weaknesses} onChange={(e)=>setWeaknesses(e.target.value)} className="input-cozy w-full text-[11px]" /></div>
+                <div className="col-span-2"><label className="text-[10px] text-stone-gray block mb-0.5">Feats</label><input type="text" value={feats} onChange={(e)=>setFeats(e.target.value)} className="input-cozy w-full text-[11px]" /></div>
+              </>}
             </div>
 
             {/* Name/description lists — traits, actions, etc. */}

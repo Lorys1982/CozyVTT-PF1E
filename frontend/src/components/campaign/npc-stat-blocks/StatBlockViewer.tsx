@@ -76,14 +76,15 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
       </div>
 
       <StatBlockDetailLines statBlock={statBlock} accentColor="danger" />
+      {statBlock.spellcasting?.length ? <div>
+        <div className="mb-1 border-b border-purple-900/20 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-purple-950">Spellcasting</div>
+        <div className="space-y-2">{statBlock.spellcasting.map((group,index)=><div key={`${group.name}-${index}`} className="rounded border border-purple-900/15 bg-purple-50/60 p-2">
+          <div className="font-bold text-purple-950">{group.name}</div>
+          <Pf1eSpellcastingDescription description={group.description} spells={group.spells}/>
+        </div>)}</div>
+      </div>:null}
       <Pf1eActionSections statBlock={statBlock}/>
-      {statBlock.spellcasting?.map((group,index)=><div key={`${group.name}-${index}`} className="rounded border border-purple-900/15 bg-purple-50/60 p-2">
-        <div className="font-bold text-purple-950">{group.name}</div>
-        <div className="mt-1 leading-relaxed text-stone-600">{group.description}</div>
-        {!!group.spells.length&&<div className="mt-1 flex flex-wrap gap-1.5">{group.spells.map((spell,spellIndex)=>spell.sourceUrl ?
-          <a key={`${spell.name}-${spellIndex}`} href={spell.sourceUrl} target="_blank" rel="noreferrer" className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900 underline hover:bg-purple-900/20">{spell.name}</a> :
-          <span key={`${spell.name}-${spellIndex}`} className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900">{spell.name}</span>)}</div>}
-      </div>)}
+      {statBlock.feats&&<div><span className="font-semibold text-red-950">Feats</span>{' '}{statBlock.feats}</div>}
       {statBlock.notes&&<div className="whitespace-pre-line rounded border border-red-900/15 bg-red-950/5 p-2 leading-relaxed text-stone-600">{statBlock.notes}</div>}
       {statBlock.sourceUrl && (
         <a href={statBlock.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex text-[10px] font-semibold text-red-800 underline hover:text-red-600">
@@ -92,6 +93,36 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
       )}
     </div>
   );
+}
+
+function Pf1eSpellcastingDescription({description,spells}:{description:string;spells:Array<{name:string;sourceUrl?:string}>}) {
+  const renderSpellNames=(value:string)=>{
+    const byName=new Map(spells.map(spell=>[spell.name.toLocaleLowerCase(),spell]));
+    const names=[...byName.values()].map(spell=>spell.name).sort((a,b)=>b.length-a.length);
+    if(!names.length)return value;
+    const escaped=names.map(name=>name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    const parts=value.split(new RegExp(`(${escaped.join('|')})`,'gi'));
+    return parts.map((part,index)=>{
+      const spell=byName.get(part.toLocaleLowerCase());
+      if(!spell)return part;
+      return spell.sourceUrl?
+        <a key={`${part}-${index}`} href={spell.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold italic text-purple-950 underline decoration-purple-900/40 underline-offset-2 hover:text-purple-700">{part}</a>:
+        <span key={`${part}-${index}`} className="font-semibold italic text-purple-950">{part}</span>;
+    });
+  };
+
+  return <div className="mt-1.5 space-y-1 leading-relaxed">
+    {description.split('\n').map(line=>line.trim()).filter(Boolean).map((line,index)=>{
+      const separator=line.search(/[—–]/);
+      if(separator<0)return <div key={`${line}-${index}`} className="rounded bg-purple-900/5 px-2 py-1 text-[10px] font-medium text-purple-900">{renderSpellNames(line)}</div>;
+      const label=line.slice(0,separator).trim();
+      const spellList=line.slice(separator+1).trim();
+      return <div key={`${line}-${index}`} className="grid grid-cols-[max-content_1fr] items-baseline gap-x-2 rounded px-1.5 py-0.5 hover:bg-purple-900/5">
+        <span className="font-bold text-purple-950">{label}</span>
+        <span className="min-w-0 text-stone-700">{renderSpellNames(spellList)}</span>
+      </div>;
+    })}
+  </div>;
 }
 
 function Pf1eActionSections({statBlock}:{statBlock:NpcStatBlock}) {
@@ -229,6 +260,10 @@ function StatBlockDetailLines({ statBlock, accentColor }: { statBlock: NpcStatBl
   if (statBlock.damageResistances) lines.push({ label: 'Resistances', value: statBlock.damageResistances });
   if (statBlock.damageImmunities) lines.push({ label: 'Immunities', value: statBlock.damageImmunities });
   if (statBlock.conditionImmunities) lines.push({ label: 'Condition Immunities', value: statBlock.conditionImmunities });
+  if (statBlock.defensiveAbilities) lines.push({ label: 'Defensive Abilities', value: statBlock.defensiveAbilities });
+  if (statBlock.damageReduction) lines.push({ label: 'DR', value: statBlock.damageReduction });
+  if (statBlock.spellResistance) lines.push({ label: 'SR', value: statBlock.spellResistance });
+  if (statBlock.weaknesses) lines.push({ label: 'Weaknesses', value: statBlock.weaknesses });
   if (statBlock.senses) lines.push({ label: 'Senses', value: statBlock.senses });
   if (statBlock.languages) lines.push({ label: 'Languages', value: statBlock.languages });
 

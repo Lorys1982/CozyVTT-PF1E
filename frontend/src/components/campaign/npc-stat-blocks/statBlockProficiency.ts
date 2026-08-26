@@ -310,6 +310,10 @@ export function recomputeDerivedBonuses(statBlock: NpcStatBlock): NpcStatBlock {
 export function formatSaveList(saves: Record<string, number>): string {
   return Object.entries(saves)
     .map(([key, bonus]) => {
+      const pf1eLabel: Record<string, string> = {
+        fort: 'Fort', fortitude: 'Fort', ref: 'Ref', reflex: 'Ref', will: 'Will',
+      };
+      if (pf1eLabel[key.toLowerCase()]) return `${pf1eLabel[key.toLowerCase()]} ${formatModifier(bonus)}`;
       const label = ABILITY_LABELS[key as AbilityKey] ?? key;
       // Stat blocks abbreviate saves ("Dex +5"), unlike skills.
       const short = label.slice(0, 3);
