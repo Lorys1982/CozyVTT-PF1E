@@ -171,11 +171,32 @@ describe('Pathfinder1eCharacterSheet', () => {
     const user = userEvent.setup();
     render(<Pathfinder1eCharacterSheet character={spellCharacter} mode="view" onPlaceAoE={onPlaceAoE} />);
 
-    await user.click(screen.getByRole('button', { name: /Place circle/ }));
+    await user.click(screen.getByRole('button', { name: /Place area · circle/ }));
 
     expect(onPlaceAoE).toHaveBeenCalledWith(
       { shape: 'sphere', sizeFt: 20 },
       expect.objectContaining({ name: 'Fireball' }),
+    );
+  });
+
+  it('offers spell range separately from its affected area', async () => {
+    const onPlaceAoE = vi.fn();
+    const spellCharacter: Character = {
+      ...character,
+      data: {
+        ...(character.data as PF1eCharacterData),
+        casterLevel: 8,
+        spells: [{ slotted: [{ name: 'Ranged Burst', range: 'short (20ft + 5/2lvl)', area: '10-ft.-radius burst' }] }],
+      },
+    };
+    const user = userEvent.setup();
+    render(<Pathfinder1eCharacterSheet character={spellCharacter} mode="view" onPlaceAoE={onPlaceAoE} />);
+
+    expect(screen.getByRole('button', { name: /Place area · circle 10 ft/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Show range · 40 ft/ }));
+    expect(onPlaceAoE).toHaveBeenCalledWith(
+      { shape: 'sphere', sizeFt: 40 },
+      expect.objectContaining({ name: 'Ranged Burst' }),
     );
   });
 

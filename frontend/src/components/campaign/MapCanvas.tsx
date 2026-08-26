@@ -280,15 +280,15 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // supplies geometry, while the player supplies its target on the board.
   useEffect(() => {
     if (!aoeRequest || !currentMap) return;
+    if (aoeRequest.campaignId && aoeRequest.campaignId !== campaign?.id) return;
     setAoEConfig(aoeRequest.config);
     setAoEAnchor(null);
     setShowRuler(false);
     setRulerOrigin(null);
     setShowAoE(true);
-    setViewingCharacter(null);
     showToast(`${aoeRequest.spellName} loaded in the AoE tool. Click the map to place it.`, 'success');
     clearAoERequest(aoeRequest.id);
-  }, [aoeRequest, currentMap, clearAoERequest, showToast]);
+  }, [aoeRequest, currentMap, campaign?.id, clearAoERequest, showToast]);
 
   // Token socket handlers read/write live token state synchronously via
   // useGameStore.getState() — no stale-closure ref bookkeeping needed.
@@ -3699,7 +3699,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
             campaignId={campaign.id}
             membership={membership}
             onClose={() => setViewingCharacter(null)}
-            onPlaceSpellAoE={(config, spell) => openSpellAoE(config, spell.name)}
+            onPlaceSpellAoE={(config, spell) => {
+              openSpellAoE(config, spell.name, campaign.id);
+              setViewingCharacter(null);
+            }}
           />
         );
       })()}

@@ -325,7 +325,7 @@ export default function CampaignRoster() {
           membership={userMembership}
           onClose={handleCloseViewer}
           onPlaceSpellAoE={(config, spell) => {
-            openSpellAoE(config, spell.name);
+            openSpellAoE(config, spell.name, campaign.id);
             setSelectedCharacter(null);
           }}
         />

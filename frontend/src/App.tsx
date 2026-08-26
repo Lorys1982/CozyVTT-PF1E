@@ -29,6 +29,7 @@ const DashboardPage    = lazy(() => import('@/pages/DashboardPage'));
 const CampaignPage     = lazy(() => import('@/pages/CampaignPage'));
 const CharactersPage   = lazy(() => import('@/pages/CharactersPage'));
 const CharacterEditorPage = lazy(() => import('@/pages/CharacterEditorPage'));
+const StandaloneCharacterSheetPage = lazy(() => import('@/pages/StandaloneCharacterSheetPage'));
 const AssetLibraryPage = lazy(() => import('@/pages/AssetLibraryPage'));
 const CharacterTemplatesPage = lazy(() => import('@/pages/CharacterTemplatesPage'));
 const ProfilePage      = lazy(() => import('@/pages/ProfilePage'));
@@ -123,6 +124,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CharacterEditorPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/campaigns/:id/characters/:characterId/sheet"
+            element={
+              <ProtectedRoute>
+                <StandaloneCharacterSheetPage />
               </ProtectedRoute>
             }
           />

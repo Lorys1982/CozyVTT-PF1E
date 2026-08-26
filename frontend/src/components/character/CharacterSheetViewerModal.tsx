@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Edit, Shield, User as UserIcon } from 'lucide-react';
+import { X, Edit, ExternalLink, Shield, User as UserIcon } from 'lucide-react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
@@ -31,14 +31,16 @@ interface CharacterSheetViewerModalProps {
   membership: CampaignMembership;
   onClose: () => void;
   onPlaceSpellAoE?: (config: SpellAoEConfig, spell: PF1eSpell) => void;
+  standalone?: boolean;
 }
 
 export default function CharacterSheetViewerModal({
   character: initialCharacter,
-  campaignId: _campaignId,
+  campaignId,
   membership,
   onClose,
   onPlaceSpellAoE,
+  standalone = false,
 }: CharacterSheetViewerModalProps) {
   const { user } = useAuth();
   const { socket } = useWebSocket();
@@ -109,7 +111,12 @@ export default function CharacterSheetViewerModal({
     setShowEditor(false);
   };
 
-  const modalRef = useFocusTrap(true, onClose);
+  const modalRef = useFocusTrap(!standalone, onClose);
+
+  const openStandalone = () => {
+    const url = `/campaigns/${encodeURIComponent(campaignId)}/characters/${encodeURIComponent(character.id)}/sheet`;
+    window.open(url, `cozyvtt-character-${character.id}`, 'popup,width=1400,height=1000');
+  };
 
   // Get game system display name
   const getSystemName = (gameSystem: GameSystem | null) => {
@@ -168,15 +175,15 @@ export default function CharacterSheetViewerModal({
   return (
     <>
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-      onClick={event=>{if(event.target===event.currentTarget)onClose();}}
+      className={standalone?'min-h-screen bg-soft-cream':'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm'}
+      onClick={event=>{if(!standalone&&event.target===event.currentTarget)onClose();}}
     >
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="character-sheet-viewer-title"
-        className="bg-soft-cream border-2 border-moss-green/30 rounded-xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col"
+        className={standalone?'flex min-h-screen w-full flex-col bg-soft-cream':'bg-soft-cream border-2 border-moss-green/30 rounded-xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col'}
       >
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b border-moss-green/20 bg-parchment/30">
@@ -210,6 +217,17 @@ export default function CharacterSheetViewerModal({
 
           {/* Actions */}
           <div className="flex items-center gap-2 ml-4">
+            {!standalone && (
+              <button
+                type="button"
+                onClick={openStandalone}
+                title="Open this sheet in a separate window"
+                className="flex items-center gap-2 rounded-lg border border-moss-green/30 px-4 py-2 text-brand-ink hover:bg-moss-green/10"
+              >
+                <ExternalLink className="h-4 w-4" />
+                New window
+              </button>
+            )}
             {canEdit && (
               <button
                 onClick={handleEdit}
@@ -235,14 +253,14 @@ export default function CharacterSheetViewerModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-4 border-t border-moss-green/20 bg-parchment/30">
+        {!standalone&&<div className="flex items-center justify-end gap-3 p-4 border-t border-moss-green/20 bg-parchment/30">
           <button
             onClick={onClose}
             className="px-6 py-2 rounded-lg bg-stone-gray/10 text-stone-gray hover:bg-stone-gray/20 transition-colors"
           >
             Close
           </button>
-        </div>
+        </div>}
       </div>
     </div>
 

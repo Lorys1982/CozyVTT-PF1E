@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { spellAoEFromPf1e } from './pathfinder1eSpellAoE';
+import { spellAoEFromPf1e, spellRangeFromPf1e } from './pathfinder1eSpellAoE';
 
 describe('spellAoEFromPf1e', () => {
   it.each([
@@ -27,8 +27,33 @@ describe('spellAoEFromPf1e', () => {
       .toEqual({ shape: 'line', sizeFt: 50, widthFt: 5 });
   });
 
+  it.each([
+    ['short (20ft + 5/2lvl)', 8, 40],
+    ['close (25 ft. + 5 ft./2 lvls.)', 10, 50],
+    ['medium (100 ft. + 10 ft. per level)', 7, 170],
+  ])('accepts compact imported range %s', (range, casterLevel, sizeFt) => {
+    expect(spellAoEFromPf1e({ area: 'cone-shaped burst', range }, casterLevel))
+      .toEqual({ shape: 'cone', sizeFt });
+  });
+
+  it('resolves a named range when the imported formula is absent', () => {
+    expect(spellAoEFromPf1e({ area: 'cone-shaped burst', range: 'close' }, 10))
+      .toEqual({ shape: 'cone', sizeFt: 50 });
+  });
+
   it('does not invent geometry for targeted or descriptive areas', () => {
     expect(spellAoEFromPf1e({ area: 'one creature/level' }, 10)).toBeUndefined();
     expect(spellAoEFromPf1e({ area: 'see text' }, 10)).toBeUndefined();
+  });
+});
+
+describe('spellRangeFromPf1e', () => {
+  it('calculates the Range field independently from Area', () => {
+    expect(spellRangeFromPf1e({ range: 'short (20ft + 5/2lvl)' }, 8)).toBe(40);
+  });
+
+  it('does not treat touch or personal spells as ranged areas', () => {
+    expect(spellRangeFromPf1e({ range: 'touch' }, 8)).toBeUndefined();
+    expect(spellRangeFromPf1e({ range: 'personal' }, 8)).toBeUndefined();
   });
 });
