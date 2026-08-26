@@ -78,6 +78,7 @@ const Section: React.FC<SectionProps> = ({ title, rolls, mode: _mode, onRoll }) 
 
 const MODE_LABELS: Record<string, Record<RollMode, string>> = {
   DND_5E:           { normal: 'Normal', advantage: 'Advantage', disadvantage: 'Disadvantage' },
+  PATHFINDER_1E:    { normal: 'Normal', advantage: 'Advantage', disadvantage: 'Disadvantage' },
   PATHFINDER_2E:    { normal: 'Normal', advantage: 'Fortune',   disadvantage: 'Misfortune' },
   CALL_OF_CTHULHU_7E: { normal: 'Normal', advantage: 'Normal', disadvantage: 'Normal' },
 };
@@ -88,7 +89,7 @@ function getModeLabels(gameSystem: string | null): Record<RollMode, string> {
 
 // Does this game system support advantage/disadvantage variants?
 function systemSupportsAdvantage(gameSystem: string | null): boolean {
-  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_2E';
+  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_1E' || gameSystem === 'PATHFINDER_2E';
 }
 
 // ---------------------------------------------------------------------------

@@ -36,14 +36,26 @@ import AssetGrid from '@/components/assets/AssetGrid';
 const COMMON_CONDITIONS = [
   'Blinded',
   'Charmed',
+  'Dazed',
+  'Dazzled',
+  'Deafened',
+  'Entangled',
   'Exhausted',
+  'Fatigued',
   'Frightened',
+  'Grappled',
+  'Helpless',
   'Incapacitated',
   'Invisible',
+  'Nauseated',
+  'Panicked',
   'Paralyzed',
+  'Petrified',
   'Poisoned',
   'Prone',
   'Restrained',
+  'Shaken',
+  'Sickened',
   'Stunned',
   'Unconscious',
 ];
@@ -479,7 +491,7 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                 ? 'bg-stone-gray/10 text-stone-gray'
                 : 'bg-moss-green/10 text-brand-ink'
             }`}>
-              {tokenType === TokenType.OBJECT ? 'Object' : 'NPC'}
+              {tokenType === TokenType.OBJECT?'Object':tokenType===TokenType.PLAYER?'Player':'NPC'}
             </span>
 
             {/* Close */}
@@ -859,8 +871,8 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
               />
             </section>
 
-            {/* ── Conditions ── */}
-            <section>
+            {/* ── Conditions (NPCs and objects only) ── */}
+            {tokenType !== TokenType.PLAYER && <section>
               <h3 className="text-xs font-semibold text-stone-gray uppercase tracking-wide mb-2">
                 Conditions
               </h3>
@@ -899,7 +911,7 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
                   );
                 })}
               </div>
-            </section>
+            </section>}
 
             {/* ── DM Notes ── */}
             <section>

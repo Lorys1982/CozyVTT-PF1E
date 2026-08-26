@@ -442,7 +442,18 @@ function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortNa
       {member.characters.length > 0 && (
         <div className="ml-9 space-y-1">
           {member.characters.map((character) => {
-            const canDrag = isDM && !!character.tokenImageUrl;
+            const canDrag = isDM;
+            const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
+              e.stopPropagation();
+              e.dataTransfer.effectAllowed = 'copy';
+              e.dataTransfer.setData('text/plain', JSON.stringify({
+                type: 'character-token',
+                characterId: character.id,
+                name: character.name,
+                imageUrl: character.tokenImageUrl ?? '',
+                userId: character.userId,
+              }));
+            };
             return (
             <div
               key={character.id}
@@ -451,30 +462,23 @@ function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortNa
               <div
                 onClick={() => onCharacterClick(character.id)}
                 onContextMenu={(e) => onCharacterRightClick(e, character.id, character.userId)}
-                className="flex items-center gap-2 p-1.5 cursor-pointer"
+                draggable={canDrag}
+                onDragStart={canDrag ? handleDragStart : undefined}
+                title={canDrag ? `Drag ${character.name} onto the map` : character.name}
+                className={`flex items-center gap-2 p-1.5 cursor-pointer ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
               >
               {/* Character Token — draggable by DM onto map */}
               {character.tokenImageUrl ? (
                 <img
                   src={character.tokenImageUrl}
                   alt={character.name}
-                  draggable={canDrag}
-                  onDragStart={canDrag ? (e) => {
-                    e.stopPropagation();
-                    e.dataTransfer.effectAllowed = 'copy';
-                    e.dataTransfer.setData('text/plain', JSON.stringify({
-                      type: 'character-token',
-                      characterId: character.id,
-                      name: character.name,
-                      imageUrl: character.tokenImageUrl,
-                      userId: character.userId,
-                    }));
-                  } : undefined}
-                  className={`w-6 h-6 rounded-full object-cover border border-moss-green/20 ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                  title={canDrag ? `Drag ${character.name} onto the map` : character.name}
+                  draggable={false}
+                  className="w-6 h-6 rounded-full object-cover border border-moss-green/20"
                 />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-moss-green/10 border border-moss-green/20 flex items-center justify-center">
+                <div
+                  className="w-6 h-6 rounded-full bg-moss-green/10 border border-moss-green/20 flex items-center justify-center"
+                >
                   <span className="text-xs text-brand-ink font-semibold">
                     {character.name.charAt(0).toUpperCase()}
                   </span>

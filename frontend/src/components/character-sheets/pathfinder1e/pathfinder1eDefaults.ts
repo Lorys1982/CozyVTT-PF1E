@@ -33,9 +33,27 @@ export const PF1E_DEFAULT_SKILLS:PF1eSkill[] = SKILLS.map(([name,ability,trained
   name,ability,trainedOnly:!!trainedOnly,
 }));
 
+/** Keep every standard row while applying saved/imported values and retaining specializations. */
+export function mergePF1eSkills(skills:PF1eSkill[]|undefined):PF1eSkill[] {
+  const imported=skills??[];
+  const byName=new Map(imported.map(skill=>[skill.name.trim().toLocaleLowerCase(),skill]));
+  const standardNames=new Set(PF1E_DEFAULT_SKILLS.map(skill=>skill.name.toLocaleLowerCase()));
+  return [
+    ...PF1E_DEFAULT_SKILLS.map(defaultSkill=>({
+      ...defaultSkill,
+      ...byName.get(defaultSkill.name.toLocaleLowerCase()),
+    })),
+    ...imported.filter(skill=>!standardNames.has(skill.name.trim().toLocaleLowerCase())),
+  ];
+}
+
 export function createPF1eSheetData(input:Partial<PF1eCharacterData>,fallbackName:string):PF1eCharacterData {
   const abilities = Object.fromEntries(PF1E_ABILITIES.map(({key}) => [
-    key,{score:input.abilities?.[key]?.score ?? 10,tempScore:input.abilities?.[key]?.tempScore ?? null},
+    key,{
+      ...input.abilities?.[key],
+      score:input.abilities?.[key]?.score ?? 10,
+      tempScore:input.abilities?.[key]?.tempScore ?? null,
+    },
   ])) as PF1eCharacterData['abilities'];
   return calculatePF1eDerived({
     ...input,
@@ -48,7 +66,7 @@ export function createPF1eSheetData(input:Partial<PF1eCharacterData>,fallbackNam
     },
     melee: input.melee ?? [],
     ranged: input.ranged ?? [],
-    skills: input.skills?.length ? input.skills : structuredClone(PF1E_DEFAULT_SKILLS),
+    skills: mergePF1eSkills(input.skills),
     feats: input.feats ?? [],
     specialAbilities: input.specialAbilities ?? [],
     traits: input.traits ?? [],
@@ -67,14 +85,16 @@ export function preparePF1eDataForSave(input:PF1eCharacterData):PF1eCharacterDat
   const named=<T extends {name:string}>(items:T[]|undefined):T[] =>
     (items??[]).filter(item=>item.name.trim().length>0);
   data.ac={...data.ac,items:named(data.ac?.items)};
-  data.melee=(data.melee??[]).filter(item=>item.weapon.trim().length>0);
-  data.ranged=(data.ranged??[]).filter(item=>item.weapon.trim().length>0);
+  data.melee=(data.melee??[]).filter(item=>item.weapon.trim().length>0).map(item=>({...item,additionalDamage:item.additionalDamage?.filter(part=>part.formula.trim().length>0)}));
+  data.ranged=(data.ranged??[]).filter(item=>item.weapon.trim().length>0).map(item=>({...item,additionalDamage:item.additionalDamage?.filter(part=>part.formula.trim().length>0)}));
   data.feats=named(data.feats);
   data.specialAbilities=named(data.specialAbilities);
   data.traits=named(data.traits);
   data.gear=named(data.gear);
   data.spells=(data.spells??[]).slice(0,10).map(level=>({...level,slotted:named(level.slotted)}));
   data.spellLikes=named(data.spellLikes);
+  data.spellDcConditionalModifiers=(data.spellDcConditionalModifiers??[])
+    .filter(modifier=>modifier.source.trim().length>0&&modifier.condition.trim().length>0);
   return calculatePF1eDerived(data);
 }
 

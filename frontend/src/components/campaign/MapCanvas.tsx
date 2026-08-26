@@ -2555,7 +2555,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     } catch {
       return;
     }
-    if (dragData?.type !== 'character-token' || !dragData.imageUrl) return;
+    if (dragData?.type !== 'character-token' || !dragData.characterId) return;
 
     // Convert screen position to map grid coordinates
     const rect = canvasRef.current.getBoundingClientRect();
@@ -2577,7 +2577,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       const result = await api.addToken(campaign.id, currentMap.id, {
         characterId: dragData.characterId ?? null,
         name: dragData.name ?? 'Token',
-        imageUrl: dragData.imageUrl,
+        imageUrl: dragData.imageUrl ?? '',
         position,
         size: { width: 1, height: 1 },
         layer: targetLayer,

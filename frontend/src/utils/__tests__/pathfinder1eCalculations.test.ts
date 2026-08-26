@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { calculatePF1eDerived } from '../pathfinder1eCalculations';
+import { applyPF1eLongRest, calculatePF1eDerived, pf1eCurrentSpellSlots } from '../pathfinder1eCalculations';
 
 describe('PF1e derived calculations', () => {
+  it('treats legacy spell slots as rested and applies long-rest recovery',()=>{
+    expect(pf1eCurrentSpellSlots({totalPerDay:3,bonusSpells:1})).toBe(4);
+    const rested=applyPF1eLongRest({
+      characterName:'Ezren',hp:{total:30,current:12,longRestRestore:8,temporary:4,nonLethal:3},
+      spells:[{totalPerDay:3,bonusSpells:1,currentPerDay:0,slotted:[{name:'Magic Missile',prepared:2,cast:1}]}],
+    });
+    expect(rested.hp).toMatchObject({current:20,temporary:0,nonLethal:0});
+    expect(rested.spells?.[0]).toMatchObject({currentPerDay:4,slotted:[{name:'Magic Missile',prepared:0,cast:0}]});
+  });
+
   it('calculates AC, saves, initiative, maneuvers, skills, and spell DCs', () => {
     const result = calculatePF1eDerived({
       characterName: 'Valeros',
@@ -10,7 +20,10 @@ describe('PF1e derived calculations', () => {
         int: {score: 10}, wis: {score: 8}, cha: {score: 18},
       },
       bab: 5,
-      ac: {armorBonus: 6, shieldBonus: 2, naturalArmor: 1, deflectionModifier: 1, sizeModifier: 0},
+      ac: {naturalArmor: 1, deflectionModifier: 1, sizeModifier: 0,items:[
+        {name:'Breastplate',type:'Armor',bonus:6,equipped:true},
+        {name:'Shield',type:'Shield',bonus:2,equipped:true},
+      ]},
       saves: {fort: {base: 4, magicModifier: 1}, reflex: {base: 1}, will: {base: 1}},
       initiative: {miscModifier: 4},
       cmb: {sizeModifier: 0, miscModifiers: '+1'},
@@ -63,11 +76,23 @@ describe('PF1e derived calculations', () => {
     expect(result.melee?.[0]).toMatchObject({attackBonus:'+16/+11/+6',damage:'2d6+8'});
   });
 
+  it('applies BAB misc to attacks and maneuvers without granting iterative attacks',()=>{
+    const result=calculatePF1eDerived({
+      characterName:'Buffed',bab:6,babMiscModifier:2,
+      abilities:{str:{score:14},dex:{score:10},con:{score:10},int:{score:10},wis:{score:10},cha:{score:10}},
+      melee:[{weapon:'Sword',baseDamage:'1d8'}],
+    });
+
+    expect(result.melee?.[0].attackBonus).toBe('+10/+5');
+    expect(result.cmb?.total).toBe(10);
+    expect(result.cmd?.total).toBe(20);
+  });
+
   it('keeps temporary, situational, and override modifiers independent from equipment and abilities', () => {
     const result = calculatePF1eDerived({
       characterName:'Flexible',bab:4,
       abilities:{str:{score:14,checkMiscModifier:1,checkTempModifier:2},dex:{score:12},con:{score:10},int:{score:10},wis:{score:10},cha:{score:16}},
-      ac:{armorBonus:4,dodgeModifier:1,tempModifier:2,touchModifier:3,flatFootedModifier:-1},
+      ac:{items:[{name:'Chain shirt',type:'Armor',bonus:4,equipped:true}],dodgeModifier:1,tempModifier:2,touchModifier:3,flatFootedModifier:-1},
       saves:{fort:{base:2,tempModifier:3},reflex:{base:1,overrideTotal:12},will:{base:1}},
       initiative:{miscModifier:1,tempModifier:2},
       cmb:{tempModifiers:'+2'},cmd:{tempModifiers:'+3'},
@@ -107,5 +132,16 @@ describe('PF1e derived calculations', () => {
     expect(result.skills?.[0].total).toBe(17);
     expect(result.melee?.[0]).toMatchObject({attackBonus:'+20/+15',damage:'2d6+10'});
     expect(result.concentrationTotal).toBe(14);
+  });
+
+  it('ignores legacy aggregate armor values until an AC item is equipped',()=>{
+    const base={
+      characterName:'Equipment only',
+      abilities:{str:{score:10},dex:{score:10},con:{score:10},int:{score:10},wis:{score:10},cha:{score:10}},
+      ac:{armorBonus:6,shieldBonus:2,items:[{name:'Armor',type:'Armor',bonus:6,equipped:false}]},
+    };
+
+    expect(calculatePF1eDerived(base).ac?.total).toBe(10);
+    expect(calculatePF1eDerived({...base,ac:{...base.ac,items:[{...base.ac.items[0],equipped:true}]}}).ac?.total).toBe(16);
   });
 });

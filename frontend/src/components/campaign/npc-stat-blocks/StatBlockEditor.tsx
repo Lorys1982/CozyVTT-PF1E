@@ -10,6 +10,7 @@ import type { NpcStatBlock } from '@/types';
 import { ABILITY_KEYS, CHALLENGE_RATINGS } from '@/utils/rules/dnd5e';
 import ProficiencyEditor from './ProficiencyEditor';
 import Pf2eProficiencyEditor from './Pf2eProficiencyEditor';
+import Pf1eBonusesEditor from './Pf1eBonusesEditor';
 import { recomputeDerivedBonuses } from './statBlockProficiency';
 import { readAttributeModifiers, setAttributeModifier } from './pf2eStatBlock';
 
@@ -33,6 +34,7 @@ export default function StatBlockEditor({
   gameSystem = 'DND_5E',
 }: StatBlockEditorProps) {
   const isPf2e = gameSystem === 'PATHFINDER_2E';
+  const isPf1e = gameSystem === 'PATHFINDER_1E';
   const pf2eModifiers = readAttributeModifiers(statBlock);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['core', 'abilities']));
 
@@ -57,21 +59,18 @@ export default function StatBlockEditor({
   // Bonuses marked as overrides keep their value.
   const updateAbility = useCallback(
     (ab: keyof NpcStatBlock['abilities'], value: number) => {
-      onChange(
-        recomputeDerivedBonuses({
-          ...statBlock,
-          abilities: { ...statBlock.abilities, [ab]: value },
-        })
-      );
+      const updated={...statBlock,abilities:{...statBlock.abilities,[ab]:value}};
+      onChange(isPf1e?updated:recomputeDerivedBonuses(updated));
     },
-    [statBlock, onChange]
+    [isPf1e,statBlock, onChange]
   );
 
   const updateChallengeRating = useCallback(
     (cr: string) => {
-      onChange(recomputeDerivedBonuses({ ...statBlock, challengeRating: cr || undefined }));
+      const updated={...statBlock,challengeRating:cr||undefined};
+      onChange(isPf1e?updated:recomputeDerivedBonuses(updated));
     },
-    [statBlock, onChange]
+    [isPf1e,statBlock, onChange]
   );
 
   const updateActionList = useCallback(
@@ -231,6 +230,8 @@ export default function StatBlockEditor({
       {isExpanded('saves') &&
         (isPf2e ? (
           <Pf2eProficiencyEditor statBlock={statBlock} onChange={onChange} />
+        ) : isPf1e ? (
+          <Pf1eBonusesEditor statBlock={statBlock} onChange={onChange}/>
         ) : (
           <ProficiencyEditor statBlock={statBlock} onChange={onChange} />
         ))}
@@ -261,10 +262,10 @@ export default function StatBlockEditor({
       )}
 
       {/* ── Action Sections ── */}
-      {(['traits', 'actions', 'bonusActions', 'reactions', 'legendaryActions'] as const).map((field) => {
+      {(isPf1e ? ['traits','actions'] as const : ['traits', 'actions', 'bonusActions', 'reactions', 'legendaryActions'] as const).map((field) => {
         const titles: Record<string, string> = {
-          traits: 'Traits',
-          actions: 'Actions',
+          traits: isPf1e?'Special Abilities':'Traits',
+          actions: isPf1e?'Offense':'Actions',
           bonusActions: 'Bonus Actions',
           reactions: 'Reactions',
           legendaryActions: 'Legendary Actions',

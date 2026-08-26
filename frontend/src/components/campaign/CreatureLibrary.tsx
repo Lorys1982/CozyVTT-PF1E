@@ -33,6 +33,7 @@ import {
   buildCreatureStatBlock,
   ProficiencyEditor,
   Pf2eProficiencyEditor,
+  Pf1eBonusesEditor,
 } from './npc-stat-blocks';
 import { CHALLENGE_RATINGS } from '@/utils/rules/dnd5e';
 import { GAME_SYSTEM_SHORT_LABELS } from '@/constants/game-systems';
@@ -925,7 +926,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   const [cr, setCr] = useState(editingCreature?.challengeRating ?? sb?.challengeRating ?? '');
   const [ac, setAc] = useState(sb?.ac ?? 10);
   const [speed, setSpeed] = useState(sb?.speed ?? '30 ft.');
-  const [hpMax, setHpMax] = useState(sb?.hpMax ?? 10);
+  const [hpMax, setHpMax] = useState(sb?.hpMax ?? sb?.hitPoints ?? 10);
   const [str, setStr] = useState(sb?.abilities?.str ?? 10);
   const [dex, setDex] = useState(sb?.abilities?.dex ?? 10);
   const [con, setCon] = useState(sb?.abilities?.con ?? 10);
@@ -970,6 +971,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
   // Pathfinder 2e rates creatures by Level rather than Challenge Rating, and
   // stores printed modifiers instead of deriving them.
   const isPf2e = gameSystem === GameSystem.PATHFINDER_2E;
+  const isPf1e = gameSystem === GameSystem.PATHFINDER_1E;
   const [level, setLevel] = useState<number | undefined>(sb?.level);
 
   // The stat block the proficiency editor sees: live ability scores and CR from
@@ -995,7 +997,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
 
     // Merge the proficiency edits over the source before assembling, so the
     // carry-forward below sees the current saves and skills.
-    const statBlock = buildCreatureStatBlock({ ...sb, ...proficiencyFields, level }, {
+    const statBlock = {...buildCreatureStatBlock({ ...sb, ...proficiencyFields, level }, {
       ac,
       hpMax,
       speed,
@@ -1014,7 +1016,7 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
       conditionImmunities,
       senses,
       languages,
-    });
+    }),gameSystem:gameSystem??undefined,...(isPf1e?{hitPoints:hpMax}:{})};
 
     const payload = {
       name: name.trim(),
@@ -1217,6 +1219,11 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
               })
             }
           />
+        ) : isPf1e ? (
+          <Pf1eBonusesEditor
+            statBlock={workingStatBlock}
+            onChange={(updated)=>setProficiencyFields({savingThrows:updated.savingThrows,skills:updated.skills,proficiencies:undefined})}
+          />
         ) : (
           <ProficiencyEditor
             statBlock={workingStatBlock}
@@ -1300,11 +1307,11 @@ function CreatureForm({ campaignId, gameSystem, editingCreature, onCreated, onEd
             </div>
 
             {/* Name/description lists — traits, actions, etc. */}
-            <NameDescriptionList label="Traits" items={traits} onChange={setTraits} />
-            <NameDescriptionList label="Actions" items={actions} onChange={setActions} />
-            <NameDescriptionList label="Bonus Actions" items={bonusActions} onChange={setBonusActions} />
-            <NameDescriptionList label="Reactions" items={reactions} onChange={setReactions} />
-            <NameDescriptionList label="Legendary Actions" items={legendaryActions} onChange={setLegendaryActions} />
+            <NameDescriptionList label={isPf1e?'Special Abilities':'Traits'} items={traits} onChange={setTraits} />
+            <NameDescriptionList label={isPf1e?'Offense':'Actions'} items={actions} onChange={setActions} />
+            {!isPf1e&&<NameDescriptionList label="Bonus Actions" items={bonusActions} onChange={setBonusActions} />}
+            {!isPf1e&&<NameDescriptionList label="Reactions" items={reactions} onChange={setReactions} />}
+            {!isPf1e&&<NameDescriptionList label="Legendary Actions" items={legendaryActions} onChange={setLegendaryActions} />}
           </div>
         )}
       </div>

@@ -18,7 +18,10 @@ interface StatBlockViewerProps {
 }
 
 export default function StatBlockViewer({ statBlock, tokenName, gameSystem }: StatBlockViewerProps) {
-  switch (gameSystem) {
+  // Imported blocks carry their own system. Prefer it so a PF1 monster never
+  // falls through to a 5e renderer because it is viewed outside its source list.
+  const effectiveSystem=(statBlock.gameSystem as GameSystem|undefined)??gameSystem;
+  switch (effectiveSystem) {
     case GameSystem.DND_5E:
       return <Dnd5eStatBlock statBlock={statBlock} tokenName={tokenName} />;
     case GameSystem.PATHFINDER_1E:
@@ -57,7 +60,7 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
 
       <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-red-900/20 pb-2">
         <div><b className="text-red-950">AC</b> {statBlock.ac || '—'}</div>
-        {statBlock.hitPoints != null && <div><b className="text-red-950">hp</b> {statBlock.hitPoints}</div>}
+        {(statBlock.hitPoints??statBlock.hpMax) != null && <div><b className="text-red-950">hp</b> {statBlock.hitPoints??statBlock.hpMax}</div>}
         <div><b className="text-red-950">Speed</b> {statBlock.speed}</div>
         {statBlock.xp != null && <div><b className="text-red-950">XP</b> {statBlock.xp.toLocaleString()}</div>}
       </div>
@@ -73,7 +76,7 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
       </div>
 
       <StatBlockDetailLines statBlock={statBlock} accentColor="danger" />
-      <StatBlockActionSections statBlock={statBlock} accentColor="danger" />
+      <Pf1eActionSections statBlock={statBlock}/>
       {statBlock.spellcasting?.map((group,index)=><div key={`${group.name}-${index}`} className="rounded border border-purple-900/15 bg-purple-50/60 p-2">
         <div className="font-bold text-purple-950">{group.name}</div>
         <div className="mt-1 leading-relaxed text-stone-600">{group.description}</div>
@@ -81,6 +84,7 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
           <a key={`${spell.name}-${spellIndex}`} href={spell.sourceUrl} target="_blank" rel="noreferrer" className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900 underline hover:bg-purple-900/20">{spell.name}</a> :
           <span key={`${spell.name}-${spellIndex}`} className="rounded bg-purple-900/10 px-1.5 py-0.5 font-semibold text-purple-900">{spell.name}</span>)}</div>}
       </div>)}
+      {statBlock.notes&&<div className="whitespace-pre-line rounded border border-red-900/15 bg-red-950/5 p-2 leading-relaxed text-stone-600">{statBlock.notes}</div>}
       {statBlock.sourceUrl && (
         <a href={statBlock.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex text-[10px] font-semibold text-red-800 underline hover:text-red-600">
           View official stat block on Archives of Nethys
@@ -88,6 +92,15 @@ function Pf1eStatBlock({ statBlock, tokenName }: { statBlock: NpcStatBlock; toke
       )}
     </div>
   );
+}
+
+function Pf1eActionSections({statBlock}:{statBlock:NpcStatBlock}) {
+  const sections=[
+    {title:'Offense',items:statBlock.actions??[]},
+    {title:'Special Abilities',items:statBlock.traits??[]},
+  ].filter(section=>section.items.length>0);
+  if(!sections.length)return null;
+  return <>{sections.map(section=><div key={section.title}><div className="mb-1 border-b border-red-900/20 pb-0.5 text-[10px] font-bold uppercase tracking-wide text-red-950">{section.title}</div><div className="space-y-1">{section.items.map((item,index)=><div key={`${item.name}-${index}`}><span className="font-semibold italic text-stone-800">{item.name}.</span>{' '}<span className="text-stone-600">{item.description}</span></div>)}</div></div>)}</>;
 }
 
 // ─── Pathfinder 2e ───────────────────────────────────────────────

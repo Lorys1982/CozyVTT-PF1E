@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, Loader2, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { ChevronDown, ExternalLink, LayoutGrid, List, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
 import { api } from '../../../services/api';
 import type {
   PF1eCharacterData,
   PF1eSpell,
   PF1eSpellReference,
 } from '../../../types/game-systems/pathfinder1e';
+import { pf1eCurrentSpellSlots, pf1eSpellSlotsMaximum } from '../../../utils/pathfinder1eCalculations';
 import { PF1E_ABILITIES, numberOrUndefined, signed } from './pathfinder1eDefaults';
 import PF1eRulesText from './PF1eRulesText';
 
@@ -13,17 +14,30 @@ interface Props {
   data:PF1eCharacterData;
   editable:boolean;
   onSet:(path:string,value:unknown)=>void;
+  canTrackUses?:boolean;
+  onRoll?:(expression:string,purpose:string)=>void;
+  onRollContext?:(event:ReactMouseEvent,expression:string,purpose:string)=>void;
 }
 
 const inputClass = 'w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-800 focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20 disabled:border-transparent disabled:bg-transparent disabled:px-0';
 
 function SpellSearchInput({spell,editable,onChange}:{spell:PF1eSpell;editable:boolean;onChange:(spell:PF1eSpell)=>void}) {
+  const containerRef=useRef<HTMLDivElement>(null);
   const [results,setResults] = useState<PF1eSpellReference[]>([]);
   const [loading,setLoading] = useState(false);
   const [error,setError] = useState('');
+  const [focused,setFocused]=useState(false);
+
+  useEffect(()=>{
+    const dismiss=(event:PointerEvent)=>{
+      if(!containerRef.current?.contains(event.target as Node)){setFocused(false);setResults([]);}
+    };
+    document.addEventListener('pointerdown',dismiss);
+    return()=>document.removeEventListener('pointerdown',dismiss);
+  },[]);
 
   useEffect(() => {
-    if (!editable || spell.name.trim().length < 2 || spell.itemName) {
+    if (!focused || !editable || spell.name.trim().length < 2 || spell.itemName) {
       setResults([]);
       return;
     }
@@ -44,10 +58,11 @@ function SpellSearchInput({spell,editable,onChange}:{spell:PF1eSpell;editable:bo
       }
     },300);
     return () => { active=false; window.clearTimeout(timer); };
-  },[editable,spell.itemName,spell.name]);
+  },[editable,focused,spell.itemName,spell.name]);
 
   const choose = async (reference:PF1eSpellReference) => {
     setLoading(true);
+    setFocused(false);
     setError('');
     setResults([]);
     try {
@@ -87,11 +102,17 @@ function SpellSearchInput({spell,editable,onChange}:{spell:PF1eSpell;editable:bo
   );
 
   return (
-    <div className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onBlur={event=>{if(!containerRef.current?.contains(event.relatedTarget as Node|null)){setFocused(false);setResults([]);}}}
+      onKeyDown={event=>{if(event.key==='Escape'){setFocused(false);setResults([]);(event.currentTarget.querySelector('input') as HTMLInputElement|null)?.blur();}}}
+    >
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
         <input
           aria-label="Spell name"
+          onFocus={()=>setFocused(true)}
           value={spell.name}
           onChange={event => {
             const name=event.target.value;
@@ -130,9 +151,19 @@ const details:Array<[keyof PF1eSpell,string]> = [
   ['savingThrow','Saving throw'],['spellResistance','Spell resistance'],
 ];
 
-function SpellCard({spell,editable,onChange,onRemove}:{spell:PF1eSpell;editable:boolean;onChange:(spell:PF1eSpell)=>void;onRemove:()=>void}) {
+function SpellCard({spell,editable,canTrackUses,castingType,slotsRemaining,onChange,onRemove,onPrepare,onUnprepare,onCast,onRestore}:{spell:PF1eSpell;editable:boolean;canTrackUses:boolean;castingType:'prepared'|'spontaneous';slotsRemaining:number;onChange:(spell:PF1eSpell)=>void;onRemove:()=>void;onPrepare:()=>void;onUnprepare:()=>void;onCast:()=>void;onRestore:()=>void}) {
+  const [expanded,setExpanded]=useState(false);
+  const prepared=Math.max(0,spell.prepared??0);
+  const cast=Math.max(0,spell.cast??0);
+  const remaining=Math.max(0,prepared-cast);
+  useEffect(()=>{
+    if(!expanded)return;
+    const close=(event:KeyboardEvent)=>{if(event.key==='Escape')setExpanded(false);};
+    document.addEventListener('keydown',close);
+    return()=>document.removeEventListener('keydown',close);
+  },[expanded]);
   return (
-    <article className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
+    <article onClick={!editable&&!expanded?()=>setExpanded(true):undefined} className={`rounded-xl border border-stone-200 bg-white p-4 shadow-sm ${!editable?'cursor-pointer transition hover:border-purple-300 hover:shadow-md':''}`}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1"><SpellSearchInput spell={spell} editable={editable} onChange={onChange} /></div>
         {editable && (
@@ -140,14 +171,36 @@ function SpellCard({spell,editable,onChange,onRemove}:{spell:PF1eSpell;editable:
             <Trash2 className="h-4 w-4" />
           </button>
         )}
+        <button type="button" onClick={()=>setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded} aria-label={`Open ${spell.name||'spell'} details`} className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800">
+          <ChevronDown className="h-4 w-4" />
+        </button>
       </div>
 
-      <div className="mt-3 grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {editable && <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">School</span><input value={spell.school ?? ''} onChange={event=>onChange({...spell,school:event.target.value})} className={`${inputClass} mt-1 min-h-10`} /></label>}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+        {spell.atWill?<span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-800">Unlimited uses</span>:castingType==='prepared'?<span className={`rounded-full px-2.5 py-1 font-bold ${remaining>0?'bg-purple-100 text-purple-900':'bg-stone-200 text-stone-700'}`}><span className="text-sm">{remaining} / {prepared}</span> prepared remaining</span>:<span className="rounded-full bg-purple-100 px-2.5 py-1 font-bold text-purple-900">Uses level slots</span>}
+        {(spell.range||spell.castingTime)&&<span>{[spell.castingTime,spell.range].filter(Boolean).join(' · ')}</span>}
+        {spell.notes&&<span className="w-full line-clamp-2 text-stone-600">{spell.notes}</span>}
+      </div>
+
+      {!editable&&canTrackUses&&!spell.atWill&&<div className="mt-3 flex flex-wrap gap-2" onClick={event=>event.stopPropagation()}>{castingType==='prepared'?<>
+        <button type="button" disabled={slotsRemaining<=0} onClick={onPrepare} className="rounded-lg bg-purple-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Prepare</button>
+        <button type="button" disabled={remaining<=0} onClick={onCast} className="rounded-lg bg-red-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Cast prepared</button>
+        <button type="button" disabled={remaining<=0} onClick={onUnprepare} className="rounded-lg border border-purple-300 bg-white px-3 py-2 text-sm font-bold text-purple-900 disabled:opacity-40">Unprepare</button>
+        <button type="button" disabled={cast<=0} onClick={onRestore} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40">Restore cast</button>
+      </>:<>
+        <button type="button" disabled={slotsRemaining<=0} onClick={onCast} className="rounded-lg bg-purple-800 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Cast spell</button>
+        <button type="button" onClick={onRestore} className="rounded-lg border border-purple-300 bg-white px-3 py-2 text-sm font-bold text-purple-900">Restore slot</button>
+      </>}</div>}
+
+      {expanded&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onMouseDown={event=>{if(event.target===event.currentTarget)setExpanded(false)}}><div role="dialog" aria-modal="true" aria-label={`${spell.name||'Spell'} details`} className="max-h-[88vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-stone-200 bg-white shadow-2xl"><div className="sticky top-0 z-10 flex items-center justify-between border-b border-stone-200 bg-white px-5 py-4"><div><h3 className="text-xl font-black text-stone-900">{spell.name||'Spell details'}</h3>{spell.school&&<div className="text-sm capitalize text-stone-500">{spell.school}</div>}</div><button type="button" aria-label={`Close ${spell.name||'spell'} details`} onClick={()=>setExpanded(false)} className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-900"><X className="h-5 w-5"/></button></div><div className="p-5">
+      {editable?<div className="mt-3 grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">School</span><input value={spell.school ?? ''} onChange={event=>onChange({...spell,school:event.target.value})} className={`${inputClass} mt-1 min-h-10`} /></label>
         <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">Prepared</span><input disabled={!editable} type="number" min="0" value={spell.prepared ?? ''} onChange={event=>onChange({...spell,prepared:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 min-h-10`} /></label>
         <label className="flex h-full flex-col text-xs font-semibold text-stone-600"><span className="flex min-h-5 items-end">Cast</span><input disabled={!editable} type="number" min="0" value={spell.cast ?? ''} onChange={event=>onChange({...spell,cast:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 min-h-10`} /></label>
         <label className="flex items-center gap-2 self-end rounded-lg bg-stone-50 px-3 py-2 text-sm font-medium text-stone-700"><input disabled={!editable} type="checkbox" checked={!!spell.atWill} onChange={event=>onChange({...spell,atWill:event.target.checked})} />At will</label>
-      </div>
+      </div>:spell.atWill?<div className="mt-3"><span className="rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-bold text-emerald-800">Unlimited uses</span></div>:null}
+
+      {!editable&&canTrackUses&&!spell.atWill&&castingType==='prepared'&&<section aria-label="Prepared spell uses" className="mt-4 rounded-xl border-2 border-purple-200 bg-purple-50 p-4"><div className="text-xs font-bold uppercase tracking-wide text-purple-700">Prepared copies</div><div className="mt-1 text-2xl font-black text-purple-950">{remaining} ready · {cast} cast</div></section>}
 
       {(spell.sourceUrl || spell.level || spell.source) && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-stone-600">
@@ -167,12 +220,14 @@ function SpellCard({spell,editable,onChange,onRemove}:{spell:PF1eSpell;editable:
         <label className="mt-3 block text-xs font-semibold text-stone-600">Notes<input value={spell.notes ?? ''} onChange={event=>onChange({...spell,notes:event.target.value})} className={`${inputClass} mt-1`} /></label>
       ) : spell.notes ? <div className="mt-3 text-sm italic text-stone-600">{spell.notes}</div> : null}
       {spell.description && <div className="mt-3 border-t border-stone-100 pt-3"><PF1eRulesText text={spell.description}/></div>}
+      </div></div></div>}
     </article>
   );
 }
 
-export default function PF1eSpellbook({data,editable,onSet}:Props) {
+export default function PF1eSpellbook({data,editable,onSet,canTrackUses=false,onRoll,onRollContext}:Props) {
   const [level,setLevel] = useState(() => data.spells?.findIndex(entry => entry.slotted?.length) ?? 0);
+  const [layout,setLayout]=useState<'list'|'grid'>('list');
   const activeLevel = level < 0 ? 0 : level;
   const isSpellLike=activeLevel===10;
   const spellLevel = data.spells?.[activeLevel] ?? {slotted:[]};
@@ -180,6 +235,19 @@ export default function PF1eSpellbook({data,editable,onSet}:Props) {
   const castingMod = data.spellcastingAbility
     ? Math.floor((((data.abilities?.[data.spellcastingAbility]?.tempScore ?? data.abilities?.[data.spellcastingAbility]?.score) ?? 10)-10)/2)
     : 0;
+  const castingType=data.spellcastingType??'prepared';
+  const slotsMaximum=pf1eSpellSlotsMaximum(spellLevel);
+  const slotsRemaining=pf1eCurrentSpellSlots(spellLevel);
+  const conditionalDcModifiers=data.spellDcConditionalModifiers??[];
+  const updateConditionalDcModifier=(index:number,patch:Partial<(typeof conditionalDcModifiers)[number]>)=>
+    onSet('spellDcConditionalModifiers',conditionalDcModifiers.map((modifier,modifierIndex)=>modifierIndex===index?{...modifier,...patch}:modifier));
+
+  const updateLevel=(patch:Partial<typeof spellLevel>)=>{
+    const levels=[...(data.spells??[])];
+    while(levels.length<10)levels.push({slotted:[]});
+    levels[activeLevel]={...levels[activeLevel],...patch};
+    onSet('spells',levels);
+  };
 
   const updateSpells = (next:PF1eSpell[]) => {
     if(isSpellLike){onSet('spellLikes',next);return;}
@@ -193,23 +261,30 @@ export default function PF1eSpellbook({data,editable,onSet}:Props) {
     <div className="space-y-6">
       <section className="rounded-xl border-2 border-stone-200 bg-stone-50 p-4">
         <h3 className="text-lg font-bold text-stone-800">Spellcasting</h3>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {editable?<><div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="text-sm font-semibold text-stone-700">Casting ability
             <select disabled={!editable} value={data.spellcastingAbility ?? ''} onChange={event=>onSet('spellcastingAbility',event.target.value || undefined)} className={`${inputClass} mt-1`}>
               <option value="">None</option>{PF1E_ABILITIES.map(ability=><option key={ability.key} value={ability.key}>{ability.label}</option>)}
             </select>
           </label>
+          <label className="text-sm font-semibold text-stone-700">Casting type<select value={castingType} onChange={event=>onSet('spellcastingType',event.target.value)} className={`${inputClass} mt-1`}><option value="prepared">Prepared (wizard/cleric)</option><option value="spontaneous">Spontaneous (sorcerer/bard)</option></select></label>
           <label className="text-sm font-semibold text-stone-700">Caster level<input disabled={!editable} type="number" min="0" value={data.casterLevel ?? ''} onChange={event=>onSet('casterLevel',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
           <label className="text-sm font-semibold text-stone-700">Concentration misc<input disabled={!editable} type="number" value={data.concentrationMiscModifier ?? ''} onChange={event=>onSet('concentrationMiscModifier',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
           <label className="text-sm font-semibold text-stone-700">Concentration temporary<input disabled={!editable} type="number" value={data.concentrationTempModifier ?? ''} onChange={event=>onSet('concentrationTempModifier',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
           <label className="text-sm font-semibold text-stone-700">Concentration override<input disabled={!editable} type="number" placeholder="Automatic" value={data.concentrationOverride ?? ''} onChange={event=>onSet('concentrationOverride',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
           <div className="rounded-lg bg-purple-800 p-3 text-white"><div className="text-xs font-semibold uppercase tracking-wide text-purple-200">Concentration</div><div className="mt-1 text-3xl font-black">{signed(data.concentrationTotal ?? 0)}</div></div>
         </div>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-semibold text-stone-700">Spell DC modifier<input disabled={!editable} type="number" value={data.spellDcMiscModifier ?? ''} onChange={event=>onSet('spellDcMiscModifier',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
           <label className="text-sm font-semibold text-stone-700">Spell DC temporary<input disabled={!editable} type="number" value={data.spellDcTempModifier ?? ''} onChange={event=>onSet('spellDcTempModifier',numberOrUndefined(event.target.value))} className={`${inputClass} mt-1`} /></label>
-          <label className="text-sm font-semibold text-stone-700">Conditional modifiers<input disabled={!editable} value={data.spellsConditionalModifiers ?? ''} onChange={event=>onSet('spellsConditionalModifiers',event.target.value)} className={`${inputClass} mt-1`} /></label>
         </div>
+        <section className="mt-4 rounded-xl border border-purple-200 bg-purple-50 p-3"><div className="flex items-center justify-between gap-3"><div><h4 className="font-bold text-purple-950">Conditional spell DC modifiers</h4><p className="text-xs text-purple-700">Each source keeps its own adjustment and triggering condition.</p></div><button type="button" onClick={()=>onSet('spellDcConditionalModifiers',[...conditionalDcModifiers,{source:'',condition:'',dcModifier:0}])} className="shrink-0 rounded-lg bg-purple-800 px-3 py-2 text-sm font-bold text-white"><Plus className="mr-1 inline h-4 w-4"/>Add source</button></div><div className="mt-3 space-y-2">{conditionalDcModifiers.map((modifier,index)=><div key={index} className="grid gap-2 rounded-lg border border-purple-100 bg-white p-3 sm:grid-cols-[1fr_1.5fr_7rem_2fr_auto]"><label className="text-xs font-semibold text-stone-600">Source<input aria-label={`Conditional DC source ${index+1}`} value={modifier.source} onChange={event=>updateConditionalDcModifier(index,{source:event.target.value})} placeholder="Spell Focus" className={`${inputClass} mt-1`}/></label><label className="text-xs font-semibold text-stone-600">Condition<input aria-label={`Conditional DC condition ${index+1}`} value={modifier.condition} onChange={event=>updateConditionalDcModifier(index,{condition:event.target.value})} placeholder="Evocation spells" className={`${inputClass} mt-1`}/></label><label className="text-xs font-semibold text-stone-600">DC adjustment<input aria-label={`Conditional DC adjustment ${index+1}`} type="number" value={modifier.dcModifier} onChange={event=>updateConditionalDcModifier(index,{dcModifier:numberOrUndefined(event.target.value)??0})} className={`${inputClass} mt-1`}/></label><label className="text-xs font-semibold text-stone-600">Notes<input aria-label={`Conditional DC notes ${index+1}`} value={modifier.notes??''} onChange={event=>updateConditionalDcModifier(index,{notes:event.target.value})} placeholder="Optional details" className={`${inputClass} mt-1`}/></label><button type="button" aria-label={`Remove conditional DC source ${index+1}`} onClick={()=>onSet('spellDcConditionalModifiers',conditionalDcModifiers.filter((_,modifierIndex)=>modifierIndex!==index))} className="self-end rounded-lg p-2 text-stone-400 hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4"/></button></div>)}{!conditionalDcModifiers.length&&<div className="rounded-lg border border-dashed border-purple-200 px-3 py-5 text-center text-sm text-purple-700">No conditional DC sources.</div>}</div>{data.spellsConditionalModifiers&&<div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-stone-600"><strong>Legacy conditional notes:</strong> {data.spellsConditionalModifiers}</div>}</section>
+        </>:<><div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4">
+          <div className="rounded-lg bg-white p-3"><div className="text-xs uppercase text-stone-500">Casting ability</div><div className="mt-1 text-lg font-bold uppercase text-stone-800">{data.spellcastingAbility??'—'}</div></div>
+          <div className="rounded-lg bg-white p-3"><div className="text-xs uppercase text-stone-500">Caster level</div><div className="mt-1 text-2xl font-black text-stone-800">{data.casterLevel??0}</div></div>
+          <button type="button" disabled={!onRoll} onClick={()=>onRoll?.(`1d20${signed(data.concentrationTotal??0)}`,'Concentration Check')} onContextMenu={event=>{if(onRollContext){event.preventDefault();onRollContext(event,`1d20${signed(data.concentrationTotal??0)}`,'Concentration Check')}}} className="rounded-lg bg-purple-800 p-3 text-left text-white disabled:cursor-default"><div className="text-xs uppercase text-purple-200">Concentration</div><div className="mt-1 text-2xl font-black">{signed(data.concentrationTotal??0)}</div></button>
+          <button type="button" disabled={!onRoll} onClick={()=>onRoll?.(`1d20${signed(data.casterLevel??0)}`,'Spell Resistance Penetration')} onContextMenu={event=>{if(onRollContext){event.preventDefault();onRollContext(event,`1d20${signed(data.casterLevel??0)}`,'Spell Resistance Penetration')}}} className="rounded-lg bg-white p-3 text-left disabled:cursor-default"><div className="text-xs uppercase text-stone-500">SR penetration</div><div className="mt-1 text-2xl font-black text-stone-800">{signed(data.casterLevel??0)}</div></button>
+        </div>{(conditionalDcModifiers.length>0||data.spellsConditionalModifiers)&&<section className="mt-3 rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-950"><h4 className="font-bold">Conditional spell DC</h4><div className="mt-2 space-y-2">{conditionalDcModifiers.map((modifier,index)=><div key={index} className="rounded-md bg-white px-3 py-2"><div className="flex flex-wrap items-baseline justify-between gap-2"><strong>{modifier.source}</strong><span className="rounded-full bg-purple-800 px-2 py-0.5 font-black text-white">{signed(modifier.dcModifier)} DC</span></div><div className="mt-0.5 text-purple-900">When: {modifier.condition}</div>{modifier.notes&&<div className="mt-1 text-xs text-stone-600">{modifier.notes}</div>}</div>)}{data.spellsConditionalModifiers&&<div className="rounded-md bg-white px-3 py-2 text-stone-700"><strong>Legacy notes:</strong> {data.spellsConditionalModifiers}</div>}</div></section>}</>}
       </section>
 
       <section className="rounded-xl border-2 border-stone-200 bg-stone-50 p-4">
@@ -226,18 +301,19 @@ export default function PF1eSpellbook({data,editable,onSet}:Props) {
         </div>
         {!isSpellLike&&<div className="mt-4 grid gap-3 sm:grid-cols-4">
           <div className="rounded-lg bg-white p-3"><div className="text-xs uppercase text-stone-500">Spell DC</div><div className="text-2xl font-black text-purple-800">{spellLevel.dc ?? 10+activeLevel+castingMod}</div></div>
-          <label className="rounded-lg bg-white p-3 text-xs font-semibold uppercase text-stone-500">DC override<input disabled={!editable} type="number" placeholder="Automatic" value={spellLevel.dcOverride ?? ''} onChange={event=>{const next=[...(data.spells??[])];next[activeLevel]={...spellLevel,dcOverride:numberOrUndefined(event.target.value)};onSet('spells',next)}} className={`${inputClass} mt-1 text-base normal-case`} /></label>
-          <label className="rounded-lg bg-white p-3 text-xs font-semibold uppercase text-stone-500">Spells per day<input disabled={!editable} type="number" min="0" value={spellLevel.totalPerDay ?? ''} onChange={event=>{const next=[...(data.spells??[])];next[activeLevel]={...spellLevel,totalPerDay:numberOrUndefined(event.target.value)};onSet('spells',next)}} className={`${inputClass} mt-1 text-base normal-case`} /></label>
+          {editable&&<label className="rounded-lg bg-white p-3 text-xs font-semibold uppercase text-stone-500">DC override<input type="number" placeholder="Automatic" value={spellLevel.dcOverride ?? ''} onChange={event=>{const next=[...(data.spells??[])];next[activeLevel]={...spellLevel,dcOverride:numberOrUndefined(event.target.value)};onSet('spells',next)}} className={`${inputClass} mt-1 text-base normal-case`} /></label>}
+          {editable?<label className="rounded-lg bg-white p-3 text-xs font-semibold uppercase text-stone-500">Base spells per day<input aria-label={`Level ${activeLevel} spells per day`} type="number" min="0" value={spellLevel.totalPerDay??''} onChange={event=>updateLevel({totalPerDay:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 text-base normal-case`} /></label>:<div className="rounded-lg bg-white p-3"><div className="text-xs font-semibold uppercase text-stone-500">Slots remaining</div><div className="text-2xl font-black text-purple-800">{slotsRemaining} / {slotsMaximum}</div></div>}
           <div className="rounded-lg bg-white p-3"><div className="text-xs uppercase text-stone-500">Bonus spells</div><div className="text-2xl font-black text-purple-800">{spellLevel.bonusSpells ?? 0}</div></div>
+          {editable&&<label className="rounded-lg bg-white p-3 text-xs font-semibold uppercase text-stone-500">Current slots<input aria-label={`Level ${activeLevel} current spells per day`} type="number" min="0" max={slotsMaximum} value={spellLevel.currentPerDay??slotsMaximum} onChange={event=>updateLevel({currentPerDay:numberOrUndefined(event.target.value)})} className={`${inputClass} mt-1 text-base normal-case`} /></label>}
         </div>}
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-lg font-bold text-stone-800">{isSpellLike?'Spell-like abilities':activeLevel===0?'Cantrips & orisons':`Level ${activeLevel} spells`}</h3>
-          {editable && <button type="button" onClick={()=>updateSpells([...spells,{name:''}])} className="inline-flex items-center gap-2 rounded-lg bg-purple-800 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-900"><Plus className="h-4 w-4" />Add spell</button>}
+          <div className="flex items-center gap-2"><div className="flex rounded-lg border border-stone-200 bg-white p-1"><button type="button" aria-label="List spells" aria-pressed={layout==='list'} onClick={()=>setLayout('list')} className={`rounded p-1.5 ${layout==='list'?'bg-purple-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><List className="h-4 w-4"/></button><button type="button" aria-label="Cluster spells" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')} className={`rounded p-1.5 ${layout==='grid'?'bg-purple-800 text-white':'text-stone-500 hover:bg-stone-100'}`}><LayoutGrid className="h-4 w-4"/></button></div>{editable && <button type="button" onClick={()=>updateSpells([...spells,{name:''}])} className="inline-flex items-center gap-2 rounded-lg bg-purple-800 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-900"><Plus className="h-4 w-4" />Add spell</button>}</div>
         </div>
-        {spells.length ? spells.map((spell,index)=><SpellCard key={`${activeLevel}-${index}`} spell={spell} editable={editable} onChange={next=>updateSpells(spells.map((item,itemIndex)=>itemIndex===index?next:item))} onRemove={()=>updateSpells(spells.filter((_,itemIndex)=>itemIndex!==index))} />) : <div className="rounded-xl border-2 border-dashed border-stone-200 py-10 text-center text-sm text-stone-500">No spells at this level.</div>}
+        {spells.length ? <div className={layout==='grid'?'grid gap-3 md:grid-cols-2 xl:grid-cols-3':'space-y-3'}>{spells.map((spell,index)=>{const replace=(next:PF1eSpell)=>spells.map((item,itemIndex)=>itemIndex===index?next:item);return <SpellCard key={`${activeLevel}-${index}`} spell={spell} editable={editable} canTrackUses={canTrackUses} castingType={castingType} slotsRemaining={slotsRemaining} onChange={next=>updateSpells(replace(next))} onRemove={()=>updateSpells(spells.filter((_,itemIndex)=>itemIndex!==index))} onPrepare={()=>{if(slotsRemaining<=0)return;updateLevel({currentPerDay:slotsRemaining-1,slotted:replace({...spell,prepared:(spell.prepared??0)+1})})}} onUnprepare={()=>{if((spell.prepared??0)-(spell.cast??0)<=0)return;updateLevel({currentPerDay:Math.min(slotsMaximum,slotsRemaining+1),slotted:replace({...spell,prepared:Math.max(0,(spell.prepared??0)-1)})})}} onCast={()=>{if(castingType==='spontaneous'){if(slotsRemaining<=0)return;updateLevel({currentPerDay:slotsRemaining-1});}else if((spell.prepared??0)>(spell.cast??0))updateSpells(replace({...spell,cast:(spell.cast??0)+1}));}} onRestore={()=>{if(castingType==='spontaneous')updateLevel({currentPerDay:Math.min(slotsMaximum,slotsRemaining+1)});else if((spell.cast??0)>0)updateSpells(replace({...spell,cast:(spell.cast??0)-1}));}} />})}</div> : <div className="rounded-xl border-2 border-dashed border-stone-200 py-10 text-center text-sm text-stone-500">No spells at this level.</div>}
       </section>
     </div>
   );

@@ -408,7 +408,7 @@ export function drawTokens(
     }
 
     // Condition indicator badges — small amber dots along the top of the token
-    if (token.conditions && token.conditions.length > 0) {
+    if (effectiveType !== TokenType.PLAYER && token.conditions && token.conditions.length > 0) {
       const condCount = token.conditions.length;
       const badgeR = Math.max(5, 5 / zoom);
       const gap = badgeR * 2.4;

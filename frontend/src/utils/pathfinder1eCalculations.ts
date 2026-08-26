@@ -1,4 +1,4 @@
-import type { PF1eAbilityKey, PF1eAttack, PF1eCharacterData } from '../types/game-systems/pathfinder1e';
+import type { PF1eAbilityKey, PF1eAttack, PF1eCharacterData, PF1eSpellLevel } from '../types/game-systems/pathfinder1e';
 
 export const pf1eAbilityModifier = (score?: number | null): number =>
   typeof score === 'number' ? Math.floor((score - 10) / 2) : 0;
@@ -37,6 +37,30 @@ export function pf1eBonusSpells(abilityModifierValue:number,spellLevel:number):n
   return Math.floor((abilityModifierValue - spellLevel) / 4) + 1;
 }
 
+/** Total available slots at a level, including automatically calculated bonus spells. */
+export const pf1eSpellSlotsMaximum = (level:PF1eSpellLevel):number =>
+  Math.max(0,(level.totalPerDay??0)+(level.bonusSpells??0));
+
+/** Old sheets had no current counter; treat them as rested instead of empty. */
+export const pf1eCurrentSpellSlots = (level:PF1eSpellLevel):number =>
+  Math.min(pf1eSpellSlotsMaximum(level),Math.max(0,level.currentPerDay??pf1eSpellSlotsMaximum(level)));
+
+/** Apply the configurable PF1 long-rest recovery in a single atomic sheet update. */
+export function applyPF1eLongRest(input:PF1eCharacterData):PF1eCharacterData {
+  const data=structuredClone(input);
+  const hp=data.hp??{};
+  hp.current=Math.min(hp.total??0,(hp.current??0)+(hp.longRestRestore??0));
+  hp.temporary=0;
+  hp.nonLethal=0;
+  data.hp=hp;
+  data.spells=(data.spells??[]).map(level=>({
+    ...level,
+    currentPerDay:pf1eSpellSlotsMaximum(level),
+    slotted:(level.slotted??[]).map(spell=>({...spell,prepared:0,cast:0})),
+  }));
+  return data;
+}
+
 const fmt = (value:number):string => value >= 0 ? `+${value}` : `${value}`;
 
 function calculateAttack(data:PF1eCharacterData,attack:PF1eAttack,ranged:boolean):PF1eAttack {
@@ -44,7 +68,7 @@ function calculateAttack(data:PF1eCharacterData,attack:PF1eAttack,ranged:boolean
   if (!attack.baseDamage) return attack;
   const attackAbility = attack.attackAbility ?? (ranged ? 'dex' : 'str');
   const damageAbility = attack.damageAbility ?? (ranged ? 'none' : 'str');
-  const attackTotal = (data.bab ?? 0) + abilityModifier(data,attackAbility) +
+  const attackTotal = (data.bab ?? 0) + (data.babMiscModifier ?? 0) + abilityModifier(data,attackAbility) +
     (data.ac?.sizeModifier ?? pf1eSizeModifier(data.size)) +
     (attack.enhancementBonus ?? 0) + (attack.attackMiscModifier ?? 0) +
     (attack.attackTempModifier ?? 0);
@@ -74,12 +98,15 @@ export function calculatePF1eDerived(input: PF1eCharacterData): PF1eCharacterDat
   const dex = abilityModifier(data, 'dex');
   const str = abilityModifier(data, 'str');
   const bab = data.bab ?? 0;
+  const effectiveBab = bab + (data.babMiscModifier ?? 0);
 
   const armorItems = (data.ac?.items ?? []).filter(item => item.equipped !== false);
   const itemArmor = Math.max(0, ...armorItems.filter(item => /armor/i.test(item.type ?? '')).map(item => item.bonus ?? 0));
   const itemShield = Math.max(0, ...armorItems.filter(item => /shield/i.test(item.type ?? '')).map(item => item.bonus ?? 0));
-  const armor = itemArmor || data.ac?.armorBonus || 0;
-  const shield = itemShield || data.ac?.shieldBonus || 0;
+  // Armor and shield bonuses exist only while their AC items are equipped. The
+  // legacy aggregate fields remain readable for old data, but are not sources.
+  const armor = itemArmor;
+  const shield = itemShield;
   const size = data.ac?.sizeModifier ?? pf1eSizeModifier(data.size);
   const maxDex = Math.min(Infinity,...armorItems
     .map(item => item.maxDexBonus)
@@ -121,12 +148,12 @@ export function calculatePF1eDerived(input: PF1eCharacterData): PF1eCharacterDat
   };
   data.cmb = {
     ...data.cmb,
-    total: data.cmb?.overrideTotal ?? (bab + str + (data.cmb?.sizeModifier ?? -size) +
+    total: data.cmb?.overrideTotal ?? (effectiveBab + str + (data.cmb?.sizeModifier ?? -size) +
       numericModifier(data.cmb?.miscModifiers) + numericModifier(data.cmb?.tempModifiers)),
   };
   data.cmd = {
     ...data.cmd,
-    total: data.cmd?.overrideTotal ?? (10 + bab + str + dex + (data.cmd?.sizeModifier ?? -size) +
+    total: data.cmd?.overrideTotal ?? (10 + effectiveBab + str + dex + (data.cmd?.sizeModifier ?? -size) +
       numericModifier(data.cmd?.miscModifiers) + numericModifier(data.cmd?.tempModifiers)),
   };
 

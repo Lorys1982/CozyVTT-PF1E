@@ -46,11 +46,19 @@ export interface PF1eAttack {
   damageOverride?: string;
   attackBonus?: string;
   damage?: string;
+  damageType?: string;
+  additionalDamage?: PF1eDamagePart[];
   critical?: string;
   type?: string;
   range?: string;
   notes?: string;
   ammunition?: string;
+}
+
+export interface PF1eDamagePart {
+  formula: string;
+  type?: string;
+  notes?: string;
 }
 
 export interface PF1eFeature {
@@ -117,8 +125,16 @@ export interface PF1eSpellLevel {
   dc?: number;
   dcOverride?: number;
   totalPerDay?: number;
+  currentPerDay?: number;
   bonusSpells?: number;
   slotted?: PF1eSpell[];
+}
+
+export interface PF1eSpellDcConditionalModifier {
+  source: string;
+  condition: string;
+  dcModifier: number;
+  notes?: string;
 }
 
 export interface PF1eCharacterData {
@@ -161,7 +177,7 @@ export interface PF1eCharacterData {
     items?: PF1eACItem[];
   };
 
-  hp?: { total?: number; current?: number; temporary?: number; nonLethal?: number };
+  hp?: { total?: number; current?: number; temporary?: number; nonLethal?: number; longRestRestore?: number };
   damageReduction?: string;
   spellResistance?: string;
   saves?: { fort?: PF1eSave; reflex?: PF1eSave; will?: PF1eSave };
@@ -172,6 +188,7 @@ export interface PF1eCharacterData {
 
   initiative?: { total?: number; miscModifier?: number; tempModifier?: number; overrideTotal?: number };
   bab?: number;
+  babMiscModifier?: number;
   conditionalOffenseModifiers?: string;
   speed?: {
     base?: string;
@@ -201,6 +218,7 @@ export interface PF1eCharacterData {
   spells?: PF1eSpellLevel[];
   spellLikes?: PF1eSpell[];
   spellcastingAbility?: PF1eAbilityKey;
+  spellcastingType?: 'prepared' | 'spontaneous';
   casterLevel?: number;
   spellDcMiscModifier?: number;
   spellDcTempModifier?: number;
@@ -208,6 +226,7 @@ export interface PF1eCharacterData {
   concentrationTempModifier?: number;
   concentrationOverride?: number;
   concentrationTotal?: number;
+  spellDcConditionalModifiers?: PF1eSpellDcConditionalModifier[];
   spellsConditionalModifiers?: string;
   spellsSpeciality?: string;
 

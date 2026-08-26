@@ -204,7 +204,7 @@ function extractPf1eRolls(data: any): CharacterRolls {
       label: `${name.slice(0, 3).toUpperCase()} ${fmt(bonus)}`,
       expression: `1d20${fmt(bonus)}`,
       purpose: `${name} Check`,
-      supportsAdvantage: false,
+      supportsAdvantage: true,
     });
   }
 
@@ -221,7 +221,7 @@ function extractPf1eRolls(data: any): CharacterRolls {
       label: `${saveNames[key]} ${fmt(bonus)}`,
       expression: `1d20${fmt(bonus)}`,
       purpose: `${saveNames[key]} Save`,
-      supportsAdvantage: false,
+      supportsAdvantage: true,
     });
   }
 
@@ -237,7 +237,7 @@ function extractPf1eRolls(data: any): CharacterRolls {
         label: `${skill.name} ${fmt(bonus)}`,
         expression: `1d20${fmt(bonus)}`,
         purpose: `${skill.name} Check`,
-        supportsAdvantage: false,
+        supportsAdvantage: true,
       });
     }
   }
@@ -251,7 +251,7 @@ function extractPf1eRolls(data: any): CharacterRolls {
         label: `${attack.weapon} Attack ${fmt(bonus)}`,
         expression: `1d20${fmt(bonus)}`,
         purpose: `${attack.weapon} Attack`,
-        supportsAdvantage: false,
+        supportsAdvantage: true,
       });
     }
     if (typeof attack.damage === 'string' && isValidDiceExpression(attack.damage)) {

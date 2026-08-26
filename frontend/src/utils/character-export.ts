@@ -6,6 +6,7 @@
  */
 
 import type { Character } from '@/types';
+import { convertCharacterSheetCoUkExport, isCharacterSheetCoUkExport } from './pathfinder1e-character-import';
 
 export interface ExportMetadata {
   cozyVttVersion: string;
@@ -71,11 +72,20 @@ export function validateImportedCharacter(data: any): {
     name: string;
     gameSystem: string | null;
     data: any;
+    importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
   };
 } {
   // Check basic structure
   if (!data || typeof data !== 'object') {
     return { valid: false, error: 'Invalid JSON format' };
+  }
+
+  if (isCharacterSheetCoUkExport(data)) {
+    const converted=convertCharacterSheetCoUkExport(data);
+    return {
+      valid:true,
+      character:{name:converted.name,gameSystem:'PATHFINDER_1E',data:converted.data,importSource:'CharacterSheet.co.uk'},
+    };
   }
 
   // Check for cozyVttVersion
@@ -113,6 +123,7 @@ export function validateImportedCharacter(data: any): {
       name: data.character.name,
       gameSystem: data.character.gameSystem || null,
       data: data.character.data,
+      importSource: 'CozyVTT',
     },
   };
 }

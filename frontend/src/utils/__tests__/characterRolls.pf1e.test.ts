@@ -46,6 +46,7 @@ describe('Pathfinder 1e character rolls', () => {
     const combat = getCharacterRolls('PATHFINDER_1E', data).combat;
 
     expect(combat.map((roll) => roll.expression)).toEqual(['1d20+6', '1d8+3']);
-    expect(combat.every((roll) => !roll.supportsAdvantage)).toBe(true);
+    expect(combat[0]?.supportsAdvantage).toBe(true);
+    expect(combat[1]?.supportsAdvantage).toBe(false);
   });
 });

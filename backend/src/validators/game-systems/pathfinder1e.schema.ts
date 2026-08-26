@@ -48,6 +48,12 @@ const attack = z.object({
   damageOverride: z.string().optional(),
   attackBonus: z.string().optional(),
   damage: z.string().optional(),
+  damageType: z.string().optional(),
+  additionalDamage: z.array(z.object({
+    formula: z.string().min(1),
+    type: z.string().optional(),
+    notes: z.string().optional(),
+  })).optional(),
   critical: z.string().optional(),
   type: z.string().optional(),
   range: z.string().optional(),
@@ -119,6 +125,7 @@ const spellLevel = z.object({
   dc: z.number().int().optional(),
   dcOverride: z.number().int().optional(),
   totalPerDay: z.number().int().min(0).optional(),
+  currentPerDay: z.number().int().min(0).optional(),
   bonusSpells: z.number().int().min(0).optional(),
   slotted: z.array(spell).optional(),
 }).partial();
@@ -170,6 +177,7 @@ export const pathfinder1eCharacterDataSchema = z.object({
     current: z.number().int().optional(),
     temporary: z.number().int().min(0).optional(),
     nonLethal: z.number().int().min(0).optional(),
+    longRestRestore: z.number().int().min(0).optional(),
   }).optional(),
 
   damageReduction: z.string().optional(),
@@ -187,6 +195,7 @@ export const pathfinder1eCharacterDataSchema = z.object({
 
   initiative: z.object({ total: z.number().int().optional(), miscModifier: z.number().int().optional(), tempModifier: z.number().int().optional(), overrideTotal: z.number().int().optional() }).optional(),
   bab: z.number().int().optional(),
+  babMiscModifier: z.number().int().optional(),
   conditionalOffenseModifiers: z.string().optional(),
   speed: z.object({
     base: z.string().optional(), withArmor: z.string().optional(), fly: z.string().optional(),
@@ -222,6 +231,7 @@ export const pathfinder1eCharacterDataSchema = z.object({
   spells: z.array(spellLevel).max(10).optional(),
   spellLikes: z.array(spell).optional(),
   spellcastingAbility: abilityKey.optional(),
+  spellcastingType: z.enum(['prepared','spontaneous']).optional(),
   casterLevel: z.number().int().min(0).optional(),
   spellDcMiscModifier: z.number().int().optional(),
   spellDcTempModifier: z.number().int().optional(),
@@ -229,6 +239,12 @@ export const pathfinder1eCharacterDataSchema = z.object({
   concentrationTempModifier: z.number().int().optional(),
   concentrationOverride: z.number().int().optional(),
   concentrationTotal: z.number().int().optional(),
+  spellDcConditionalModifiers: z.array(z.object({
+    source: z.string().min(1),
+    condition: z.string().min(1),
+    dcModifier: z.number().int(),
+    notes: z.string().optional(),
+  })).optional(),
   spellsConditionalModifiers: z.string().optional(),
   spellsSpeciality: z.string().optional(),
   notes: z.string().max(50000).optional(),

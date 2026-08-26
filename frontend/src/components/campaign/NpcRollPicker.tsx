@@ -39,6 +39,7 @@ type RollMode = 'normal' | 'advantage' | 'disadvantage';
 
 const MODE_LABELS: Record<string, Record<RollMode, string>> = {
   DND_5E:            { normal: 'Normal', advantage: 'Advantage', disadvantage: 'Disadvantage' },
+  PATHFINDER_1E:     { normal: 'Normal', advantage: 'Advantage', disadvantage: 'Disadvantage' },
   PATHFINDER_2E:     { normal: 'Normal', advantage: 'Fortune',   disadvantage: 'Misfortune' },
   // Listed for parity with CharacterRollPicker, which has always had it. The
   // selector is hidden for d100 systems anyway (systemSupportsAdvantage), but
@@ -51,7 +52,7 @@ function getModeLabels(gameSystem: string | null): Record<RollMode, string> {
 }
 
 function systemSupportsAdvantage(gameSystem: string | null): boolean {
-  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_2E';
+  return gameSystem === 'DND_5E' || gameSystem === 'PATHFINDER_1E' || gameSystem === 'PATHFINDER_2E';
 }
 
 // ---------------------------------------------------------------------------

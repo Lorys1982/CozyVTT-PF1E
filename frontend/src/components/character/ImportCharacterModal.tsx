@@ -50,6 +50,7 @@ export default function ImportCharacterModal({
     name: string;
     gameSystem: string | null;
     data: any;
+    importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
   } | null>(null);
   const [nameConflict, setNameConflict] = useState(false);
   const [importName, setImportName] = useState('');
@@ -186,6 +187,9 @@ export default function ImportCharacterModal({
             <p className="text-sm text-ink mb-4">
               Drag and drop a JSON file, or click to browse
             </p>
+            {!isTemplate&&<p className="mb-4 text-xs text-ink-muted">
+              Supports CozyVTT character exports and CharacterSheet.co.uk Pathfinder exports.
+            </p>}
             <input
               type="file"
               accept=".json,application/json"
@@ -239,6 +243,11 @@ export default function ImportCharacterModal({
                       ? 'Review the details below, then publish it as a template.'
                       : 'Review the character details below before importing.'}
                   </p>
+                  {previewData.importSource==='CharacterSheet.co.uk'&&(
+                    <p className="mt-1 text-xs text-ink-secondary">
+                      CharacterSheet.co.uk Pathfinder export detected and converted to CozyVTT PF1e.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

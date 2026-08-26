@@ -7,6 +7,7 @@ import { X, Edit, Shield, User as UserIcon } from 'lucide-react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useAuth } from '@/contexts/AuthContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
+import { useToast } from '@/contexts/ToastContext';
 import { canEditCharacter } from '@/services/permissions';
 import { api } from '@/services/api';
 import type { Character, GameSystem, CampaignMembership } from '@/types';
@@ -37,6 +38,7 @@ export default function CharacterSheetViewerModal({
 }: CharacterSheetViewerModalProps) {
   const { user } = useAuth();
   const { socket } = useWebSocket();
+  const { showToast } = useToast();
   const [character, setCharacter] = useState(initialCharacter);
   const [ownerName, setOwnerName] = useState<string>('');
   const [showEditor, setShowEditor] = useState(false);
@@ -132,13 +134,22 @@ export default function CharacterSheetViewerModal({
     }
   };
 
+  const handleQuickDataChange = async (data:any) => {
+    try {
+      const {character:updatedCharacter}=await api.updateCharacter(character.id,{data});
+      setCharacter(updatedCharacter);
+    } catch (error:any) {
+      showToast(error.response?.data?.message||'Failed to update the character.','error');
+    }
+  };
+
   // Render appropriate character sheet view based on game system
   const renderCharacterSheet = () => {
     switch (character.gameSystem) {
       case 'DND_5E':
         return <DnD5eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'PATHFINDER_1E':
-        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} />;
+        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} onDataChange={canEdit?handleQuickDataChange:undefined} />;
       case 'PATHFINDER_2E':
         return <Pathfinder2eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'SHADOWRUN_6E':
@@ -152,7 +163,10 @@ export default function CharacterSheetViewerModal({
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" aria-hidden="true">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      onClick={event=>{if(event.target===event.currentTarget)onClose();}}
+    >
       <div
         ref={modalRef}
         role="dialog"
