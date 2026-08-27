@@ -5,7 +5,7 @@
  * auto-calculation, validation, color customization, and token upload.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Target,
   Swords,
@@ -25,8 +25,11 @@ import { api } from '../../../services/api';
 import { AssetType } from '../../../types';
 import { useServerConfigQuery } from '@/hooks/queries';
 import { getUploadLimit, formatUploadLimit } from '@/utils/uploadLimits';
+import NumberField from '../../ui/NumberField';
+import { pf2eInitiativeBonus } from '@/utils/rules/initiative';
 
 interface Pathfinder2eCharacterEditorProps {
+  onDirtyChange?: (dirty: boolean) => void;
   character: any;
   onSave: (data: any, showToast?: boolean, tokenImageUrl?: string) => Promise<void>;
   onCancel: () => void;
@@ -88,6 +91,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
   character,
   onSave,
   onCancel,
+  onDirtyChange,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('stats');
   const [isSaving, setIsSaving] = useState(false);
@@ -172,6 +176,51 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
     notes: data.notes || '',
     treasure: data.treasure || '',
   }));
+
+  // Report the first edit up to whoever is hosting this sheet, so leaving with
+  // unsaved work can be caught. One effect on the whole form rather than a call
+  // in each of the ~40 field handlers: it cannot be forgotten when a field is
+  // added, and it catches changes made any way at all. The initial render is
+  // skipped, and the flag is reset after a successful save.
+  // Two conditions, both required, because either alone gets it wrong.
+  //
+  // The AC, bulk and max-HP effects below call `setFormData` unconditionally
+  // while the sheet is mounting, so `formData` changes identity — and often
+  // value — before anyone has touched anything. Reporting on identity alone
+  // marked every sheet dirty on open, and comparing values alone still did,
+  // because those effects genuinely write different numbers to a sheet whose
+  // stored values had drifted.
+  //
+  // So: until the first real interaction the baseline simply follows the form,
+  // absorbing that settling. From the first interaction onwards the baseline is
+  // frozen and edits are measured against it — which also means typing a value
+  // and putting it back reads as clean, as it should.
+  const dirtyRef = useRef(false);
+  const hasInteractedRef = useRef(false);
+  const cleanSnapshotRef = useRef<string | null>(null);
+  if (cleanSnapshotRef.current === null) {
+    cleanSnapshotRef.current = JSON.stringify(formData);
+  }
+  // Always the current form state, for reading inside async callbacks.
+  const latestFormDataRef = useRef(formData);
+  latestFormDataRef.current = formData;
+
+  useEffect(() => {
+    if (!hasInteractedRef.current) {
+      cleanSnapshotRef.current = JSON.stringify(formData);
+      return;
+    }
+    const dirty = JSON.stringify(formData) !== cleanSnapshotRef.current;
+    if (dirty !== dirtyRef.current) {
+      dirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [formData, onDirtyChange]);
+
+  // Capture-phase, so it runs before the field's own handler updates state.
+  // Pointer events are included because plenty of edits here are button
+  // presses (add an item, adjust a track) rather than typing.
+  const noteInteraction = () => { hasInteractedRef.current = true; };
 
   const [tokenImageFile, setTokenImageFile] = useState<File | null>(null);
   const [tokenImagePreview, setTokenImagePreview] = useState<string | null>(character.tokenImageUrl);
@@ -379,6 +428,34 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
     setFormData((prev: any) => ({ ...prev, armorClass: { ...prev.armorClass, total } }));
   }, [formData.level, formData.attributes?.dexterity?.modifier, formData.armorClass?.proficiencyRank, formData.armorClass?.itemBonus, formData.armorClass?.capDex]);
 
+  /**
+   * Auto-calculate the initiative bonus.
+   *
+   * Initiative in Pathfinder 2e is a Perception check, or another skill when the
+   * GM calls for one — Stealth to sneak up on someone. The sheet already records
+   * that choice in `initiative.usedStat` and shows the resulting bonus, but
+   * nothing ever calculated it, so every character read +0 no matter how good
+   * their Perception was. The bonus simply follows whichever stat is named.
+   *
+   * Guarded by an equality check, like the Class DC effect below, so opening a
+   * sheet whose value already agrees does not queue a state change.
+   */
+  useEffect(() => {
+    if (!formData.initiative) return;
+    const bonus = pf2eInitiativeBonus(formData);
+    if (formData.initiative.bonus !== bonus) {
+      setFormData((prev: any) => ({ ...prev, initiative: { ...prev.initiative, bonus } }));
+    }
+  }, [
+    formData.initiative?.usedStat,
+    formData.initiative?.bonus,
+    // The computed value itself, rather than a list of the stats it might come
+    // from. The dropdown offers Perception and Stealth, but `usedStat` is a free
+    // string in the schema, so an imported sheet can name any skill — listing
+    // two by hand would leave those characters with a stale bonus.
+    pf2eInitiativeBonus(formData),
+  ]);
+
   // Auto-calculate Class DC
   useEffect(() => {
     if (!formData.attributes || !formData.classDC || !formData.level) return;
@@ -504,6 +581,16 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
   };
 
   const handleSubmit = async () => {
+    // A completed save means nothing is pending any more.
+    // Unless the sheet was edited again while the save was in flight, which the
+    // recheck preserves.
+    const savedSnapshot = JSON.stringify(formData);
+    const markClean = () => {
+      cleanSnapshotRef.current = savedSnapshot;
+      const stillDirty = JSON.stringify(latestFormDataRef.current) !== savedSnapshot;
+      dirtyRef.current = stillDirty;
+      onDirtyChange?.(stillDirty);
+    };
     if (!validateForm()) return;
     setIsSaving(true);
     try {
@@ -540,6 +627,7 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
 
       // Pass the tokenImageUrl as a separate parameter if it was uploaded
       await onSave(updatedData, true, newTokenImageUrl);
+      markClean();
     } catch (error) {
       console.error('Error saving character:', error);
       setErrors({ ...errors, submit: 'Failed to save character. Please try again.' });
@@ -616,8 +704,15 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
           </div>
         )}
 
-        <div className="flex items-start justify-between">
-          <div className="flex items-start space-x-4">
+        {/* pr-64 reserves the strip the absolutely-positioned Save/Cancel
+            cluster and palette button occupy above. Without it the Level and
+            Hero Points fields sit underneath them. */}
+        <div className="flex items-start justify-between pr-64">
+          {/* min-w-0 so this column can shrink. Flex children default to
+              min-width:auto, which lets the character-name input push out past
+              the reserved padding on a narrow window and back under the
+              buttons. */}
+          <div className="flex items-start space-x-4 min-w-0">
             <div className="flex-shrink-0 relative group">
               <input type="file" id="token-upload" accept="image/*" onChange={handleTokenImageChange} className="hidden" />
               <label htmlFor="token-upload" className="cursor-pointer block relative">
@@ -640,15 +735,18 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
               )}
             </div>
 
-            <div className="space-y-2">
-              <input type="text" value={formData.characterName || ''} onChange={(e) => updateField('characterName', e.target.value)} placeholder="Character Name" className={`text-3xl font-bold bg-white/10 border-2 ${errors.characterName ? 'border-red-300' : 'border-white/20'} rounded px-3 py-1 ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`} />
+            <div className="space-y-2 min-w-0">
+              <input type="text" value={formData.characterName || ''} onChange={(e) => updateField('characterName', e.target.value)} placeholder="Character Name" className={`w-full text-3xl font-bold bg-white/10 border-2 ${errors.characterName ? 'border-red-300' : 'border-white/20'} rounded px-3 py-1 ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`} />
               <div className="flex items-center flex-wrap gap-2 opacity-90">
-                <input type="text" value={formData.playerName || ''} onChange={(e) => updateField('playerName', e.target.value)} placeholder="Player Name" className={`bg-white/10 border border-white/20 rounded px-2 py-0.5 text-sm ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`} />
+                {/* Read-only: the player name is whoever owns the character,
+                    filled from their display name at creation. */}
+                <span className={`text-sm ${headerTextColor}`}>{formData.playerName || '—'}</span>
               </div>
               <div className="flex items-center flex-wrap gap-2 opacity-90">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs">Level</span>
-                  <input type="number" min="1" max="20" value={formData.level || 1} onChange={(e) => updateField('level', parseInt(e.target.value) || 1)} className={`w-16 bg-white/10 border ${errors.level ? 'border-red-300' : 'border-white/20'} rounded px-2 py-0.5 text-sm ${headerTextColor} focus:outline-none focus:border-white/40`} />
+                  <NumberField
+min={1} max={20} value={formData.level} onChange={(v: number) => updateField('level', v)} className={`w-16 bg-white/10 border ${errors.level ? 'border-red-300' : 'border-white/20'} rounded px-2 py-0.5 text-sm ${headerTextColor} focus:outline-none focus:border-white/40`} fallback={1} />
                 </div>
                 <input type="text" value={formData.class || ''} onChange={(e) => updateField('class', e.target.value)} placeholder="Class" className={`bg-white/10 border border-white/20 rounded px-2 py-0.5 text-sm ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`} />
                 <input type="text" value={formData.ancestry || ''} onChange={(e) => updateField('ancestry', e.target.value)} placeholder="Ancestry" className={`bg-white/10 border border-white/20 rounded px-2 py-0.5 text-sm ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`} />
@@ -660,9 +758,11 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
 
           <div className="text-right space-y-2">
             <div className="text-xs opacity-70">Experience Points</div>
-            <input type="number" min="0" value={formData.experiencePoints || 0} onChange={(e) => updateField('experiencePoints', parseInt(e.target.value) || 0)} className={`w-24 text-xl font-bold bg-white/10 border border-white/20 rounded px-2 py-1 ${headerTextColor} text-right focus:outline-none focus:border-white/40`} />
+            <NumberField
+min={0} value={formData.experiencePoints} onChange={(v: number) => updateField('experiencePoints', v)} className={`w-24 text-xl font-bold bg-white/10 border border-white/20 rounded px-2 py-1 ${headerTextColor} text-right focus:outline-none focus:border-white/40`} fallback={0} />
             <div className="text-xs opacity-70 mt-2">Hero Points</div>
-            <input type="number" min="0" max="3" value={formData.heroPoints || 0} onChange={(e) => updateField('heroPoints', Math.min(parseInt(e.target.value) || 0, 3))} className={`w-16 text-lg font-bold bg-white/10 border border-white/20 rounded px-2 py-1 ${headerTextColor} text-right focus:outline-none focus:border-white/40`} />
+            <NumberField
+min={0} max={3} value={formData.heroPoints} onChange={(v: number) => updateField('heroPoints', Math.min(v, 3))} className={`w-16 text-lg font-bold bg-white/10 border border-white/20 rounded px-2 py-1 ${headerTextColor} text-right focus:outline-none focus:border-white/40`} fallback={0} />
           </div>
         </div>
       </div>
@@ -698,7 +798,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center shadow-lg border-2 border-blue-900">
                   <span className="text-2xl font-bold text-white">{formatModifier(abilityData.modifier)}</span>
                 </div>
-                <input type="number" min="1" max="30" value={abilityData.score} onChange={(e) => updateField(`attributes.${ability}.score`, parseInt(e.target.value) || 10)} className="w-16 px-2 py-1 text-center font-semibold border-2 border-stone-300 rounded mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+min={1} max={30} value={abilityData.score} onChange={(v: number) => updateField(`attributes.${ability}.score`, v)} className="w-16 px-2 py-1 text-center font-semibold border-2 border-stone-300 rounded mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={10} />
               </div>
             );
           })}
@@ -718,7 +819,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                   {renderProficiencySelector(`savingThrows.${save}.proficiencyRank`, saveData.proficiencyRank as ProficiencyRank)}
                   <div className="flex items-center space-x-2">
                     <label className="text-xs text-stone-600">Item:</label>
-                    <input type="number" value={saveData.itemBonus} onChange={(e) => updateField(`savingThrows.${save}.itemBonus`, parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <NumberField
+value={saveData.itemBonus} onChange={(v: number) => updateField(`savingThrows.${save}.itemBonus`, v)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
                   </div>
                 </div>
                 <span className="text-2xl font-bold text-blue-700">{formatModifier(saveData.bonus)}</span>
@@ -736,7 +838,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
             {renderProficiencySelector('perception.proficiencyRank', formData.perception?.proficiencyRank as ProficiencyRank || 'untrained')}
             <div className="flex items-center space-x-2">
               <label className="text-xs text-stone-600">Item:</label>
-              <input type="number" value={formData.perception?.itemBonus || 0} onChange={(e) => updateField('perception.itemBonus', parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <NumberField
+value={formData.perception?.itemBonus} onChange={(v: number) => updateField('perception.itemBonus', v)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
             </div>
           </div>
           <span className="text-2xl font-bold text-blue-700">{formatModifier(formData.perception?.bonus || 0)}</span>
@@ -762,8 +865,10 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                 </div>
                 <div className="flex items-center space-x-2">
                   {renderProficiencySelector(`skills.${skillName}.proficiencyRank`, skillData.proficiencyRank as ProficiencyRank)}
-                  <input type="number" value={skillData.itemBonus} onChange={(e) => updateField(`skills.${skillName}.itemBonus`, parseInt(e.target.value) || 0)} placeholder="Item" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input type="number" value={skillData.armorPenalty} onChange={(e) => updateField(`skills.${skillName}.armorPenalty`, parseInt(e.target.value) || 0)} placeholder="Penalty" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <NumberField
+value={skillData.itemBonus} onChange={(v: number) => updateField(`skills.${skillName}.itemBonus`, v)} placeholder="Item" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
+                  <NumberField
+value={skillData.armorPenalty} onChange={(v: number) => updateField(`skills.${skillName}.armorPenalty`, v)} placeholder="Penalty" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
                 </div>
               </div>
             );
@@ -791,7 +896,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
               </div>
               <div className="flex items-center space-x-2">
                 {renderProficiencySelector(`loreSkills.${index}.proficiencyRank`, lore.proficiencyRank as ProficiencyRank)}
-                <input type="number" value={lore.itemBonus} onChange={(e) => updateField(`loreSkills.${index}.itemBonus`, parseInt(e.target.value) || 0)} placeholder="Item" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+value={lore.itemBonus} onChange={(v: number) => updateField(`loreSkills.${index}.itemBonus`, v)} placeholder="Item" className="w-16 px-2 py-1 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
                 <span className="text-lg font-bold text-blue-700 ml-auto">{formatModifier(lore.bonus)}</span>
               </div>
             </div>
@@ -818,7 +924,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
             </div>
             <div className="flex items-center space-x-2">
               <label className="text-sm text-stone-700 w-24">Item Bonus:</label>
-              <input type="number" value={formData.armorClass?.itemBonus || 0} onChange={(e) => updateField('armorClass.itemBonus', parseInt(e.target.value) || 0)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <NumberField
+value={formData.armorClass?.itemBonus} onChange={(v: number) => updateField('armorClass.itemBonus', v)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
             </div>
             <div className="text-center pt-2 border-t border-stone-300">
               <div className="text-xs text-stone-600 mb-1">Total AC</div>
@@ -868,7 +975,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
           <div className="space-y-2">
             <div className="flex items-center space-x-2">
               <label className="text-sm text-stone-700 w-24">Land (ft):</label>
-              <input type="number" min="0" value={formData.speed?.land || 30} onChange={(e) => updateField('speed.land', parseInt(e.target.value) || 30)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <NumberField
+min={0} value={formData.speed?.land} onChange={(v: number) => updateField('speed.land', v)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={30} />
             </div>
             <div>
               <label className="text-sm text-stone-700 mb-1 block">Other (comma-separated):</label>
@@ -884,11 +992,13 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3">
           <div>
             <label className="text-xs font-semibold text-stone-600 mb-1 block">Ancestry HP</label>
-            <input type="number" min="0" value={formData.hp?.ancestryHp || 6} onChange={(e) => updateField('hp.ancestryHp', parseInt(e.target.value) || 6)} className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <NumberField
+min={0} value={formData.hp?.ancestryHp} onChange={(v: number) => updateField('hp.ancestryHp', v)} className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={6} />
           </div>
           <div>
             <label className="text-xs font-semibold text-stone-600 mb-1 block">Class HP/Level</label>
-            <input type="number" min="0" value={formData.hp?.classHpPerLevel || 6} onChange={(e) => updateField('hp.classHpPerLevel', parseInt(e.target.value) || 6)} className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <NumberField
+min={0} value={formData.hp?.classHpPerLevel} onChange={(v: number) => updateField('hp.classHpPerLevel', v)} className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={6} />
           </div>
           <div>
             <label className="text-xs font-semibold text-stone-600 mb-1 block">Maximum</label>
@@ -896,11 +1006,13 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
           </div>
           <div>
             <label className="text-xs font-semibold text-stone-600 mb-1 block">Current</label>
-            <input type="number" min="0" value={formData.hp?.current || 0} onChange={(e) => updateField('hp.current', parseInt(e.target.value) || 0)} className="w-full px-2 py-1 border border-stone-300 rounded text-center text-red-700 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <NumberField
+min={0} value={formData.hp?.current} onChange={(v: number) => updateField('hp.current', v)} className="w-full px-2 py-1 border border-stone-300 rounded text-center text-red-700 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
           </div>
           <div>
             <label className="text-xs font-semibold text-stone-600 mb-1 block">Temporary</label>
-            <input type="number" min="0" value={formData.hp?.temporary || 0} onChange={(e) => updateField('hp.temporary', parseInt(e.target.value) || 0)} className="w-full px-2 py-1 border border-stone-300 rounded text-center text-blue-700 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <NumberField
+min={0} value={formData.hp?.temporary} onChange={(v: number) => updateField('hp.temporary', v)} className="w-full px-2 py-1 border border-stone-300 rounded text-center text-blue-700 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -925,15 +1037,18 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="text-sm font-semibold text-red-700 mb-1 block">Dying (0-4)</label>
-            <input type="number" min="0" max="4" value={formData.deathAndDying?.dying || 0} onChange={(e) => updateField('deathAndDying.dying', Math.min(parseInt(e.target.value) || 0, 4))} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500" />
+            <NumberField
+min={0} max={4} value={formData.deathAndDying?.dying} onChange={(v: number) => updateField('deathAndDying.dying', Math.min(v, 4))} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500" fallback={0} />
           </div>
           <div>
             <label className="text-sm font-semibold text-amber-700 mb-1 block">Wounded (0+)</label>
-            <input type="number" min="0" value={formData.deathAndDying?.wounded || 0} onChange={(e) => updateField('deathAndDying.wounded', parseInt(e.target.value) || 0)} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            <NumberField
+min={0} value={formData.deathAndDying?.wounded} onChange={(v: number) => updateField('deathAndDying.wounded', v)} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500" fallback={0} />
           </div>
           <div>
             <label className="text-sm font-semibold text-purple-700 mb-1 block">Doomed (0+)</label>
-            <input type="number" min="0" value={formData.deathAndDying?.doomed || 0} onChange={(e) => updateField('deathAndDying.doomed', parseInt(e.target.value) || 0)} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+            <NumberField
+min={0} value={formData.deathAndDying?.doomed} onChange={(v: number) => updateField('deathAndDying.doomed', v)} className="w-full px-3 py-2 border border-stone-300 rounded text-center text-xl font-bold text-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500" fallback={0} />
           </div>
         </div>
       </div>
@@ -995,7 +1110,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                   <option value="ranged">Ranged</option>
                 </select>
                 {renderProficiencySelector(`strikes.${index}.proficiencyRank`, strike.proficiencyRank as ProficiencyRank)}
-                <input type="number" value={strike.attackBonus} onChange={(e) => updateField(`strikes.${index}.attackBonus`, parseInt(e.target.value) || 0)} placeholder="Attack Bonus" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+value={strike.attackBonus} onChange={(v: number) => updateField(`strikes.${index}.attackBonus`, v)} placeholder="Attack Bonus" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
                 <input type="text" value={strike.damageRoll} onChange={(e) => updateField(`strikes.${index}.damageRoll`, e.target.value)} placeholder="1d6" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <input type="text" value={strike.damageType} onChange={(e) => updateField(`strikes.${index}.damageType`, e.target.value)} placeholder="Damage Type" className="px-2 py-1 border border-stone-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <input type="number" min="0" value={strike.range || ''} onChange={(e) => updateField(`strikes.${index}.range`, e.target.value === '' ? null : parseInt(e.target.value))} placeholder="Range (ft)" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -1064,7 +1180,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
               {renderProficiencySelector('spellcasting.spellAttackBonus.proficiencyRank', formData.spellcasting.spellAttackBonus?.proficiencyRank as ProficiencyRank || 'untrained')}
               <div className="flex items-center space-x-2">
                 <label className="text-sm text-stone-700">Item Bonus:</label>
-                <input type="number" value={formData.spellcasting.spellAttackBonus?.itemBonus || 0} onChange={(e) => updateField('spellcasting.spellAttackBonus.itemBonus', parseInt(e.target.value) || 0)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+value={formData.spellcasting.spellAttackBonus?.itemBonus} onChange={(v: number) => updateField('spellcasting.spellAttackBonus.itemBonus', v)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
               </div>
               <div className="text-center pt-2 border-t border-stone-300">
                 <div className="text-xs text-stone-600 mb-1">Total Attack</div>
@@ -1079,7 +1196,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
               {renderProficiencySelector('spellcasting.spellDC.proficiencyRank', formData.spellcasting.spellDC?.proficiencyRank as ProficiencyRank || 'untrained')}
               <div className="flex items-center space-x-2">
                 <label className="text-sm text-stone-700">Item Bonus:</label>
-                <input type="number" value={formData.spellcasting.spellDC?.itemBonus || 0} onChange={(e) => updateField('spellcasting.spellDC.itemBonus', parseInt(e.target.value) || 0)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+value={formData.spellcasting.spellDC?.itemBonus} onChange={(v: number) => updateField('spellcasting.spellDC.itemBonus', v)} className="flex-1 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
               </div>
               <div className="text-center pt-2 border-t border-stone-300">
                 <div className="text-xs text-stone-600 mb-1">Total DC</div>
@@ -1123,8 +1241,10 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                 <div key={rank} className="bg-white border border-stone-200 rounded-lg p-2">
                   <div className="text-xs font-semibold text-center text-stone-600 mb-1">Rank {rank}</div>
                   <div className="flex flex-col space-y-1">
-                    <input type="number" min="0" max="20" value={slots.total || 0} onChange={(e) => updateField(`spellcasting.slots.${rank}.total`, parseInt(e.target.value) || 0)} placeholder="Total" className="w-full px-1 py-0.5 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                    <input type="number" min="0" value={slots.used || 0} onChange={(e) => updateField(`spellcasting.slots.${rank}.used`, Math.min(parseInt(e.target.value) || 0, slots.total || 0))} placeholder="Used" className="w-full px-1 py-0.5 border border-purple-300 rounded text-xs text-center text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                    <NumberField
+min={0} max={20} value={slots.total} onChange={(v: number) => updateField(`spellcasting.slots.${rank}.total`, v)} placeholder="Total" className="w-full px-1 py-0.5 border border-stone-300 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-purple-500" fallback={0} />
+                    <NumberField
+min={0} max={slots.total || 0} value={slots.used} onChange={(v: number) => updateField(`spellcasting.slots.${rank}.used`, Math.min(v, slots.total || 0))} placeholder="Used" className="w-full px-1 py-0.5 border border-purple-300 rounded text-xs text-center text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500" fallback={0} />
                   </div>
                 </div>
               );
@@ -1178,7 +1298,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-2">
                 <label className="text-sm font-semibold text-stone-700">Focus Points:</label>
-                <input type="number" min="0" max="3" value={formData.spellcasting.focusSpells?.focusPoints?.current || 0} onChange={(e) => updateField('spellcasting.focusSpells.focusPoints.current', Math.min(parseInt(e.target.value) || 0, 3))} className="w-12 px-2 py-1 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <NumberField
+min={0} max={3} value={formData.spellcasting.focusSpells?.focusPoints?.current} onChange={(v: number) => updateField('spellcasting.focusSpells.focusPoints.current', Math.min(v, 3))} className="w-12 px-2 py-1 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-purple-500" fallback={0} />
                 <span className="text-sm text-stone-600">/ 3</span>
               </div>
               <button onClick={() => { const newFocusSpells = [...(formData.spellcasting.focusSpells?.spells || []), { name: 'New Focus Spell', tradition: formData.spellcasting.tradition }]; updateField('spellcasting.focusSpells.spells', newFocusSpells); updateField('spellcasting.focusSpells.focusPoints.total', 3); }} className="px-3 py-1 text-sm font-medium text-white bg-purple-700 hover:bg-purple-800 rounded-lg transition-colors flex items-center space-x-1">
@@ -1270,7 +1391,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
           {[{ key: 'pp', label: 'Platinum' }, { key: 'gp', label: 'Gold' }, { key: 'sp', label: 'Silver' }, { key: 'cp', label: 'Copper' }].map((currency) => (
             <div key={currency.key}>
               <label className="text-sm font-semibold text-stone-700 mb-1 block">{currency.label}</label>
-              <input type="number" min="0" value={formData.currency?.[currency.key] || 0} onChange={(e) => updateField(`currency.${currency.key}`, parseInt(e.target.value) || 0)} className="w-full px-2 py-2 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <NumberField
+min={0} value={formData.currency?.[currency.key]} onChange={(v: number) => updateField(`currency.${currency.key}`, v)} className="w-full px-2 py-2 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
             </div>
           ))}
         </div>
@@ -1303,9 +1425,11 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                 </button>
               </div>
               <div className="grid grid-cols-4 gap-2">
-                <input type="number" min="1" value={item.quantity} onChange={(e) => updateField(`inventory.${index}.quantity`, parseInt(e.target.value) || 1)} placeholder="Qty" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+min={1} value={item.quantity} onChange={(v: number) => updateField(`inventory.${index}.quantity`, v)} placeholder="Qty" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={1} />
                 <input type="text" value={item.bulk} onChange={(e) => updateField(`inventory.${index}.bulk`, e.target.value)} placeholder="Bulk" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <input type="number" min="0" value={item.value} onChange={(e) => updateField(`inventory.${index}.value`, parseInt(e.target.value) || 0)} placeholder="Value" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <NumberField
+min={0} value={item.value} onChange={(v: number) => updateField(`inventory.${index}.value`, v)} placeholder="Value" className="px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={0} />
                 <div className="flex items-center space-x-1 text-xs">
                   <label className="flex items-center">
                     <input type="checkbox" checked={item.equipped || false} onChange={(e) => updateField(`inventory.${index}.equipped`, e.target.checked)} className="mr-1" />
@@ -1380,7 +1504,8 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
                     <input type="text" value={feat.name} onChange={(e) => updateField(`feats.${key}.${index}.name`, e.target.value)} placeholder="Feat Name" className="flex-1 px-2 py-1 border border-stone-300 rounded font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <div className="flex items-center space-x-2 ml-2">
                       <label className="text-xs text-stone-600">Level:</label>
-                      <input type="number" min="1" max="20" value={feat.level} onChange={(e) => updateField(`feats.${key}.${index}.level`, parseInt(e.target.value) || 1)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <NumberField
+min={1} max={20} value={feat.level} onChange={(v: number) => updateField(`feats.${key}.${index}.level`, v)} className="w-16 px-2 py-1 border border-stone-300 rounded text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500" fallback={1} />
                     </div>
                     <button onClick={() => { const newFeats = formData.feats[key].filter((_: any, i: number) => i !== index); updateField(`feats.${key}`, newFeats); }} className="ml-2 px-2 py-1 text-red-600 hover:text-red-800">
                       <Trash2 className="w-4 h-4" />
@@ -1467,7 +1592,12 @@ export const Pathfinder2eCharacterEditor: React.FC<Pathfinder2eCharacterEditorPr
   );
 
   return (
-    <div className="bg-white border-2 border-stone-200 rounded-lg overflow-hidden shadow-lg">
+    <div
+      className="bg-white border-2 border-stone-200 rounded-lg overflow-hidden shadow-lg"
+      onInputCapture={noteInteraction}
+      onChangeCapture={noteInteraction}
+      onPointerDownCapture={noteInteraction}
+    >
       {renderHeader()}
       {renderTabs()}
       <div className="p-6">

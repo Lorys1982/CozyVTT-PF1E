@@ -5,7 +5,7 @@
  * derived stats, half/fifth values, and validation.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   Target,
@@ -19,13 +19,16 @@ import {
 } from 'lucide-react';
 import { Character } from '../../../types';
 import { CharacteristicBlock } from './components/CharacteristicBlock';
+import { orderedCharacteristics } from './characteristics';
 import { SanityTracker } from './components/SanityTracker';
 import { SkillsList } from './components/SkillsList';
 import { WeaponsList } from './components/WeaponsList';
 import { BackstorySection } from './components/BackstorySection';
 import { api } from '../../../services/api';
+import NumberField from '../../ui/NumberField';
 
 interface CallOfCthulhu7eCharacterEditorProps {
+  onDirtyChange?: (dirty: boolean) => void;
   character: Character;
   onSave: (data: any, showToast?: boolean, tokenImageUrl?: string) => Promise<void>;
   onCancel: () => void;
@@ -110,6 +113,7 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
   character,
   onSave,
   onCancel,
+  onDirtyChange,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [isSaving, setIsSaving] = useState(false);
@@ -136,6 +140,51 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
     conditions: data.conditions || {},
   }));
 
+  // Report the first edit up to whoever is hosting this sheet, so leaving with
+  // unsaved work can be caught. One effect on the whole form rather than a call
+  // in each of the ~40 field handlers: it cannot be forgotten when a field is
+  // added, and it catches changes made any way at all. The initial render is
+  // skipped, and the flag is reset after a successful save.
+  // Two conditions, both required, because either alone gets it wrong.
+  //
+  // The sheet recalculates derived values (the half/fifth columns, hit points,
+  // magic points, sanity) from effects that run as it mounts, so `formData`
+  // changes identity — and often value — before anyone has touched anything.
+  // Reporting on identity alone marked every investigator dirty on open, and
+  // comparing values alone still did, because those effects genuinely write
+  // different numbers to a sheet whose stored values had drifted.
+  //
+  // So: until the first real interaction the baseline simply follows the form,
+  // absorbing that settling. From the first interaction onwards the baseline is
+  // frozen and edits are measured against it — which also means typing a value
+  // and putting it back reads as clean, as it should.
+  const dirtyRef = useRef(false);
+  const hasInteractedRef = useRef(false);
+  const cleanSnapshotRef = useRef<string | null>(null);
+  if (cleanSnapshotRef.current === null) {
+    cleanSnapshotRef.current = JSON.stringify(formData);
+  }
+  // Always the current form state, for reading inside async callbacks.
+  const latestFormDataRef = useRef(formData);
+  latestFormDataRef.current = formData;
+
+  useEffect(() => {
+    if (!hasInteractedRef.current) {
+      cleanSnapshotRef.current = JSON.stringify(formData);
+      return;
+    }
+    const dirty = JSON.stringify(formData) !== cleanSnapshotRef.current;
+    if (dirty !== dirtyRef.current) {
+      dirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [formData, onDirtyChange]);
+
+  // Capture-phase, so it runs before the field's own handler updates state.
+  // Pointer events are included because plenty of edits here are button
+  // presses (add a skill, adjust a track) rather than typing.
+  const noteInteraction = () => { hasInteractedRef.current = true; };
+
   // Token image state
   const [tokenImageFile, setTokenImageFile] = useState<File | null>(null);
   const [tokenImagePreview, setTokenImagePreview] = useState<string | null>(
@@ -144,13 +193,25 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
 
   // Auto-calculate half and fifth values for characteristics
   useEffect(() => {
-    if (formData.characteristics) {
-      const updated = { ...formData.characteristics };
-      Object.keys(updated).forEach((char) => {
-        const regular = updated[char].regular || 0;
-        updated[char].half = Math.floor(regular / 2);
-        updated[char].fifth = Math.floor(regular / 5);
-      });
+    if (!formData.characteristics) return;
+
+    // Rebuild each entry rather than spreading one level and assigning into it:
+    // a shallow copy shares the nested characteristic objects with state, so the
+    // old version mutated `formData` in place.
+    const updated: Record<string, any> = {};
+    let changed = false;
+    Object.keys(formData.characteristics).forEach((char) => {
+      const entry = formData.characteristics[char];
+      const regular = entry.regular || 0;
+      const half = Math.floor(regular / 2);
+      const fifth = Math.floor(regular / 5);
+      if (entry.half !== half || entry.fifth !== fifth) changed = true;
+      updated[char] = { ...entry, half, fifth };
+    });
+
+    // Skip the update when the derived columns already agree, so simply opening
+    // a sheet does not queue a state change.
+    if (changed) {
       setFormData((prev: any) => ({ ...prev, characteristics: updated }));
     }
   }, [
@@ -269,6 +330,16 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
 
   // Handle save
   const handleSave = async () => {
+    // A completed save means nothing is pending any more.
+    // Unless the sheet was edited again while the save was in flight, which the
+    // recheck preserves.
+    const savedSnapshot = JSON.stringify(formData);
+    const markClean = () => {
+      cleanSnapshotRef.current = savedSnapshot;
+      const stillDirty = JSON.stringify(latestFormDataRef.current) !== savedSnapshot;
+      dirtyRef.current = stillDirty;
+      onDirtyChange?.(stillDirty);
+    };
     setIsSaving(true);
     try {
       // Include color customization in saved data
@@ -307,6 +378,7 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
 
       // Pass the tokenImageUrl as a separate parameter if it was uploaded
       await onSave(updatedData, true, newTokenImageUrl);
+      markClean();
     } catch (error) {
       console.error('Failed to save character:', error);
     } finally {
@@ -453,7 +525,10 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
         </button>
       </div>
 
-      <div className="flex items-start space-x-4 pr-48">
+      {/* pr-64, matching the other sheets: the absolute Save/Cancel cluster is
+          203px wide and starts 64px in, so it needs more clearance than the
+          pr-48 that was here. */}
+      <div className="flex items-start space-x-4 pr-64">
         {/* Token Image */}
         <div className="flex-shrink-0 relative">
           <label htmlFor="token-upload" className="cursor-pointer group">
@@ -488,8 +563,9 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
           )}
         </div>
 
-        {/* Character Info */}
-        <div className="flex-1 space-y-3">
+        {/* Character Info — min-w-0 alongside flex-1 so the column can shrink
+            below its content width and stay inside the reserved padding. */}
+        <div className="flex-1 min-w-0 space-y-3">
           <input
             type="text"
             value={formData.investigatorName || ''}
@@ -499,13 +575,11 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
           />
 
           <div className="grid grid-cols-3 gap-3">
-            <input
-              type="text"
-              value={formData.playerName || ''}
-              onChange={(e) => setFormData({ ...formData, playerName: e.target.value })}
-              placeholder="Player Name"
-              className="text-sm bg-white/10 border border-white/30 rounded px-2 py-1 text-parchment placeholder:text-parchment-light/50 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+            {/* Read-only: the player name is whoever owns this investigator,
+                filled from their display name at creation. */}
+            <span className="text-sm px-2 py-1 text-parchment self-center">
+              {formData.playerName || '—'}
+            </span>
             <input
               type="text"
               value={formData.occupation || ''}
@@ -523,12 +597,12 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
           </div>
 
           <div className="grid grid-cols-4 gap-3">
-            <input
-              type="number"
-              value={formData.age || ''}
-              onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
+            <NumberField
+              value={formData.age ?? 0}
+              onChange={(v: number) => setFormData({ ...formData, age: v })}
               placeholder="Age"
               className="text-sm bg-white/10 border border-white/30 rounded px-2 py-1 text-parchment placeholder:text-parchment-light/50 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              fallback={0}
             />
             <input
               type="text"
@@ -593,7 +667,7 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
       <div>
         <h3 className="text-lg font-bold text-sepia-900 mb-4">Characteristics</h3>
         <div className="grid grid-cols-4 md:grid-cols-8 gap-4">
-          {Object.keys(formData.characteristics || {}).map((charKey) => (
+          {orderedCharacteristics(formData.characteristics).map((charKey) => (
             <CharacteristicBlock
               key={charKey}
               label={charKey}
@@ -702,56 +776,56 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
         <div className="grid grid-cols-3 gap-4">
           <div className="bg-white border border-sepia-400 rounded-md p-3">
             <label className="text-xs text-sepia-600 uppercase block mb-1">Current HP</label>
-            <input
-              type="number"
-              value={formData.derivedStats?.hp?.current || 0}
-              onChange={(e) => {
+            <NumberField
+value={formData.derivedStats?.hp?.current}
+              onChange={(v: number) => {
                 setFormData({
                   ...formData,
                   derivedStats: {
                     ...formData.derivedStats,
-                    hp: { ...formData.derivedStats.hp, current: parseInt(e.target.value) || 0 },
+                    hp: { ...formData.derivedStats.hp, current: v },
                   },
                 });
               }}
               className="w-full text-center text-2xl font-bold text-red-700 border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-red-500 rounded"
+            fallback={0}
             />
           </div>
           <div className="bg-white border border-sepia-400 rounded-md p-3">
             <label className="text-xs text-sepia-600 uppercase block mb-1">Current MP</label>
-            <input
-              type="number"
-              value={formData.derivedStats?.magicPoints?.current || 0}
-              onChange={(e) => {
+            <NumberField
+value={formData.derivedStats?.magicPoints?.current}
+              onChange={(v: number) => {
                 setFormData({
                   ...formData,
                   derivedStats: {
                     ...formData.derivedStats,
                     magicPoints: {
                       ...formData.derivedStats.magicPoints,
-                      current: parseInt(e.target.value) || 0,
+                      current: v,
                     },
                   },
                 });
               }}
               className="w-full text-center text-2xl font-bold text-purple-700 border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 rounded"
+            fallback={0}
             />
           </div>
           <div className="bg-white border border-sepia-400 rounded-md p-3">
             <label className="text-xs text-sepia-600 uppercase block mb-1">Luck Score</label>
-            <input
-              type="number"
-              value={formData.derivedStats?.luck?.score || 0}
-              onChange={(e) => {
+            <NumberField
+value={formData.derivedStats?.luck?.score}
+              onChange={(v: number) => {
                 setFormData({
                   ...formData,
                   derivedStats: {
                     ...formData.derivedStats,
-                    luck: { ...formData.derivedStats.luck, score: parseInt(e.target.value) || 0 },
+                    luck: { ...formData.derivedStats.luck, score: v },
                   },
                 });
               }}
               className="w-full text-center text-2xl font-bold text-yellow-700 border-none bg-transparent focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded"
+            fallback={0}
             />
           </div>
         </div>
@@ -822,16 +896,15 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
           </div>
           <div>
             <label className="text-sm text-sepia-700 font-semibold block mb-1">Cash on Hand</label>
-            <input
-              type="number"
-              value={formData.wealth?.cash || 0}
-              onChange={(e) =>
-                setFormData({
+            <NumberField
+value={formData.wealth?.cash}
+              onChange={(v: number) => setFormData({
                   ...formData,
-                  wealth: { ...formData.wealth, cash: parseInt(e.target.value) || 0 },
+                  wealth: { ...formData.wealth, cash: v },
                 })
               }
               className="w-full bg-white border border-sepia-400 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sepia-500"
+            fallback={0}
             />
           </div>
         </div>
@@ -895,7 +968,12 @@ export const CallOfCthulhu7eCharacterEditor: React.FC<CallOfCthulhu7eCharacterEd
 
   // Main render
   return (
-    <div className="glass-panel overflow-hidden">
+    <div
+      className="glass-panel overflow-hidden"
+      onInputCapture={noteInteraction}
+      onChangeCapture={noteInteraction}
+      onPointerDownCapture={noteInteraction}
+    >
       {renderHeader()}
       {renderTabs()}
       <div className="p-6 bg-parchment max-h-[calc(100vh-200px)] overflow-y-auto">

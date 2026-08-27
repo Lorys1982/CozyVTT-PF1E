@@ -30,6 +30,7 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { useCampaign } from '@/contexts/CampaignContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTokenListIgnoringMovement, useCombatState, usePeekTokenId, useGameStore } from '@/stores/gameStore';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -141,6 +142,12 @@ interface CombatantRowProps {
   /** This token is being pointed at — from this list, or from the map. */
   isPeeked: boolean;
   isDM: boolean;
+  /**
+   * Whether this viewer may roll initiative for this combatant. True for the DM
+   * on every row, and for a player only on a token they control — so a player
+   * sees one die, beside their own name.
+   */
+  canRoll: boolean;
   mapId: string | null;
   isDragOver: boolean;
   onSetInitiative: (tokenId: string, value: number | null) => void;
@@ -153,7 +160,7 @@ interface CombatantRowProps {
 }
 
 function CombatantRow({
-  entry, isActive, isPeeked, isDM, isDragOver,
+  entry, isActive, isPeeked, isDM, canRoll, isDragOver,
   onSetInitiative, onRoll, onRemove,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: CombatantRowProps) {
@@ -265,23 +272,28 @@ function CombatantRow({
         )}
       </div>
 
-      {/* DM actions */}
-      {isDM && (
+      {/* Actions. Rolling and removing are gated separately: a player may roll
+          for their own combatant, but only the DM decides who is in the fight. */}
+      {(canRoll || isDM) && (
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={() => onRoll(entry.tokenId)}
-            title="Roll initiative for this token"
-            className="p-1 rounded hover:bg-moss-green/10 text-stone-gray hover:text-brand-ink transition-colors"
-          >
-            <Dices className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => onRemove(entry.tokenId)}
-            title="Remove from initiative"
-            className="p-1 rounded hover:bg-danger/10 text-stone-gray hover:text-danger-ink transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {canRoll && (
+            <button
+              onClick={() => onRoll(entry.tokenId)}
+              title={isDM ? 'Roll initiative for this token' : 'Roll your initiative'}
+              className="p-1 rounded hover:bg-moss-green/10 text-stone-gray hover:text-brand-ink transition-colors"
+            >
+              <Dices className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {isDM && (
+            <button
+              onClick={() => onRemove(entry.tokenId)}
+              title="Remove from initiative"
+              className="p-1 rounded hover:bg-danger/10 text-stone-gray hover:text-danger-ink transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -294,6 +306,7 @@ function CombatantRow({
 
 export default function InitiativeTracker() {
   const { userRole, currentMap } = useCampaign();
+  const { user } = useAuth();
   // Initiative reads token names/ids, not coordinates — skip move re-renders.
   const tokens = useTokenListIgnoringMovement();
   const { socket } = useWebSocket();
@@ -315,6 +328,28 @@ export default function InitiativeTracker() {
   const isDM = userRole === 'DM';
   const mapId = currentMap?.id ?? null;
 
+  /**
+   * Who may roll for a given combatant: the DM for anyone, a player only for a
+   * token they control. `controlledBy` is the same field that decides who may
+   * move a token, so the die appears exactly where the player already has
+   * authority. The server enforces the same rule — this only decides whether to
+   * draw the button.
+   */
+  const canRollFor = useCallback((tokenId: string) => {
+    if (isDM) return true;
+    if (!user || userRole === 'SPECTATOR') return false;
+    // Only before the fight starts: re-rolling re-sorts the order, and the turn
+    // pointer walks it by position, so a mid-combat change can skip someone's
+    // turn. The server enforces the same rule.
+    if (combatState.active) return false;
+    return tokens.some((t) => t.id === tokenId && t.controlledBy === user.id);
+  }, [isDM, user, userRole, combatState.active, tokens]);
+
+  /** A player has a combatant of their own that still has no initiative value. */
+  const playerNeedsToRoll = !isDM && combatState.combatants.some(
+    (c) => c.initiative === null && canRollFor(c.tokenId)
+  );
+
   // ── DM Actions ───────────────────────────────────────────────────────────
 
   const handleAddToken = useCallback((token: Token) => {
@@ -335,20 +370,15 @@ export default function InitiativeTracker() {
   const handleRollForToken = useCallback((tokenId: string) => {
     if (!socket || !mapId) return;
 
-    // Try to find a linked character to get the system-specific expression
+    // No expression is sent. The server derives initiative from the combatant's
+    // character sheet or stat block — it holds both, and this panel holds
+    // neither. It also means a roll from here and a roll from the map's
+    // right-click menu produce the same number by construction.
+    //
+    // This used to send a flat `1d20` for everything, so a Dexterity 20 rogue
+    // rolled exactly what a Dexterity 8 wizard did.
     const token = tokens.find((t) => t.id === tokenId);
-    let expression: string | null = null;
-
-    if (token?.characterId) {
-      // We'll derive the expression client-side from the character in context
-      // (characters are loaded in CampaignContext via the roster)
-      // Fall back to 1d20 if we can't determine the system
-      expression = '1d20';
-    } else {
-      expression = '1d20';
-    }
-
-    socket.emitInitiativeRoll({ tokenId, mapId, expression, characterName: token?.name });
+    socket.emitInitiativeRoll({ tokenId, mapId, characterName: token?.name });
   }, [socket, mapId, tokens]);
 
   const handleStart = useCallback(() => {
@@ -466,6 +496,7 @@ export default function InitiativeTracker() {
                     isActive={combatState.active && entry.tokenId === combatState.currentTokenId}
                     isPeeked={entry.tokenId === peekTokenId}
                     isDM={isDM}
+                    canRoll={canRollFor(entry.tokenId)}
                     mapId={mapId}
                     isDragOver={isDM && dragOverTokenId === entry.tokenId}
                     onSetInitiative={handleSetInitiative}
@@ -540,6 +571,14 @@ export default function InitiativeTracker() {
             {isDM && hasCombatants && !combatState.active && (
               <p className="text-xs text-stone-gray text-center">
                 Drag to reorder · Click a value to edit · <Dices className="w-3 h-3 inline" /> to roll
+              </p>
+            )}
+
+            {/* The same nudge for a player who has a combatant of their own and
+                has not rolled yet — the die is small and easy to miss. */}
+            {!isDM && hasCombatants && !combatState.active && playerNeedsToRoll && (
+              <p className="text-xs text-stone-gray text-center">
+                <Dices className="w-3 h-3 inline" /> to roll your initiative
               </p>
             )}
           </div>

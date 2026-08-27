@@ -1,7 +1,6 @@
 import { Server } from 'socket.io';
 import { AuthenticatedSocket, authenticateSocket, authenticateCampaign } from './auth';
-import { prisma } from '../config/database';
-import { sendSystemMessage } from './utils';
+import { broadcastPresence, getOnlineUserIds } from './utils';
 import logger from '../utils/logger';
 import { registerTokenHandlers } from './handlers/tokens';
 import { registerDiceHandlers } from './handlers/dice';
@@ -81,13 +80,20 @@ export function registerEventHandlers(io: Server): void {
         // SECURITY: Enforce single campaign context per socket
         // Leave previous campaign room if exists
         if (socket.campaignId && socket.campaignId !== data.campaignId) {
-          await socket.leave(socket.campaignId);
+          const previousCampaignId = socket.campaignId;
+          await socket.leave(previousCampaignId);
 
           // Notify old campaign that user left
-          socket.to(socket.campaignId).emit('user.left', {
+          socket.to(previousCampaignId).emit('user.left', {
             userId: socket.userId,
             timestamp: new Date().toISOString(),
           });
+
+          // Re-broadcast the old campaign's presence too. The roster is driven
+          // by the full `presence.state` snapshot, so telling only the new
+          // campaign would leave the old one showing this user online forever.
+          // Recomputed after the leave above, so a second tab still counts.
+          await broadcastPresence(previousCampaignId);
         }
 
         // Join the campaign room
@@ -102,31 +108,41 @@ export function registerEventHandlers(io: Server): void {
           timestamp: new Date().toISOString(),
         });
 
-        // Get user information for system message
-        const user = await prisma.user.findUnique({
-          where: { id: socket.userId },
-          select: { displayName: true },
-        });
-
-        // Send system message to campaign
-        if (user) {
-          await sendSystemMessage(
-            data.campaignId,
-            `${user.displayName} has joined the campaign.`,
-            { userId: socket.userId, action: 'user.joined' }
-          );
-        }
-
-        // Also emit user.joined event for backwards compatibility
+        // No "X has joined" chat message. This handler runs on every socket
+        // authentication — so once per page load, per refresh and per recovered
+        // network blip — and each one wrote a permanent Message row as well as
+        // a live notification. A player reloading twice buried the actual
+        // conversation. Who is present is now shown as a dot in the campaign
+        // roster instead, which is what the message was really trying to say.
         socket.to(data.campaignId).emit('user.joined', {
           userId: socket.userId,
           timestamp: new Date().toISOString(),
         });
 
+        await broadcastPresence(data.campaignId);
+
         logger.info('authenticated', { userId: socket.userId, campaignId: data.campaignId, role: result.role });
       } catch (error) {
         logger.error('authenticate failed', { err: error });
         socket.emit('error', { message: 'Authentication failed' });
+      }
+    });
+
+    // ============================================
+    // PRESENCE REQUEST
+    // A client asking who is online right now.
+    // ============================================
+    // Presence is pushed on every join and leave, but a component that mounts
+    // after this socket authenticated would have missed its own snapshot and
+    // would then show everyone offline until somebody else moved. This lets it
+    // ask. Replies to the caller alone — nobody else's view has changed.
+    socket.on('presence.request', async () => {
+      if (!socket.campaignId) return;
+      try {
+        const onlineUserIds = await getOnlineUserIds(socket.campaignId);
+        socket.emit('presence.state', { campaignId: socket.campaignId, onlineUserIds });
+      } catch (error) {
+        logger.error('presence.request failed', { err: error });
       }
     });
 
@@ -156,30 +172,16 @@ export function registerEventHandlers(io: Server): void {
 
       // Notify campaign members if user was in a campaign
       if (socket.campaignId) {
-        // Get user information for system message
-        const user = await prisma.user.findUnique({
-          where: { id: socket.userId },
-          select: { displayName: true },
-        });
-
-        // Send system message to campaign (best-effort — campaign may have been deleted)
-        if (user) {
-          try {
-            await sendSystemMessage(
-              socket.campaignId,
-              `${user.displayName} has left the campaign.`,
-              { userId: socket.userId, action: 'user.left' }
-            );
-          } catch {
-            // Swallow — campaign was deleted or DB unavailable; disconnect must still complete cleanly
-          }
-        }
-
-        // Also emit user.left event for backwards compatibility
+        // No "X has left" chat message — a dropped connection is not news, and
+        // writing one per blip is what filled the log. Presence covers it.
         socket.to(socket.campaignId).emit('user.left', {
           userId: socket.userId,
           timestamp: new Date().toISOString(),
         });
+
+        // Recomputed AFTER this socket has left the room, so a user with a
+        // second tab open still reads as online.
+        await broadcastPresence(socket.campaignId);
       }
 
       // Leave all rooms

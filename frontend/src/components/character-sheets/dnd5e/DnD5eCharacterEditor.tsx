@@ -5,7 +5,7 @@
  * color customization, and token upload functionality.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Swords,
   Package,
@@ -22,8 +22,15 @@ import { Character, AssetType } from '../../../types';
 import { api } from '../../../services/api';
 import { useServerConfigQuery } from '@/hooks/queries';
 import { getUploadLimit, formatUploadLimit } from '@/utils/uploadLimits';
+import NumberField from '../../ui/NumberField';
+import { passiveScore } from '@/utils/rules/dnd5e';
+import {
+  dnd5eInitiativeModifier,
+  dnd5eBackfilledInitiativeBonus,
+} from '@/utils/rules/initiative';
 
 interface DnD5eCharacterEditorProps {
+  onDirtyChange?: (dirty: boolean) => void;
   character: Character;
   onSave: (data: any, showToast?: boolean, tokenImageUrl?: string) => Promise<void>;
   onCancel: () => void;
@@ -103,6 +110,7 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
   character,
   onSave,
   onCancel,
+  onDirtyChange,
 }) => {
   const [activeTab, setActiveTab] = useState<TabId>('stats');
   const [isSaving, setIsSaving] = useState(false);
@@ -146,6 +154,51 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
     personality: data.personality || {},
     alliesAndOrganizations: data.alliesAndOrganizations || { name: '', description: '' },
   }));
+
+  // Report unsaved work up to whoever is hosting this sheet, so leaving with
+  // pending edits can be caught. One effect over the whole form rather than a
+  // call in each of the ~40 field handlers: it cannot be forgotten when a field
+  // is added, and it catches changes made any way at all.
+  //
+  // Two conditions, both required, because either alone gets it wrong.
+  //
+  // These editors recompute derived values from effects that run as the sheet
+  // mounts, so `formData` changes identity — and often value — before anyone
+  // has touched anything. Reporting on identity alone marked every sheet dirty
+  // on open, and comparing values alone still did, because those effects
+  // genuinely write different numbers to a sheet whose stored values had
+  // drifted.
+  //
+  // So: until the first real interaction the baseline simply follows the form,
+  // absorbing that settling. From the first interaction onwards the baseline is
+  // frozen and edits are measured against it — which also means typing a value
+  // and putting it back reads as clean, as it should.
+  const dirtyRef = useRef(false);
+  const hasInteractedRef = useRef(false);
+  const cleanSnapshotRef = useRef<string | null>(null);
+  if (cleanSnapshotRef.current === null) {
+    cleanSnapshotRef.current = JSON.stringify(formData);
+  }
+  // Always the current form state, for reading inside async callbacks.
+  const latestFormDataRef = useRef(formData);
+  latestFormDataRef.current = formData;
+
+  useEffect(() => {
+    if (!hasInteractedRef.current) {
+      cleanSnapshotRef.current = JSON.stringify(formData);
+      return;
+    }
+    const dirty = JSON.stringify(formData) !== cleanSnapshotRef.current;
+    if (dirty !== dirtyRef.current) {
+      dirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [formData, onDirtyChange]);
+
+  // Capture-phase, so it runs before the field's own handler updates state.
+  // Pointer events are included because plenty of edits here are button
+  // presses (add an item, adjust a track) rather than typing.
+  const noteInteraction = () => { hasInteractedRef.current = true; };
 
   // Token image state (file will be uploaded on save)
   const [tokenImageFile, setTokenImageFile] = useState<File | null>(null);
@@ -317,8 +370,37 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
         }
       });
 
-      if (hasChanges) {
-        setFormData((prev: any) => ({ ...prev, skills: updatedSkills }));
+      // Keep the stored passive Perception in step with the Perception bonus.
+      // Both sheets now *display* a derived value, so this is not what makes
+      // them agree — but the field is part of the saved character and is read
+      // by exports and by anything else consuming the blob, so leaving it at a
+      // stale number would just move the same lie somewhere less visible.
+      //
+      // A sheet that carries a total but no `passivePerceptionBonus` predates
+      // that field, so the difference is read back as the bonus. Without this a
+      // character imported with the Observant feat would silently lose its +5
+      // the first time the sheet was saved.
+      const perceptionBonus = updatedSkills.perception?.bonus ?? 0;
+      const storedTotal = formData.passivePerception;
+      const backfilledPassiveBonus =
+        formData.passivePerceptionBonus === undefined || formData.passivePerceptionBonus === null
+          ? (typeof storedTotal === 'number' && Number.isFinite(storedTotal)
+              ? storedTotal - passiveScore(perceptionBonus)
+              : 0)
+          : null;
+      const passiveBonus = backfilledPassiveBonus ?? formData.passivePerceptionBonus ?? 0;
+      const newPassivePerception = passiveScore(perceptionBonus + passiveBonus);
+
+      const passiveChanged =
+        formData.passivePerception !== newPassivePerception || backfilledPassiveBonus !== null;
+
+      if (hasChanges || passiveChanged) {
+        setFormData((prev: any) => ({
+          ...prev,
+          skills: updatedSkills,
+          passivePerceptionBonus: passiveBonus,
+          passivePerception: newPassivePerception,
+        }));
       }
     }
   }, [
@@ -334,6 +416,48 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
       formData.skills?.[skill]?.proficient,
       formData.skills?.[skill]?.expertise,
     ]),
+  ]);
+
+  /**
+   * The initiative modifier shown on the sheet: Dexterity plus the manual bonus.
+   * Derived on every render rather than read from storage, so what is displayed
+   * is always what will be rolled.
+   */
+  const initiativeModifier = dnd5eInitiativeModifier(formData);
+
+  /**
+   * Convert a character saved before `initiativeBonus` existed, and keep the
+   * stored total in step afterwards.
+   *
+   * Initiative used to be one hand-typed number. Someone with the Alert feat and
+   * Dexterity 14 typed `7`; now that the total is derived, that has to be read
+   * back as "Dexterity +2, other +5" or their character would quietly lose five
+   * points. The conversion runs once, only where the new field is absent.
+   *
+   * The stored `initiative` is then maintained as the derived total. Nothing
+   * displays it any more, but it is part of the saved character and is read by
+   * exports, so leaving it stale would just hide the same inconsistency
+   * somewhere less visible.
+   */
+  useEffect(() => {
+    const backfilled = dnd5eBackfilledInitiativeBonus(formData);
+    const bonus = backfilled ?? formData.initiativeBonus ?? 0;
+    const total = dnd5eInitiativeModifier({ ...formData, initiativeBonus: bonus });
+
+    const needsBonus = backfilled !== null;
+    const needsTotal = formData.initiative !== total;
+    if (!needsBonus && !needsTotal) return;
+
+    setFormData((prev: any) => ({
+      ...prev,
+      ...(needsBonus ? { initiativeBonus: bonus } : {}),
+      initiative: total,
+    }));
+  }, [
+    formData.stats?.dexterity?.score,
+    formData.stats?.dexterity?.modifier,
+    formData.initiativeBonus,
+    formData.initiative,
   ]);
 
   // Handle token image upload
@@ -398,6 +522,15 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
 
   // Handle form submission
   const handleSubmit = async () => {
+    // A completed save means nothing is pending any more — unless the sheet was
+    // edited again while the save was in flight, which the recheck preserves.
+    const savedSnapshot = JSON.stringify(formData);
+    const markClean = () => {
+      cleanSnapshotRef.current = savedSnapshot;
+      const stillDirty = JSON.stringify(latestFormDataRef.current) !== savedSnapshot;
+      dirtyRef.current = stillDirty;
+      onDirtyChange?.(stillDirty);
+    };
     if (!validateForm()) {
       return;
     }
@@ -467,6 +600,7 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
 
       // Pass the tokenImageUrl as a separate parameter if it was uploaded
       await onSave(updatedData, true, newTokenImageUrl);
+      markClean();
     } catch (error) {
       console.error('Error saving character:', error);
       setErrors({ ...errors, submit: 'Failed to save character. Please try again.' });
@@ -613,8 +747,15 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
           </div>
         )}
 
-      <div className="flex items-start justify-between">
-        <div className="flex items-start space-x-4">
+      {/* pr-64 reserves the strip the absolutely-positioned Save/Cancel cluster
+          and palette button occupy above. Without it the Experience Points
+          field sits underneath them. */}
+      <div className="flex items-start justify-between pr-64">
+        {/* min-w-0 so this column can shrink. Flex children default to
+            min-width:auto, which lets the character-name input push out past
+            the reserved padding on a narrow window and back under the
+            buttons. */}
+        <div className="flex items-start space-x-4 min-w-0">
           {/* Token Image Upload */}
           <div className="flex-shrink-0 relative group">
             <input
@@ -656,37 +797,36 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
           </div>
 
           {/* Character Info */}
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0">
             <input
               type="text"
               value={formData.characterName || ''}
               onChange={(e) => updateField('characterName', e.target.value)}
               placeholder="Character Name"
-              className={`text-3xl font-bold bg-white/10 border-2 ${
+              className={`w-full text-3xl font-bold bg-white/10 border-2 ${
                 errors.characterName ? 'border-red-300' : 'border-white/20'
               } rounded px-3 py-1 ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`}
             />
+            {/* Player name is who owns this character, not free text — it is
+                filled from their display name when the character is created
+                and is shown rather than edited. */}
             <div className={`flex items-center space-x-3 opacity-80`}>
-              <input
-                type="text"
-                value={formData.playerName || ''}
-                onChange={(e) => updateField('playerName', e.target.value)}
-                placeholder="Player Name"
-                className={`bg-white/10 border border-white/20 rounded px-2 py-0.5 text-sm ${headerTextColor} placeholder-current/50 focus:outline-none focus:border-white/40`}
-              />
+              <span className={`text-sm ${headerTextColor}`}>
+                {formData.playerName || '—'}
+              </span>
             </div>
             <div className={`flex items-center flex-wrap gap-2 opacity-80`}>
               <div className="flex items-center space-x-2">
                 <span className="text-xs">Level</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={formData.level || 1}
-                  onChange={(e) => updateField('level', parseInt(e.target.value) || 1)}
+                <NumberField
+min={1}
+                  max={20}
+                  value={formData.level}
+                  onChange={(v: number) => updateField('level', v)}
                   className={`w-16 bg-white/10 border ${
                     errors.level ? 'border-red-300' : 'border-white/20'
                   } rounded px-2 py-0.5 text-sm ${headerTextColor} focus:outline-none focus:border-white/40`}
+                fallback={1}
                 />
               </div>
               <input
@@ -709,12 +849,12 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
 
         <div className="text-right space-y-1">
           <div className={`text-xs opacity-70`}>Experience Points</div>
-          <input
-            type="number"
-            min="0"
-            value={formData.experiencePoints || 0}
-            onChange={(e) => updateField('experiencePoints', parseInt(e.target.value) || 0)}
+          <NumberField
+min={0}
+            value={formData.experiencePoints}
+            onChange={(v: number) => updateField('experiencePoints', v)}
             className={`w-24 text-xl font-bold bg-white/10 border border-white/20 rounded px-2 py-1 ${headerTextColor} text-right focus:outline-none focus:border-white/40`}
+          fallback={0}
           />
         </div>
       </div>
@@ -779,13 +919,13 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-semibold text-stone-700 mb-1">Proficiency Bonus</label>
-          <input
-            type="number"
-            min="2"
-            max="6"
-            value={formData.proficiencyBonus || 2}
-            onChange={(e) => updateField('proficiencyBonus', parseInt(e.target.value) || 2)}
+          <NumberField
+min={2}
+            max={6}
+            value={formData.proficiencyBonus}
+            onChange={(v: number) => updateField('proficiencyBonus', v)}
             className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+          fallback={2}
           />
         </div>
         <div className="flex items-center space-x-2 pt-6">
@@ -837,17 +977,16 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
                     {formatModifier(abilityData.modifier)}
                   </span>
                 </div>
-                <input
-                  type="number"
-                  min="1"
-                  max="30"
+                <NumberField
+min={1}
+                  max={30}
                   value={abilityData.score}
-                  onChange={(e) =>
-                    updateField(`stats.${ability}.score`, parseInt(e.target.value) || 10)
+                  onChange={(v: number) => updateField(`stats.${ability}.score`, v)
                   }
                   className={`w-16 px-2 py-1 text-center font-semibold border-2 ${
                     error ? 'border-red-500' : 'border-stone-300'
                   } rounded focus:outline-none focus:ring-2 focus:ring-red-500`}
+                fallback={10}
                 />
                 {error && <div className="text-xs text-red-600">{error}</div>}
               </div>
@@ -952,12 +1091,33 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
         </div>
       </div>
 
-      {/* Passive Perception */}
+      {/* Passive Perception — derived from the Perception bonus plus anything
+          that is not the skill itself, never from the stored field, so this
+          matches the view exactly. */}
       <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
         <h3 className="text-lg font-semibold text-stone-800 mb-2">Passive Perception</h3>
-        <div className="text-2xl font-bold text-stone-800">
-          {10 + (formData.skills?.perception?.bonus || 0)}
+        <div className="flex items-end gap-4">
+          <div className="text-2xl font-bold text-stone-800">
+            {passiveScore(
+              (formData.skills?.perception?.bonus ?? 0) + (formData.passivePerceptionBonus ?? 0)
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-stone-600 mb-1">
+              Other bonus
+            </label>
+            <NumberField
+              value={formData.passivePerceptionBonus ?? 0}
+              onChange={(v: number) => updateField('passivePerceptionBonus', v)}
+              className="w-20 px-2 py-1 border border-stone-300 rounded text-center font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+              fallback={0}
+            />
+          </div>
         </div>
+        <p className="mt-2 text-xs text-stone-500">
+          10 + your Perception bonus, plus anything that raises passive scores
+          without changing the skill — the Observant feat (+5), for instance.
+        </p>
       </div>
     </div>
   );
@@ -976,32 +1136,60 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
       <div className="grid grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-semibold text-stone-700 mb-1">Armor Class</label>
-          <input
-            type="number"
-            min="0"
-            value={formData.armorClass || 10}
-            onChange={(e) => updateField('armorClass', parseInt(e.target.value) || 10)}
+          <NumberField
+min={0}
+            value={formData.armorClass}
+            onChange={(v: number) => updateField('armorClass', v)}
             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+          fallback={10}
           />
         </div>
         <div>
+          {/* Derived, not typed. Initiative is the Dexterity modifier plus the
+              "Other bonus" below — it used to be a single hand-typed number
+              that nothing kept in step with Dexterity, and that the roll then
+              ignored entirely. */}
           <label className="block text-sm font-semibold text-stone-700 mb-1">Initiative</label>
-          <input
-            type="number"
-            value={formData.initiative || 0}
-            onChange={(e) => updateField('initiative', parseInt(e.target.value) || 0)}
-            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
-          />
+          <div
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold bg-stone-100 text-stone-800"
+            title={`Dexterity ${formatModifier(formData.stats?.dexterity?.modifier ?? 0)}${
+              formData.initiativeBonus ? `, other ${formatModifier(formData.initiativeBonus)}` : ''
+            }`}
+          >
+            {formatModifier(initiativeModifier)}
+          </div>
         </div>
         <div>
           <label className="block text-sm font-semibold text-stone-700 mb-1">Speed (ft)</label>
-          <input
-            type="number"
-            min="0"
-            value={formData.speed || 30}
-            onChange={(e) => updateField('speed', parseInt(e.target.value) || 30)}
+          <NumberField
+min={0}
+            value={formData.speed}
+            onChange={(v: number) => updateField('speed', v)}
             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+          fallback={30}
           />
+        </div>
+      </div>
+
+      {/* Everything that is not Dexterity. Kept as one box rather than a list of
+          toggles because the sources are open-ended — the Alert feat's +5, Jack
+          of All Trades and Remarkable Athlete's share of the proficiency bonus,
+          subclasses that swap in Wisdom or Intelligence. */}
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-stone-700 mb-1">
+            Initiative — other bonus
+          </label>
+          <NumberField
+            value={formData.initiativeBonus ?? 0}
+            onChange={(v: number) => updateField('initiativeBonus', v)}
+            className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+            fallback={0}
+          />
+          <p className="mt-1 text-xs text-stone-500">
+            Alert (+5), Jack of All Trades, Remarkable Athlete, and anything else
+            beyond your Dexterity modifier.
+          </p>
         </div>
       </div>
 
@@ -1011,32 +1199,32 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1">Maximum</label>
-            <input
-              type="number"
-              min="0"
-              value={formData.hp?.maximum || 0}
-              onChange={(e) => updateField('hp.maximum', parseInt(e.target.value) || 0)}
+            <NumberField
+min={0}
+              value={formData.hp?.maximum}
+              onChange={(v: number) => updateField('hp.maximum', v)}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+            fallback={0}
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1">Current</label>
-            <input
-              type="number"
-              min="0"
-              value={formData.hp?.current || 0}
-              onChange={(e) => updateField('hp.current', parseInt(e.target.value) || 0)}
+            <NumberField
+min={0}
+              value={formData.hp?.current}
+              onChange={(v: number) => updateField('hp.current', v)}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-lg font-bold text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            fallback={0}
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-stone-600 mb-1">Temporary</label>
-            <input
-              type="number"
-              min="0"
-              value={formData.hp?.temporary || 0}
-              onChange={(e) => updateField('hp.temporary', parseInt(e.target.value) || 0)}
+            <NumberField
+min={0}
+              value={formData.hp?.temporary}
+              onChange={(v: number) => updateField('hp.temporary', v)}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-lg font-bold text-blue-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+            fallback={0}
             />
           </div>
         </div>
@@ -1076,13 +1264,13 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
                 placeholder="e.g., 5d8"
                 className="w-24 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
               />
-              <input
-                type="number"
-                min="0"
-                value={die.remaining || 0}
-                onChange={(e) => updateField(`hitDice.${index}.remaining`, parseInt(e.target.value) || 0)}
+              <NumberField
+min={0}
+                value={die.remaining}
+                onChange={(v: number) => updateField(`hitDice.${index}.remaining`, v)}
                 placeholder="Remaining"
                 className="w-20 px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+              fallback={0}
               />
               <button
                 onClick={() => {
@@ -1214,11 +1402,11 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Attack Bonus</label>
-                  <input
-                    type="number"
-                    value={attack.attackBonus || 0}
-                    onChange={(e) => updateField(`attacks.${index}.attackBonus`, parseInt(e.target.value) || 0)}
+                  <NumberField
+value={attack.attackBonus}
+                    onChange={(v: number) => updateField(`attacks.${index}.attackBonus`, v)}
                     className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                  fallback={0}
                   />
                 </div>
                 <div>
@@ -1243,12 +1431,12 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Range (ft)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={attack.range || 0}
-                    onChange={(e) => updateField(`attacks.${index}.range`, parseInt(e.target.value) || 0)}
+                  <NumberField
+min={0}
+                    value={attack.range}
+                    onChange={(v: number) => updateField(`attacks.${index}.range`, v)}
                     className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                  fallback={0}
                   />
                 </div>
               </div>
@@ -1289,21 +1477,21 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
         </div>
         <div>
           <label className="block text-sm font-semibold text-stone-700 mb-1">Spell Save DC</label>
-          <input
-            type="number"
-            min="0"
-            value={formData.spellcasting?.spellSaveDC || 0}
-            onChange={(e) => updateField('spellcasting.spellSaveDC', parseInt(e.target.value) || 0)}
+          <NumberField
+min={0}
+            value={formData.spellcasting?.spellSaveDC}
+            onChange={(v: number) => updateField('spellcasting.spellSaveDC', v)}
             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+          fallback={0}
           />
         </div>
         <div>
           <label className="block text-sm font-semibold text-stone-700 mb-1">Spell Attack Bonus</label>
-          <input
-            type="number"
-            value={formData.spellcasting?.spellAttackBonus || 0}
-            onChange={(e) => updateField('spellcasting.spellAttackBonus', parseInt(e.target.value) || 0)}
+          <NumberField
+value={formData.spellcasting?.spellAttackBonus}
+            onChange={(v: number) => updateField('spellcasting.spellAttackBonus', v)}
             className="w-full px-3 py-2 border border-stone-300 rounded-lg text-center text-xl font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+          fallback={0}
           />
         </div>
       </div>
@@ -1334,22 +1522,22 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-stone-600 mb-1">Total</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={slotData.total || 0}
-                      onChange={(e) => updateField(`spellcasting.slots.${level}.total`, parseInt(e.target.value) || 0)}
+                    <NumberField
+min={0}
+                      value={slotData.total}
+                      onChange={(v: number) => updateField(`spellcasting.slots.${level}.total`, v)}
                       className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                    fallback={0}
                     />
                   </div>
                   <div>
                     <label className="block text-xs text-stone-600 mb-1">Used</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={slotData.expended || 0}
-                      onChange={(e) => updateField(`spellcasting.slots.${level}.expended`, parseInt(e.target.value) || 0)}
+                    <NumberField
+min={0}
+                      value={slotData.expended}
+                      onChange={(v: number) => updateField(`spellcasting.slots.${level}.expended`, v)}
                       className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                    fallback={0}
                     />
                   </div>
                 </div>
@@ -1379,14 +1567,14 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
         <div className="space-y-2">
           {(formData.spellcasting?.spells || []).map((spell: any, index: number) => (
             <div key={index} className="bg-white border border-stone-300 rounded-lg p-3 flex items-center space-x-3">
-              <input
-                type="number"
-                min="1"
-                max="9"
-                value={spell.level || 1}
-                onChange={(e) => updateField(`spellcasting.spells.${index}.level`, parseInt(e.target.value) || 1)}
+              <NumberField
+min={1}
+                max={9}
+                value={spell.level}
+                onChange={(v: number) => updateField(`spellcasting.spells.${index}.level`, v)}
                 className="w-14 px-2 py-1 border border-stone-300 rounded text-center font-semibold focus:outline-none focus:ring-2 focus:ring-red-500"
                 title="Spell Level"
+              fallback={1}
               />
               <input
                 type="text"
@@ -1459,12 +1647,12 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
               <label className={`block text-xs font-semibold ${currency.color} mb-1`}>
                 {currency.label}
               </label>
-              <input
-                type="number"
-                min="0"
-                value={formData.currency?.[currency.key] || 0}
-                onChange={(e) => updateField(`currency.${currency.key}`, parseInt(e.target.value) || 0)}
+              <NumberField
+min={0}
+                value={formData.currency?.[currency.key]}
+                onChange={(v: number) => updateField(`currency.${currency.key}`, v)}
                 className="w-full px-2 py-2 border border-stone-300 rounded-lg text-center font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+              fallback={0}
               />
             </div>
           ))}
@@ -1522,33 +1710,36 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Quantity</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={item.quantity || 1}
-                    onChange={(e) => updateField(`inventory.${index}.quantity`, parseInt(e.target.value) || 1)}
+                  <NumberField
+min={0}
+                    value={item.quantity}
+                    onChange={(v: number) => updateField(`inventory.${index}.quantity`, v)}
                     className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                  fallback={1}
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Weight (lb)</label>
-                  <input
-                    type="number"
-                    min="0"
+                  <NumberField
+min={0}
                     step="0.1"
-                    value={item.weight || 0}
-                    onChange={(e) => updateField(`inventory.${index}.weight`, parseFloat(e.target.value) || 0)}
+                    // The one genuinely fractional field on the sheet: half a
+                    // pound of rations is a real weight.
+                    integer={false}
+                    value={item.weight}
+                    onChange={(v: number) => updateField(`inventory.${index}.weight`, v)}
                     className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                  fallback={0}
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-stone-600 mb-1">Value (gp)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={item.value || 0}
-                    onChange={(e) => updateField(`inventory.${index}.value`, parseInt(e.target.value) || 0)}
+                  <NumberField
+min={0}
+                    value={item.value}
+                    onChange={(v: number) => updateField(`inventory.${index}.value`, v)}
                     className="w-full px-2 py-1 border border-stone-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-red-500"
+                  fallback={0}
                   />
                 </div>
               </div>
@@ -1893,7 +2084,12 @@ export const DnD5eCharacterEditor: React.FC<DnD5eCharacterEditorProps> = ({
   );
 
   return (
-    <div className="bg-white border-2 border-stone-200 rounded-lg overflow-hidden shadow-lg">
+    <div
+      className="bg-white border-2 border-stone-200 rounded-lg overflow-hidden shadow-lg"
+      onInputCapture={noteInteraction}
+      onChangeCapture={noteInteraction}
+      onPointerDownCapture={noteInteraction}
+    >
       {renderHeader()}
       {renderTabs()}
       <div className="p-6">

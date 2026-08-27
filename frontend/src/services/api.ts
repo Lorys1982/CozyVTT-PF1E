@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { isPublicPath } from '@/utils/publicRoutes';
 import type {
   User,
   AuthResponse,
@@ -33,6 +34,7 @@ import type {
   CampaignImportPreview,
   CampaignImportResult,
   Message,
+  DiceRolledEvent,
   Session,
   CampaignInvitation,
   ApiError,
@@ -93,18 +95,12 @@ class ApiClient {
           const { status, data } = error.response;
 
           // Unauthorized - redirect to login, but only from protected pages.
-          // Public pages (auth flows, reset password, setup, welcome) should
-          // not redirect — their 401s are expected (user is not yet logged in).
-          if (status === 401) {
-            const pathname = window.location.pathname;
-            const isPublicPage =
-              pathname.startsWith('/auth') ||
-              pathname === '/reset-password' ||
-              pathname === '/setup' ||
-              pathname === '/';
-            if (!isPublicPage) {
-              window.location.href = '/auth/login';
-            }
+          // On a public page a 401 is expected, because nobody has signed in
+          // yet. The route list lives in utils/publicRoutes so it can be tested
+          // against App.tsx — see the note there on why a missing entry breaks
+          // tokenised links rather than merely redirecting them.
+          if (status === 401 && !isPublicPath(window.location.pathname)) {
+            window.location.href = '/auth/login';
           }
 
           // Forbidden
@@ -445,8 +441,20 @@ class ApiClient {
     return response.data;
   }
 
-  async inviteUserToCampaign(campaignId: string, userId: string): Promise<{ message: string }> {
-    const response = await this.client.post(`/api/campaigns/${campaignId}/invite`, { userId });
+  /**
+   * Invite a user to a campaign.
+   *
+   * `sendEmail` is opt-in and defaults to false: the invitation always appears
+   * on the invitee's dashboard, and an email only goes out if the DM asked for
+   * one. `emailSent` reports what actually happened, since a server with no
+   * SMTP configured will decline to send even when asked.
+   */
+  async inviteUserToCampaign(
+    campaignId: string,
+    userId: string,
+    sendEmail = false
+  ): Promise<{ message: string; emailSent: boolean }> {
+    const response = await this.client.post(`/api/campaigns/${campaignId}/invite`, { userId, sendEmail });
     return response.data;
   }
 
@@ -871,6 +879,32 @@ class ApiClient {
 
   async getMessages(campaignId: string, params?: { limit?: number; before?: string }): Promise<{ messages: Message[] }> {
     const response = await this.client.get<{ messages: Message[] }>(`/api/campaigns/${campaignId}/messages`, { params });
+    return response.data;
+  }
+
+  /**
+   * Remove the legacy "X has joined / has left" system messages from a
+   * campaign's chat. DM only. These are no longer written; this clears what
+   * earlier versions left behind.
+   */
+  async clearJoinLeaveMessages(campaignId: string): Promise<{ message: string; deleted: number }> {
+    const response = await this.client.delete(`/api/campaigns/${campaignId}/messages/join-leave`);
+    return response.data;
+  }
+
+  /**
+   * Roll history for a campaign, newest first. The server decides what the
+   * caller may see — a player never receives someone else's secret rolls — so
+   * the response can be rendered as-is.
+   */
+  async getDiceRolls(
+    campaignId: string,
+    params?: { limit?: number; offset?: number }
+  ): Promise<{ rolls: DiceRolledEvent[] }> {
+    const response = await this.client.get<{ rolls: DiceRolledEvent[] }>(
+      `/api/campaigns/${campaignId}/dice-rolls`,
+      { params }
+    );
     return response.data;
   }
 }

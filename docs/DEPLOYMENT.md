@@ -561,7 +561,9 @@ Test from **Admin Dashboard → Settings → Test Email** after deploying.
 | **Adding a user** | **Invite User** — they get an email with a link and choose their own password. Nobody else ever sees it. | **Create User** — a temporary password is generated and shown to you once, to hand over yourself |
 | Password resets (self-service) | User clicks "Forgot password" and gets a reset link | Unavailable — the user has to ask an admin |
 | Password resets (admin) | Email the user a reset link, or generate a temporary password | Generate a temporary password from the Users tab |
-| Campaign invitations | Emailed to the player | Share the invite link manually |
+| Campaign invitations | Appear on the player's dashboard. The DM may *optionally* tick a box to email them as well | Appear on the player's dashboard; the email option is disabled and says why |
+
+**Campaign invitations do not depend on SMTP.** A DM invites someone who already has an account, and the invitation shows up on that player's dashboard for them to accept — no link is involved and nothing needs to be shared by hand. As of 1.2.2 the accompanying email is opt-in per invitation and off by default, so a campaign runs perfectly well on an instance with no mail server. This is the opposite of the *account* invitations in the row above, which are an email or nothing.
 
 Either way, an account created by an admin **must set its own password on first sign-in** — the
 temporary password works for nothing else, so an admin never keeps usable access to someone's

@@ -52,8 +52,46 @@ class SocketClient {
   private isConnecting = false;
   private campaignId: string | null = null;
 
+  /**
+   * Every application listener registered through this client, so they can be
+   * re-attached when the underlying socket is replaced.
+   *
+   * `connect()` builds a brand new socket.io instance and throws the old one
+   * away. Components subscribe from effects keyed on this client — a singleton
+   * whose identity never changes — so those effects do not re-run and nothing
+   * ever re-subscribed to the replacement. Listeners silently stopped firing
+   * after any reconnect, which is why the dice panel could wedge on "Rolling…"
+   * with no visible trigger: it never received the `dice.rolled` that clears the
+   * flag.
+   *
+   * Keeping the registry here rather than asking each component to re-subscribe
+   * means a component added later cannot reintroduce the bug.
+   */
+  private listeners = new Map<string, Set<EventCallback>>();
+
   constructor() {
     // Socket will be initialized when connect() is called
+  }
+
+  /** Record a listener and attach it to the current socket, if there is one. */
+  private addListener(event: string, callback: EventCallback): void {
+    let forEvent = this.listeners.get(event);
+    if (!forEvent) {
+      forEvent = new Set();
+      this.listeners.set(event, forEvent);
+    }
+    forEvent.add(callback);
+    this.socket?.on(event, callback);
+  }
+
+  /** Attach every recorded listener to a freshly created socket. */
+  private reattachListeners(): void {
+    if (!this.socket) return;
+    for (const [event, callbacks] of this.listeners) {
+      for (const callback of callbacks) {
+        this.socket.on(event, callback);
+      }
+    }
   }
 
   // ============================================
@@ -106,6 +144,11 @@ class SocketClient {
         // after a backend restart or transient hosting hiccup.
         randomizationFactor: 0.5,
       });
+
+      // Re-attach application listeners to the new socket. Without this every
+      // component subscription registered before a reconnect is lost — see the
+      // note on `listeners` above.
+      this.reattachListeners();
 
       // Set up authenticated listener FIRST (before any events can fire)
       this.socket.on('authenticated', () => {
@@ -226,7 +269,7 @@ class SocketClient {
   }
 
   onSyncState(callback: EventCallback) {
-    this.socket?.on('sync.state', callback);
+    this.addListener('sync.state', callback);
   }
 
   // ============================================
@@ -246,7 +289,7 @@ class SocketClient {
   }
 
   onTokenMoved(callback: EventCallback<TokenMovedEvent>) {
-    this.socket?.on('token.moved', callback);
+    this.addListener('token.moved', callback);
   }
 
   // ============================================
@@ -258,11 +301,11 @@ class SocketClient {
   }
 
   onDiceRolled(callback: EventCallback<DiceRolledEvent>) {
-    this.socket?.on('dice.rolled', callback);
+    this.addListener('dice.rolled', callback);
   }
 
   onDiceRolledSecret(callback: EventCallback<DiceRolledSecretEvent>) {
-    this.socket?.on('dice.rolled.secret', callback);
+    this.addListener('dice.rolled.secret', callback);
   }
 
   emitClearDiceHistory() {
@@ -270,7 +313,27 @@ class SocketClient {
   }
 
   onDiceHistoryCleared(callback: EventCallback<void>) {
-    this.socket?.on('dice.historyCleared', callback);
+    this.addListener('dice.historyCleared', callback);
+  }
+
+  // ============================================
+  // Presence
+  // ============================================
+
+  /**
+   * Who is currently connected to the campaign.
+   *
+   * The server sends the full set on every join and leave rather than deltas,
+   * so a missed event cannot leave the roster showing the wrong people. Note a
+   * user may hold several sockets (two tabs) and appears once.
+   */
+  onPresenceState(callback: EventCallback<{ campaignId: string; onlineUserIds: string[] }>) {
+    this.addListener('presence.state', callback);
+  }
+
+  /** Ask for the current set, for a view that mounted after the last push. */
+  requestPresence() {
+    this.socket?.emit('presence.request');
   }
 
   // ============================================
@@ -282,11 +345,11 @@ class SocketClient {
   }
 
   onChatMessage(callback: EventCallback<ChatMessageBroadcast>) {
-    this.socket?.on('chat.message', callback);
+    this.addListener('chat.message', callback);
   }
 
   onChatSystem(callback: EventCallback<{ content: string; metadata?: any; timestamp: string }>) {
-    this.socket?.on('chat.system', callback);
+    this.addListener('chat.system', callback);
   }
 
   // ============================================
@@ -298,7 +361,7 @@ class SocketClient {
   }
 
   onMapChanged(callback: EventCallback<{ mapId: string; mapData: any }>) {
-    this.socket?.on('map.changed', callback);
+    this.addListener('map.changed', callback);
   }
 
   // ============================================
@@ -318,19 +381,19 @@ class SocketClient {
   }
 
   onSessionStarted(callback: EventCallback<SessionStartedBroadcast>) {
-    this.socket?.on('session.started', callback);
+    this.addListener('session.started', callback);
   }
 
   onSessionPaused(callback: EventCallback) {
-    this.socket?.on('session.paused', callback);
+    this.addListener('session.paused', callback);
   }
 
   onSessionEnded(callback: EventCallback<{ message: string }>) {
-    this.socket?.on('session.ended', callback);
+    this.addListener('session.ended', callback);
   }
 
   onSessionResumed(callback: EventCallback) {
-    this.socket?.on('session.resumed', callback);
+    this.addListener('session.resumed', callback);
   }
 
   // ============================================
@@ -342,7 +405,7 @@ class SocketClient {
   }
 
   onVibeUpdated(callback: EventCallback<VibeUpdatedBroadcast>) {
-    this.socket?.on('vibe.updated', callback);
+    this.addListener('vibe.updated', callback);
   }
 
   // ============================================
@@ -358,11 +421,11 @@ class SocketClient {
   }
 
   onSpiritLayerToggled(callback: EventCallback<SpiritLayerToggledBroadcast>) {
-    this.socket?.on('spirit_layer.toggled', callback);
+    this.addListener('spirit_layer.toggled', callback);
   }
 
   onSpiritLayerTokenToggled(callback: EventCallback<SpiritLayerTokenToggledBroadcast>) {
-    this.socket?.on('spirit_layer.token.toggled', callback);
+    this.addListener('spirit_layer.token.toggled', callback);
   }
 
   emitSpiritLayerStyleChange(style: string) {
@@ -370,7 +433,7 @@ class SocketClient {
   }
 
   onSpiritLayerStyleChanged(callback: EventCallback<{ style: string }>) {
-    this.socket?.on('spirit_layer.style_changed', callback);
+    this.addListener('spirit_layer.style_changed', callback);
   }
 
   // ============================================
@@ -382,7 +445,7 @@ class SocketClient {
   }
 
   onAtmosphereEffectUpdated(callback: EventCallback<AtmosphereEffectUpdatedBroadcast>) {
-    this.socket?.on('atmosphere.effect.updated', callback);
+    this.addListener('atmosphere.effect.updated', callback);
   }
 
   emitAtmosphereAudioSet(data: AtmosphereAudioSetEvent) {
@@ -390,7 +453,7 @@ class SocketClient {
   }
 
   onAtmosphereAudioUpdated(callback: EventCallback<AtmosphereAudioUpdatedBroadcast>) {
-    this.socket?.on('atmosphere.audio.updated', callback);
+    this.addListener('atmosphere.audio.updated', callback);
   }
 
   // ============================================
@@ -402,7 +465,7 @@ class SocketClient {
   }
 
   onCharacterHpUpdated(callback: EventCallback<CharacterHpUpdatedBroadcast>) {
-    this.socket?.on('character.hp.updated', callback);
+    this.addListener('character.hp.updated', callback);
   }
 
   // ============================================
@@ -446,7 +509,7 @@ class SocketClient {
   }
 
   onInitiativeState(callback: EventCallback<CombatState>) {
-    this.socket?.on('initiative.state', callback);
+    this.addListener('initiative.state', callback);
   }
 
   // ============================================
@@ -458,7 +521,7 @@ class SocketClient {
   }
 
   onMapPinged(callback: EventCallback<MapPingedBroadcast>) {
-    this.socket?.on('map.pinged', callback);
+    this.addListener('map.pinged', callback);
   }
 
   // ============================================
@@ -488,18 +551,21 @@ class SocketClient {
   // ============================================
 
   on(event: string, callback: EventCallback) {
-    this.socket?.on(event, callback);
+    this.addListener(event, callback);
   }
 
   off(event: string, callback?: EventCallback) {
     if (callback) {
+      this.listeners.get(event)?.delete(callback);
       this.socket?.off(event, callback);
     } else {
+      this.listeners.delete(event);
       this.socket?.off(event);
     }
   }
 
   removeAllListeners() {
+    this.listeners.clear();
     this.socket?.removeAllListeners();
   }
 

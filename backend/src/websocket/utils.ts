@@ -71,6 +71,51 @@ export async function getCampaignMemberCount(campaignId: string): Promise<number
 }
 
 /**
+ * Which users currently have at least one socket in the campaign.
+ *
+ * Derived from the room membership rather than tracked in a counter, because a
+ * user can hold several sockets at once — two tabs, or an old one that has not
+ * timed out yet. Anything that flipped a user offline on the first disconnect
+ * would show them as gone while they were still sitting there in another tab.
+ *
+ * @param campaignId - Campaign ID
+ * @returns Distinct user IDs, deduplicated across sockets
+ */
+export async function getOnlineUserIds(campaignId: string): Promise<string[]> {
+  const io = getSocketInstance();
+  const sockets = await io.in(campaignId).fetchSockets();
+  const ids = new Set<string>();
+  for (const socket of sockets) {
+    // The default in-memory adapter hands back the real sockets, so the fields
+    // set during authentication are readable — the same approach the secret
+    // dice-roll fan-out uses.
+    const userId = (socket as unknown as { userId?: string }).userId;
+    if (userId) ids.add(userId);
+  }
+  return [...ids];
+}
+
+/**
+ * Tell a campaign who is currently online.
+ *
+ * Sends the whole set rather than a join/leave delta: a table is a handful of
+ * people so the payload is trivial, and a snapshot cannot drift out of step the
+ * way an incrementally-patched list can after a missed event.
+ *
+ * Best-effort — presence is decoration, and a failure here must never break the
+ * connect or disconnect path it is called from.
+ */
+export async function broadcastPresence(campaignId: string): Promise<void> {
+  try {
+    const io = getSocketInstance();
+    const onlineUserIds = await getOnlineUserIds(campaignId);
+    io.to(campaignId).emit('presence.state', { campaignId, onlineUserIds });
+  } catch (error) {
+    logger.error('Failed to broadcast presence', { err: error, campaignId });
+  }
+}
+
+/**
  * Disconnect a user's sockets (for forced logout, bans, etc.)
  * @param userId - User ID
  * @param reason - Reason for disconnection

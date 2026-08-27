@@ -11,6 +11,7 @@ import { TokenLayer, TokenType, TokenDisposition } from '@/types';
 import type { CharacterHpInfo } from '@/utils/characterHp';
 import type { TokenAnimation, Viewport } from './types';
 import { gridYToTopPx, gridYToFogRow, gridXToFogCol, fogCellIndex } from '../coords';
+import { conditionAbbreviation, MAX_CONDITION_BADGES } from '@/utils/conditions';
 
 export interface TokenDrawState {
   tokens: readonly Token[];
@@ -407,35 +408,63 @@ export function drawTokens(
       ctx.stroke();
     }
 
-    // Condition indicator badges — small amber dots along the top of the token
+    // Condition badges — amber pills along the top of the token.
+    //
+    // Two letters rather than one: a single initial cannot tell Paralyzed from
+    // Poisoned, Petrified or Prone, nor Incapacitated from Invisible, which is
+    // most of what a player needs to read off an enemy at a glance. Beyond four
+    // the rest collapse into a "+N" pill, because a longer row grows wider than
+    // the token and starts covering its neighbours. Hovering the token names
+    // them all in full.
     if (token.conditions && token.conditions.length > 0) {
-      const condCount = token.conditions.length;
-      const badgeR = Math.max(5, 5 / zoom);
-      const gap = badgeR * 2.4;
-      const totalW = condCount * gap - (gap - badgeR * 2);
-      const startX = centerX - totalW / 2 + badgeR;
-      const badgeY = displayMode === 'full-art'
-        ? tokenY - badgeR - 2 / zoom
-        : centerY - radius - badgeR - 2 / zoom;
+      const shown = token.conditions.slice(0, MAX_CONDITION_BADGES);
+      const overflow = token.conditions.length - shown.length;
+      const labels: string[] = shown.map((c) => conditionAbbreviation(String(c)));
+      if (overflow > 0) labels.push(`+${overflow}`);
 
-      for (let ci = 0; ci < condCount; ci++) {
-        const bx = startX + ci * gap;
+      // Sized in screen pixels above 1x zoom and held constant below it, the
+      // same idiom the rings and HP bar above use — a badge is UI furniture, so
+      // it should stay readable rather than shrink away with the map.
+      const badgeH = Math.max(13, 13 / zoom);
+      const badgeW = Math.max(19, 19 / zoom);
+      const gap = Math.max(2.5, 2.5 / zoom);
+      const fontSize = badgeH * 0.62;
+      const radiusPx = badgeH / 2;
+
+      const totalW = labels.length * badgeW + (labels.length - 1) * gap;
+      const startX = centerX - totalW / 2;
+      const badgeY = (displayMode === 'full-art'
+        ? tokenY
+        : centerY - radius) - badgeH - Math.max(3, 3 / zoom);
+
+      ctx.font = `bold ${fontSize}px 'Inter', system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      labels.forEach((label, ci) => {
+        const bx = startX + ci * (badgeW + gap);
+
         ctx.beginPath();
-        ctx.arc(bx, badgeY, badgeR, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.9)';
+        if (ctx.roundRect) {
+          ctx.roundRect(bx, badgeY, badgeW, badgeH, radiusPx);
+        } else {
+          ctx.rect(bx, badgeY, badgeW, badgeH);
+        }
+        // The overflow marker is deliberately quieter than a real condition —
+        // it is a count, not something happening to the creature.
+        ctx.fillStyle = label.startsWith('+')
+          ? 'rgba(120, 113, 108, 0.95)'
+          : 'rgba(245, 158, 11, 0.96)';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-        ctx.lineWidth = 0.5 / zoom;
+        ctx.strokeStyle = 'rgba(41, 33, 20, 0.55)';
+        ctx.lineWidth = Math.max(1, 1 / zoom);
         ctx.stroke();
 
-        const condLetter = token.conditions[ci].charAt(0).toUpperCase();
-        const condFontSize = Math.max(7, badgeR * 1.2);
-        ctx.font = `bold ${condFontSize}px 'Inter', system-ui, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(condLetter, bx, badgeY + condFontSize * 0.03);
-      }
+        // Dark ink on amber rather than white: at this size white on amber is
+        // the low-contrast pairing that made the old badges hard to read.
+        ctx.fillStyle = label.startsWith('+') ? '#f5f5f4' : '#2b2115';
+        ctx.fillText(label, bx + badgeW / 2, badgeY + badgeH / 2 + fontSize * 0.04);
+      });
     }
   }
 

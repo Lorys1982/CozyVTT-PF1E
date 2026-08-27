@@ -9,6 +9,7 @@ import {
   formatModifier,
   normalizeSkillKey,
   parseChallengeRating,
+  passiveScore,
   proficiencyBonusForCR,
   proficiencyBonusForLevel,
   skillLabel,
@@ -261,6 +262,48 @@ describe('decomposeBonus', () => {
     const dexMod = abilityModifier(14);
     const pb = proficiencyBonusForCR('1/4');
     expect(decomposeBonus(6, dexMod, pb)).toBe('expertise');
+  });
+});
+
+describe('passiveScore', () => {
+  it('is 10 plus the check bonus', () => {
+    expect(passiveScore(0)).toBe(10);
+    expect(passiveScore(3)).toBe(13);
+    expect(passiveScore(-1)).toBe(9);
+  });
+
+  it('falls back to the base for a non-numeric bonus', () => {
+    expect(passiveScore(NaN)).toBe(10);
+    expect(passiveScore(Infinity)).toBe(10);
+  });
+
+  // The reported bug, as reported: Wisdom 12, proficiency +2, expertise in
+  // Perception. The sheet showed Perception +5 in both places but a passive
+  // score of 13 in the view — proficiency counted once instead of twice,
+  // because the passive number was stored separately rather than derived.
+  it('counts expertise in Perception, matching the skill bonus', () => {
+    const wisMod = abilityModifier(12);
+    const pb = proficiencyBonusForLevel(1);
+
+    const proficientOnly = derivedBonus(wisMod, pb, 'proficient');
+    const withExpertise = derivedBonus(wisMod, pb, 'expertise');
+
+    expect(proficientOnly).toBe(3);
+    expect(withExpertise).toBe(5);
+
+    expect(passiveScore(proficientOnly)).toBe(13);
+    expect(passiveScore(withExpertise)).toBe(15);
+  });
+
+  it('always equals 10 + the displayed skill bonus, at every proficiency level', () => {
+    for (const level of ['none', 'proficient', 'expertise'] as const) {
+      for (const score of [8, 10, 12, 17, 20]) {
+        for (const pb of [2, 3, 4, 6]) {
+          const bonus = derivedBonus(abilityModifier(score), pb, level);
+          expect(passiveScore(bonus)).toBe(10 + bonus);
+        }
+      }
+    }
   });
 });
 

@@ -381,6 +381,13 @@ export interface ServerUploadLimits {
 export interface ServerConfig {
   uploadLimits: ServerUploadLimits;
   maxUploadBytes: number;
+  /**
+   * Whether this instance can send email at all. A bare boolean — the SMTP
+   * host, port and credentials stay on the admin-only config endpoint. Used to
+   * disable the "also email them" option on a campaign invitation rather than
+   * offering something that would silently do nothing.
+   */
+  smtp?: { configured: boolean };
 }
 
 // ============================================
@@ -962,6 +969,13 @@ export interface DiceRollEvent {
 }
 
 export interface DiceRolledEvent {
+  /**
+   * The stored roll's id. Optional because a roll made while the session is
+   * paused is evaluated in the browser and never reaches the server, so it has
+   * no database row — see DiceRoller's local-roll path. Everything else, live
+   * or replayed from history, carries one and dedupes on it.
+   */
+  id?: string;
   userId: string;
   userName: string;
   characterName: string | null;
@@ -1116,7 +1130,13 @@ export interface CombatState {
 export interface InitiativeAddEvent    { tokenId: string; mapId: string; }
 export interface InitiativeRemoveEvent { tokenId: string; }
 export interface InitiativeSetEvent    { tokenId: string; mapId: string; value: number | null; }
-export interface InitiativeRollEvent   { tokenId: string; mapId: string; expression: string; characterName?: string; }
+/**
+ * `expression` is only a fallback. The server derives initiative from the
+ * token's character sheet or stat block, because it is the only side holding
+ * either and because some systems (Call of Cthulhu) do not roll for initiative
+ * at all. Send one only for a combatant nothing can be derived for.
+ */
+export interface InitiativeRollEvent   { tokenId: string; mapId: string; expression?: string; characterName?: string; }
 export interface InitiativeReorderEvent { orderedTokenIds: string[]; }
 
 // ============================================

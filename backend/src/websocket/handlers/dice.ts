@@ -97,8 +97,14 @@ export function registerDiceHandlers(io: Server, socket: AuthenticatedSocket): v
         },
       });
 
-      // Broadcast result with role-based filtering
+      // Broadcast result with role-based filtering.
+      //
+      // `id` and the stored `rolledAt` are sent rather than a freshly generated
+      // timestamp so that a roll arriving live and the same roll replayed from
+      // history identify as one entry. Without the id the client keyed rolls by
+      // user and broadcast time, which no stored roll could ever match.
       const rollData = {
+        id: diceRoll.id,
         userId: socket.userId,
         userName: user.displayName,
         characterName: characterName || null,
@@ -106,7 +112,7 @@ export function registerDiceHandlers(io: Server, socket: AuthenticatedSocket): v
         result: rollResult.total,
         breakdown: rollResult,
         purpose: purpose || null,
-        timestamp: new Date().toISOString(),
+        timestamp: diceRoll.rolledAt.toISOString(),
         secret: secret || false,
       };
 
@@ -164,6 +170,18 @@ export function registerDiceHandlers(io: Server, socket: AuthenticatedSocket): v
         socket.emit('error', { message: 'Only the DM can clear roll history' });
         return;
       }
+
+      // Record the clear so it survives a reload. This used to be broadcast
+      // only, which was invisible while history lived in browser memory — but
+      // now that the panel loads from the database, a clear that changed
+      // nothing server-side would undo itself on the next refresh.
+      //
+      // A watermark, not a delete: secret rolls are stored deliberately for
+      // audit, and clearing the panel should not destroy that record.
+      await prisma.campaign.update({
+        where: { id: socket.campaignId },
+        data: { rollHistoryClearedAt: new Date() },
+      });
 
       // Broadcast to all campaign members (including DM)
       io.to(socket.campaignId).emit('dice.historyCleared');
