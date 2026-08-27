@@ -281,6 +281,7 @@ router.get('/:campaignId', campaignMember, async (req: AuthenticatedRequest, res
  * Get all characters in campaign grouped by member.
  * Includes extracted HP info per character (game-system-aware).
  * Requires: Campaign membership (any role)
+ * DM-owned characters are omitted for non-DM members.
  */
 
 /** Extract { current, max, temp } from character data in a game-system-aware way */
@@ -333,6 +334,7 @@ function extractCharacterHp(
 router.get('/:campaignId/characters', campaignMember, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { campaignId } = req.params;
+    const canViewDmCharacters = req.campaignMembership?.role === 'DM';
 
     // Fetch all memberships with their character assignments
     const memberships = await prisma.campaignMembership.findMany({
@@ -368,7 +370,7 @@ router.get('/:campaignId/characters', campaignMember, async (req: AuthenticatedR
 
     // Build response — extract HP from character data, never expose raw data
     const roster = memberships.map((membership) => {
-      const memberCharacters = characters
+      const memberCharacters = (canViewDmCharacters || membership.role !== 'DM' ? characters : [])
         .filter((c) => membership.characterIds.includes(c.id))
         .map(({ data, ...char }) => ({
           ...char,

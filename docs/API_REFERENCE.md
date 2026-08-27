@@ -272,7 +272,8 @@ Update campaign properties (DM only).
 
 ### `GET /api/campaigns/:id/characters`
 
-Get all characters assigned to this campaign, with their assigned players.
+Get all characters assigned to this campaign, with their assigned players. A
+non-DM member's response omits characters assigned to DMs.
 
 **Response:**
 ```json
@@ -472,6 +473,8 @@ Create a new character.
 ### `GET /api/characters/:id`
 
 Get a single character. Returns full character data including the JSON sheet data.
+The owner and campaign DMs can view any in-campaign character; other campaign
+members can view player-owned sheets, but not sheets owned by a DM.
 
 ---
 

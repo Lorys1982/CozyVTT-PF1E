@@ -209,7 +209,8 @@ router.get(
  * GET /api/characters/:id
  * Get a specific character
  * Requires: Authentication
- * Authorization: Character owner OR campaign DM (if character is in a campaign)
+ * Authorization: Character owner, campaign DM, or another campaign member.
+ * DM-owned character sheets are visible only to their owner and campaign DMs.
  */
 router.get('/:id', authenticated, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -249,20 +250,35 @@ router.get('/:id', authenticated, async (req: AuthenticatedRequest, res: Respons
       return res.status(200).json({ character });
     }
 
-    // If character is in a campaign, check if requester is a campaign member
-    // All campaign members can VIEW characters, but only owner/DM can EDIT
+    // If character is in a campaign, check if requester is a campaign member.
+    // DM-owned sheets are private from non-DM members so a player's request
+    // cannot disclose the DM's character data.
     if (character.campaignId) {
-      const membership = await prisma.campaignMembership.findUnique({
-        where: {
-          userId_campaignId: {
-            userId,
-            campaignId: character.campaignId,
+      const [requesterMembership, ownerMembership] = await Promise.all([
+        prisma.campaignMembership.findUnique({
+          where: {
+            userId_campaignId: {
+              userId,
+              campaignId: character.campaignId,
+            },
           },
-        },
-      });
+          select: { role: true },
+        }),
+        prisma.campaignMembership.findUnique({
+          where: {
+            userId_campaignId: {
+              userId: character.userId,
+              campaignId: character.campaignId,
+            },
+          },
+          select: { role: true },
+        }),
+      ]);
 
-      // Any campaign member (DM, PLAYER, SPECTATOR) can view characters in the campaign
-      if (membership) {
+      if (
+        requesterMembership &&
+        (ownerMembership?.role !== 'DM' || requesterMembership.role === 'DM')
+      ) {
         return res.status(200).json({ character });
       }
     }

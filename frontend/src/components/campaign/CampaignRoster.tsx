@@ -437,6 +437,7 @@ interface MemberCardProps {
 
 function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortName, onCharacterClick, onCharacterRightClick, onNotesClick, isDM, currentUserId, characterHpCache, onHpDelta }: MemberCardProps) {
   const RoleIcon = getRoleIcon(member.role);
+  const canViewMemberSheets = isDM || member.role !== 'DM';
 
   return (
     <div className="p-2 rounded-lg bg-parchment/50 hover:bg-parchment transition-colors">
@@ -487,12 +488,12 @@ function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortNa
               className="rounded bg-paper/50 hover:bg-paper/70 transition-colors"
             >
               <div
-                onClick={() => onCharacterClick(character.id)}
-                onContextMenu={(e) => onCharacterRightClick(e, character.id, character.userId)}
+                onClick={canViewMemberSheets ? () => onCharacterClick(character.id) : undefined}
+                onContextMenu={canViewMemberSheets ? (e) => onCharacterRightClick(e, character.id, character.userId) : undefined}
                 draggable={canDrag}
                 onDragStart={canDrag ? handleDragStart : undefined}
-                title={canDrag ? `Drag ${character.name} onto the map` : character.name}
-                className={`flex items-center gap-2 p-1.5 cursor-pointer ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                title={canDrag ? `Drag ${character.name} onto the map` : canViewMemberSheets ? character.name : "DM character sheets are private"}
+                className={`flex items-center gap-2 p-1.5 ${canViewMemberSheets ? 'cursor-pointer' : 'cursor-default'} ${canDrag ? 'cursor-grab active:cursor-grabbing' : ''}`}
               >
               {/* Character Token — draggable by DM onto map */}
               {character.tokenImageUrl ? (
