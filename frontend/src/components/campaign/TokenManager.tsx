@@ -100,6 +100,7 @@ export default function TokenManager({ isOpen, onClose }: TokenManagerProps) {
       .listAssets({
         type: AssetType.TOKEN,
         limit: 100,
+        campaignId: campaign.id,
       })
       .then((res) => setAssets(res.assets))
       .catch(() => setError('Failed to load token assets'))

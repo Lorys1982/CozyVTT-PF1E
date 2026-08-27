@@ -145,20 +145,27 @@ router.get('/', authenticated, async (req: AuthenticatedRequest, res: Response) 
         }
       }
 
-      where.campaignId = campaignId;
+      // In a campaign context, expose only assets usable there: global assets,
+      // the requester's personal assets, and assets belonging to this campaign.
+      // An explicit scope still narrows the result to that scope.
+      if (scope) {
+        where.campaignId = scope === 'CAMPAIGN' ? campaignId : null;
+        if (scope === 'USER') where.uploadedById = userId;
+        if (scope === 'GLOBAL') delete where.campaignId;
+      } else {
+        delete where.campaignId;
+        where.OR = [
+          { scope: 'GLOBAL' },
+          { scope: 'USER', uploadedById: userId },
+          { scope: 'CAMPAIGN', campaignId },
+        ];
+      }
     } else if (!isAdmin) {
-      // Non-admin: enforce three-scope visibility rules
-      const userMemberships = await prisma.campaignMembership.findMany({
-        where: { userId },
-        select: { campaignId: true },
-      });
-
-      const campaignIds = userMemberships.map((m: { campaignId: string }) => m.campaignId);
-
+      // Without a campaign context, campaign-scoped assets must not be
+      // exposed at all. They are usable only from their owning campaign.
       where.OR = [
         { scope: 'GLOBAL' },                          // Platform-wide assets
         { scope: 'USER', uploadedById: userId },       // User's own personal assets
-        ...campaignIds.map((cId: string) => ({ scope: 'CAMPAIGN', campaignId: cId })), // Campaign assets
       ];
     }
     // Admin with no campaignId: no OR filter — sees all assets across all scopes/users

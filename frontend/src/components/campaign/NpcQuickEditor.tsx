@@ -203,7 +203,7 @@ export default function NpcQuickEditor({ token, campaignId, mapId, onClose, onTo
     if (assets.length > 0) return; // already loaded
     setIsLoadingAssets(true);
     try {
-      const res = await api.listAssets({ type: AssetType.TOKEN, limit: 100 });
+      const res = await api.listAssets({ type: AssetType.TOKEN, limit: 100, campaignId });
       setAssets(res.assets);
     } catch {
       console.error('NpcQuickEditor: failed to load token assets');

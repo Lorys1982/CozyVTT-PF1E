@@ -158,6 +158,7 @@ export default function AssetPicker({
 
               <AssetGrid
                 type={type}
+                campaignId={campaignId}
                 selectedId={selectedAssetId}
                 onSelect={(asset) => {
                   onSelect(asset);

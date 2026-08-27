@@ -27,6 +27,8 @@ const ASSET_DIR: Record<string, 'maps' | 'tokens' | 'audio' | 'avatars'> = {
 
 export interface AssetGridProps {
   type: AssetType;
+  /** Campaign context used to restrict campaign-scoped assets. */
+  campaignId?: string;
   /** Currently selected asset id, or null. */
   selectedId: string | null;
   /** Called with the asset, or null when the selected one is clicked again. */
@@ -86,6 +88,7 @@ function renderNameFallback(target: HTMLImageElement, name: string): void {
 
 export default function AssetGrid({
   type,
+  campaignId,
   selectedId,
   onSelect,
   search = '',
@@ -111,7 +114,7 @@ export default function AssetGrid({
     let cancelled = false;
     setLoading(true);
     api
-      .listAssets({ type, limit })
+      .listAssets({ type, limit, ...(campaignId ? { campaignId } : {}) })
       .then((res) => {
         if (cancelled) return;
         setFetched(res.assets);
@@ -127,7 +130,7 @@ export default function AssetGrid({
     return () => { cancelled = true; };
     // onAssetsLoaded is intentionally omitted: callers pass inline closures,
     // and re-fetching on every parent render would hammer the endpoint.
-  }, [type, limit, controlled]);
+  }, [type, limit, controlled, campaignId]);
 
   const filtered = search
     ? assets.filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))

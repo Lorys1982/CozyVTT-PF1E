@@ -97,7 +97,7 @@ export default function AtmospherePanel({ isOpen, onClose }: AtmospherePanelProp
     if (!isOpen || !campaign) return;
     setLoadingAssets(true);
     setAssetError(null);
-    api.listAssets({ type: 'AUDIO' })
+    api.listAssets({ type: 'AUDIO', campaignId: campaign.id })
       .then((r) => setAudioAssets(r.assets || []))
       .catch(() => setAssetError('Failed to load audio assets'))
       .finally(() => setLoadingAssets(false));
