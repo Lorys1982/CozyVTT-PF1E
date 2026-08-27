@@ -1773,7 +1773,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       // Check tokens in reverse order (top to bottom in z-order)
       for (let i = tokens.length - 1; i >= 0; i--) {
         const token = tokens[i];
-        if (!token.visible) continue;
+        // Hidden tokens are still rendered for the DM, so they must remain
+        // pickable there as well. Players should not be able to interact with
+        // tokens hidden from them.
+        if (!token.visible && !isDM) continue;
 
         const tokenX = token.position.x;
         const tokenY = token.position.y;
@@ -1793,7 +1796,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
 
       return null;
     },
-    [tokens, currentMap]
+    [tokens, currentMap, isDM]
   );
 
   /**
