@@ -279,8 +279,9 @@ export function filterTokensByLighting(
 
   const wallSegs = (Array.isArray(walls) ? walls : []) as unknown as WallSegment[];
   const lightSources = (Array.isArray(lights) ? lights : []) as unknown as LightSource[];
-  // Light sources illuminate areas already within the player's own vision;
-  // they do not grant independent map vision or reveal tokens through fog.
+  // Light sources illuminate areas that the player can reach with line of
+  // sight. Their radius can extend beyond the token's normal sight radius,
+  // but a light source hidden behind a wall cannot reveal anything.
   const enabledLights = lightSources.filter((l) => l.enabled);
 
   // Find all tokens controlled by this player
@@ -305,10 +306,43 @@ export function filterTokensByLighting(
     return computeVisibility({ x: cx, y: cy }, wallSegs, mapWidthPx, mapHeightPx, radiusPx);
   });
 
+  // A light extends the player's visibility after its source itself is
+  // reachable from one of their tokens. Reuse the existing token polygons;
+  // computing an extra unlimited-radius polygon here is prohibitively
+  // expensive on large maps.
+  const lightPolygons = enabledLights.flatMap((light) => {
+    const attachedToken = light.attachedTokenId
+      ? tokens.find((t) => t.id === light.attachedTokenId)
+      : undefined;
+    const lightX = attachedToken
+      ? (attachedToken.position.x + attachedToken.size.width / 2) * gridSize
+      : light.x;
+    const lightY = attachedToken
+      ? (mapHeight - attachedToken.position.y - attachedToken.size.height / 2) * gridSize
+      : light.y;
+
+    // An attached light is carried by its token, so its source is available
+    // at that token's current position even while the token is moving. This
+    // prevents the light from disappearing between movement updates.
+    const attachedLight = !!attachedToken;
+    if (!attachedLight && !visPolygons.some((poly) => isPointVisible({ x: lightX, y: lightY }, poly))) {
+      return [];
+    }
+    return [computeVisibility(
+      { x: lightX, y: lightY },
+      wallSegs,
+      mapWidthPx,
+      mapHeightPx,
+      light.dimRadius * gridSize
+    )];
+  });
+
   const elapsed = Date.now() - startMs;
   if (elapsed > 50) {
     logger.warn(`[lighting] filterTokensByLighting took ${elapsed}ms for userId=${playerUserId} (${myTokens.length} tokens, ${enabledLights.length} lights)`);
   }
+
+  const visibilityPolygons = visPolygons.concat(lightPolygons);
 
   // Keep tokens that are inside any of the visibility polygons (token or light)
   return tokens.filter((t) => {
@@ -317,7 +351,7 @@ export function filterTokensByLighting(
 
     const cx = (t.position.x + (t.size?.width ?? 1) / 2) * gridSize;
     const cy = (mapHeight - 1 - t.position.y + (t.size?.height ?? 1) / 2) * gridSize;
-    return visPolygons.some((poly) => isPointVisible({ x: cx, y: cy }, poly));
+    return visibilityPolygons.some((poly) => isPointVisible({ x: cx, y: cy }, poly));
   });
 }
 

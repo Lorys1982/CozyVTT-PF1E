@@ -24,6 +24,7 @@ const LightSourceBaseShape = z.object({
   dimRadius: z.number().min(0.5).max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   enabled: z.boolean(),
+  attachedTokenId: z.string().uuid().nullable().optional(),
 });
 
 export const LightSourceSchema = LightSourceBaseShape.refine(
@@ -54,6 +55,7 @@ export const LightSourceUpdateSchema = z.object({
   dimRadius: z.number().min(0.5).max(100).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   enabled: z.boolean().optional(),
+  attachedTokenId: z.string().uuid().nullable().optional(),
 }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one field must be provided' });
 
 // ── Fog Operations ───────────────────────────────────────────────────────────

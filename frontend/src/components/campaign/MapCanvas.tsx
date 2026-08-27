@@ -2157,8 +2157,20 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         let closest: LightSource | null = null;
         let closestDist = Infinity;
         for (const l of lightSources) {
-          const dx = mapPx.x - l.x;
-          const dy = mapPx.y - l.y;
+          // Attached lights are rendered at their token's center, rather than
+          // at the light's stored fallback position. Hit-test the same
+          // effective position so they remain selectable after attachment.
+          const attachedToken = l.attachedTokenId
+            ? tokens.find((t) => t.id === l.attachedTokenId)
+            : null;
+          const lightX = attachedToken
+            ? (attachedToken.position.x + attachedToken.size.width / 2) * currentMap.gridSize
+            : l.x;
+          const lightY = attachedToken
+            ? (currentMap.height - attachedToken.position.y - attachedToken.size.height / 2) * currentMap.gridSize
+            : l.y;
+          const dx = mapPx.x - lightX;
+          const dy = mapPx.y - lightY;
           const d = Math.sqrt(dx * dx + dy * dy);
           if (d <= hitR && d < closestDist) { closest = l; closestDist = d; }
         }
@@ -2440,7 +2452,9 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         const mapPx = screenToMapPx(screenX, screenY);
         const dragId = draggingLightRef.current.id;
         setLightSources((prev) => prev.map((l) =>
-          l.id === dragId ? { ...l, x: Math.round(mapPx.x), y: Math.round(mapPx.y) } : l
+          l.id === dragId && !l.attachedTokenId
+            ? { ...l, x: Math.round(mapPx.x), y: Math.round(mapPx.y) }
+            : l
         ));
         markDirty('overlay');
       }

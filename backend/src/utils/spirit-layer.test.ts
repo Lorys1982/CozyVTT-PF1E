@@ -83,6 +83,34 @@ describe('filterTokensByLighting', () => {
     expect(result.some((t) => t.id === 'nearby')).toBe(true);
   });
 
+  it('uses an enabled light to reveal tokens beyond the token sight radius', () => {
+    const playerToken = makeToken('player', 2, 2, 'user1', 1);
+    const distantToken = makeToken('distant', 4, 2);
+    const attachedLight = {
+      id: 'light-1',
+      x: 0,
+      y: 0,
+      brightRadius: 2,
+      dimRadius: 3,
+      color: '#ffcc66',
+      enabled: true,
+      attachedTokenId: 'player',
+    };
+
+    const result = filterTokensByLighting(
+      [playerToken, distantToken],
+      'user1',
+      NO_WALLS,
+      MAP_WIDTH,
+      MAP_HEIGHT,
+      GRID_SIZE,
+      true,
+      [attachedLight]
+    );
+
+    expect(result.some((t) => t.id === 'distant')).toBe(true);
+  });
+
   it('excludes token blocked behind a solid wall', () => {
     // Wall along x=500px (col 5), from y=0 to y=1000, dividing map in half
     const wall = makeWall('wall1', 500, 0, 500, 1000);

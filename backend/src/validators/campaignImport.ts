@@ -103,6 +103,7 @@ const LightSourceSchema = z.object({
   dimRadius: z.number().min(0).max(200),
   color: z.string().max(20),
   enabled: z.boolean(),
+  attachedTokenId: z.string().max(100).nullable().optional(),
 }).strip();
 
 // ── Token (within a map) ────────────────────────────────────────────────────

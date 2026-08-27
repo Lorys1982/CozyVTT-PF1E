@@ -79,6 +79,19 @@ export function computeVisibility(
     angles.push(angle - 0.0001, angle, angle + 0.0001);
   }
 
+  // Match the client renderer for range-limited sources. With only map-border
+  // corners in an open area, endpoint rays form a small diamond-like polygon
+  // rather than the source's circular sight/light radius. That made tokens in
+  // a torch's displayed range disappear when server-side movement filtering
+  // ran. Perimeter samples keep the authoritative polygon circular.
+  if (sightRadius > 0) {
+    const PERIMETER_SAMPLES = 64;
+    const step = (Math.PI * 2) / PERIMETER_SAMPLES;
+    for (let i = 0; i < PERIMETER_SAMPLES; i++) {
+      angles.push(-Math.PI + i * step);
+    }
+  }
+
   const points: Array<{ angle: number; point: Point }> = [];
   for (const angle of angles) {
     const pt = castRay(ox, oy, angle, blockingSegs, maxDist);
