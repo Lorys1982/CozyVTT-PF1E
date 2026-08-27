@@ -1814,6 +1814,52 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     [campaign, userRole, user?.id]
   );
 
+  /** Move the hovered (or currently dragged) token by one grid square. */
+  const moveTokenByArrow = useCallback((key: string) => {
+    if (!currentMap) return false;
+
+    const target = draggedToken ?? hoverToken;
+    if (!target || !canMoveToken(target)) return false;
+
+    // Read the latest position from the live store so repeated key presses
+    // cannot apply to a stale render snapshot.
+    const token = useGameStore.getState().tokens[target.id] ?? target;
+    let dx = 0;
+    let dy = 0;
+    if (key === 'ArrowLeft') dx = -1;
+    else if (key === 'ArrowRight') dx = 1;
+    else if (key === 'ArrowUp') dy = 1;
+    else if (key === 'ArrowDown') dy = -1;
+    else return false;
+
+    const x = Math.max(0, Math.min(token.position.x + dx, currentMap.width - token.size.width));
+    const y = Math.max(0, Math.min(token.position.y + dy, currentMap.height - token.size.height));
+    if (x === token.position.x && y === token.position.y) return true;
+
+    if (socket && socket.getSocket() && currentMap.id) {
+      socket.emitTokenMoveStart({ tokenId: token.id, mapId: currentMap.id });
+      socket.emitTokenMoveEnd({ tokenId: token.id, mapId: currentMap.id, x, y });
+    }
+    useGameStore.getState().applyTokenMove(token.id, { x, y });
+    return true;
+  }, [currentMap, draggedToken, hoverToken, canMoveToken, socket]);
+
+  // Arrow keys move the owned token currently under the pointer. Keep form
+  // controls and modifier-key shortcuts untouched, and prevent page scrolling
+  // only when an actual token move is performed.
+  useEffect(() => {
+    const handleArrowKey = (e: KeyboardEvent) => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(active.tagName) || active.isContentEditable)) return;
+      if (wallMode || fogMode || lightMode || showAoE || showRuler) return;
+      if (moveTokenByArrow(e.key)) e.preventDefault();
+    };
+    window.addEventListener('keydown', handleArrowKey);
+    return () => window.removeEventListener('keydown', handleArrowKey);
+  }, [moveTokenByArrow, wallMode, fogMode, lightMode, showAoE, showRuler]);
+
   // ============================================
   // Mouse Event Handlers
   // ============================================

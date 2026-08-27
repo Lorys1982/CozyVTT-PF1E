@@ -58,8 +58,8 @@ export function drawFog(
         if (!state.revealedCells.has(idx)) {
           const fadeOpacity = state.revealOpacity.get(idx);
           ctx.fillStyle = fadeOpacity !== undefined
-            ? `rgba(15, 12, 25, ${0.95 * fadeOpacity})`
-            : 'rgba(15, 12, 25, 0.95)';
+            ? `rgba(15, 12, 25, ${fadeOpacity})`
+            : 'rgba(15, 12, 25, 1)';
           ctx.fillRect(col * cellPx, row * cellPx, cellPx, cellPx);
         }
       }
