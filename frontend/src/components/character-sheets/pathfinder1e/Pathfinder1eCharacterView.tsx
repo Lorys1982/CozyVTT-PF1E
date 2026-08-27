@@ -18,10 +18,22 @@ interface Props {
   onPlaceAoE?:(config:SpellAoEConfig,spell:PF1eSpell)=>void;
 }
 
+type ViewLayout = 'long' | 'tabs';
+type TabId = 'overview' | 'combat' | 'skills' | 'spells' | 'inventory' | 'features';
+const VIEW_TABS: Array<{ id: TabId; label: string; icon: typeof UserRound }> = [
+  { id: 'overview', label: 'Overview', icon: UserRound },
+  { id: 'combat', label: 'Combat', icon: Swords },
+  { id: 'skills', label: 'Skills', icon: BookOpen },
+  { id: 'spells', label: 'Spells', icon: Sparkles },
+  { id: 'inventory', label: 'Inventory', icon: Backpack },
+  { id: 'features', label: 'Features & Bio', icon: BookOpen },
+];
+
 interface RollMenuState { x:number;y:number;expression:string;purpose:string }
 
-function Section({title,icon:Icon,children}:{title:string;icon:typeof Shield;children:ReactNode}) {
-  return <section className="rounded-xl border border-stone-200 bg-stone-50/70 p-4 shadow-sm sm:p-5">
+function Section({title,icon:Icon,children,visible=true}:{title:string;icon:typeof Shield;children:ReactNode;visible?:boolean}) {
+  const tab = title === 'Abilities' || title === 'Vitals' || title === 'Character' ? 'overview' : title === 'Combat' || title.includes('attacks') ? 'combat' : title === 'Skills' ? 'skills' : title === 'Inventory' ? 'inventory' : 'features';
+  return <section data-pf1-section={title} data-pf1-tab={tab} className={`${visible?'':'hidden'} rounded-xl border border-stone-200 bg-stone-50/70 p-4 shadow-sm sm:p-5`}>
     <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-stone-900"><Icon className="h-5 w-5 text-red-800"/>{title}</h3>
     {children}
   </section>;
@@ -36,9 +48,9 @@ function Rollable({expression,purpose,onRoll,onMenu,className,children,ariaLabel
   return <button type="button" aria-label={ariaLabel} onClick={()=>onRoll(expression,purpose)} onContextMenu={event=>onMenu(event,expression,purpose)} title={`Click: normal roll · Right-click: advantage / disadvantage`} className={className}>{children}</button>;
 }
 
-function AttackCards({title,attacks,onRoll,onMenu}:{title:string;attacks:PF1eAttack[];onRoll?:Props['onRoll'];onMenu:(event:ReactMouseEvent,expression:string,purpose:string)=>void}) {
+function AttackCards({title,attacks,onRoll,onMenu,visible=true}:{title:string;attacks:PF1eAttack[];onRoll?:Props['onRoll'];onMenu:(event:ReactMouseEvent,expression:string,purpose:string)=>void;visible?:boolean}) {
   if(!attacks.length)return null;
-  return <Section title={title} icon={Swords}><div className="grid gap-3 md:grid-cols-2">{attacks.map((attack,index)=>{
+  return <Section title={title} icon={Swords} visible={visible}><div className="grid gap-3 md:grid-cols-2">{attacks.map((attack,index)=>{
     const bonuses=attack.attackBonus?.match(/[+-]?\d+/g)??['+0'];
     const purpose=`${attack.weapon||title} Attack`;
     return <article key={`${attack.weapon}-${index}`} className="rounded-lg border border-stone-200 bg-white p-3">
@@ -51,9 +63,9 @@ function AttackCards({title,attacks,onRoll,onMenu}:{title:string;attacks:PF1eAtt
   })}</div></Section>;
 }
 
-function FeatureGroup({title,values}:{title:string;values:PF1eFeature[]}) {
+function FeatureGroup({title,values,visible=true}:{title:string;values:PF1eFeature[];visible?:boolean}) {
   if(!values.length)return null;
-  return <Section title={title} icon={BookOpen}><div className="grid gap-3 md:grid-cols-2">{values.map((feature,index)=><details key={`${feature.name}-${index}`} className="rounded-lg border border-stone-200 bg-white p-3"><summary className="cursor-pointer font-bold text-stone-900">{feature.name}{feature.type&&<span className="ml-2 text-xs font-semibold text-red-800">{feature.type}</span>}<span className="mt-1 block line-clamp-1 text-xs font-normal text-stone-500">{feature.description||'No description recorded.'}</span></summary>{feature.description&&<div className="mt-3 border-t border-stone-100 pt-3"><PF1eRulesText text={feature.description}/></div>}</details>)}</div></Section>;
+  return <Section title={title} icon={BookOpen} visible={visible}><div className="grid gap-3 md:grid-cols-2">{values.map((feature,index)=><details key={`${feature.name}-${index}`} className="rounded-lg border border-stone-200 bg-white p-3"><summary className="cursor-pointer font-bold text-stone-900">{feature.name}{feature.type&&<span className="ml-2 text-xs font-semibold text-red-800">{feature.type}</span>}<span className="mt-1 block line-clamp-1 text-xs font-normal text-stone-500">{feature.description||'No description recorded.'}</span></summary>{feature.description&&<div className="mt-3 border-t border-stone-100 pt-3"><PF1eRulesText text={feature.description}/></div>}</details>)}</div></Section>;
 }
 
 function InventoryCards({data}:{data:PF1eCharacterData}) {
@@ -65,6 +77,8 @@ function InventoryCards({data}:{data:PF1eCharacterData}) {
 export default function Pathfinder1eCharacterView({character,onRoll,onDataChange,onPlaceAoE}:Props) {
   const data=createPF1eSheetData(character.data as Partial<PF1eCharacterData>,character.name);
   const [rollMenu,setRollMenu]=useState<RollMenuState|null>(null);
+  const [layout,setLayout]=useState<ViewLayout>('long');
+  const [activeTab,setActiveTab]=useState<TabId>('overview');
   const menuRef=useRef<HTMLDivElement>(null);
   useEffect(()=>{
     if(!rollMenu)return;
@@ -85,13 +99,15 @@ export default function Pathfinder1eCharacterView({character,onRoll,onDataChange
     void onDataChange(next);
   };
   const money=data.money??{};
+  const showing = (tab: TabId) => layout === 'long' || activeTab === tab;
 
   return <div className="mx-auto max-w-[1180px] overflow-hidden rounded-xl border border-stone-200 bg-white text-stone-900 shadow-xl">
     <header className="bg-gradient-to-r from-red-700 via-red-800 to-red-950 p-6 text-white">
-      <div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-4">{character.tokenImageUrl?<img src={character.tokenImageUrl} alt="" className="h-20 w-20 rounded-full border-4 border-white/20 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white/20 bg-black/20"><Swords className="h-8 w-8"/></div>}<div><h2 className="text-3xl font-black">{data.characterName}</h2><div className="mt-2 flex flex-wrap gap-2 text-sm"><span className="rounded-full bg-white/15 px-3 py-1">{data.classAndLevel||'Adventurer'}</span>{data.race&&<span className="rounded-full bg-white/10 px-3 py-1">{data.race}</span>}{data.alignment&&<span className="rounded-full bg-white/10 px-3 py-1">{data.alignment}</span>}</div></div></div>{onDataChange&&<button type="button" onClick={()=>void onDataChange(applyPF1eLongRest(data))} className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-bold text-red-900 shadow hover:bg-red-50"><BedDouble className="h-4 w-4"/>Long rest</button>}</div>
+      <div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-4">{character.tokenImageUrl?<img src={character.tokenImageUrl} alt="" className="h-20 w-20 rounded-full border-4 border-white/20 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white/20 bg-black/20"><Swords className="h-8 w-8"/></div>}<div><h2 className="text-3xl font-black">{data.characterName}</h2><div className="mt-2 flex flex-wrap gap-2 text-sm"><span className="rounded-full bg-white/15 px-3 py-1">{data.classAndLevel||'Adventurer'}</span>{data.race&&<span className="rounded-full bg-white/10 px-3 py-1">{data.race}</span>}{data.alignment&&<span className="rounded-full bg-white/10 px-3 py-1">{data.alignment}</span>}</div></div></div><div className="flex flex-wrap items-center gap-2">{onDataChange&&<button type="button" onClick={()=>void onDataChange(applyPF1eLongRest(data))} className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-bold text-red-900 shadow hover:bg-red-50"><BedDouble className="h-4 w-4"/>Long rest</button>}<div className="flex rounded-lg border border-white/25 bg-black/15 p-1" role="group" aria-label="Character sheet layout"><button type="button" aria-pressed={layout==='long'} onClick={()=>setLayout('long')} className={`rounded px-3 py-2 text-sm font-bold ${layout==='long'?'bg-white text-red-900':'text-white hover:bg-white/15'}`}>Long view</button><button type="button" aria-pressed={layout==='tabs'} onClick={()=>setLayout('tabs')} className={`rounded px-3 py-2 text-sm font-bold ${layout==='tabs'?'bg-white text-red-900':'text-white hover:bg-white/15'}`}>Tabs</button></div></div></div>
+      {layout==='tabs'&&<nav className="mt-5 flex gap-1 overflow-x-auto border-t border-white/20 pt-3" role="tablist" aria-label="Character sheet sections">{VIEW_TABS.map(({id,label,icon:Icon})=><button key={id} type="button" role="tab" aria-selected={activeTab===id} onClick={()=>setActiveTab(id)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${activeTab===id?'bg-white text-red-900':'text-white/85 hover:bg-white/15'}`}><Icon className="h-4 w-4"/>{label}</button>)}</nav>}
     </header>
-    <main className="space-y-6 p-4 sm:p-6">
-      <Section title="Abilities" icon={Sparkles}><div className="grid grid-cols-3 gap-3 lg:grid-cols-6">{PF1E_ABILITIES.map(({key,label,short})=>{const ability=data.abilities?.[key];const score=ability?.tempScore??ability?.score??10;const mod=pf1eAbilityModifier(score);const check=pf1eAbilityCheckModifier(data,key);return <Rollable key={key} expression={`1d20${signed(check)}`} purpose={`${label} Check`} onRoll={onRoll} onMenu={showRollMenu} className="rounded-xl border border-stone-200 bg-white p-3 text-center transition hover:border-red-300 hover:bg-red-50"><div className="text-xs font-bold uppercase text-stone-500">{short}</div><div className="text-2xl font-black text-stone-900">{score}</div><div className="text-lg font-bold text-red-800">{signed(mod)}</div></Rollable>;})}</div></Section>
+    <main className={`pf1-sheet-main space-y-6 p-4 sm:p-6 ${layout==='tabs'?`pf1-tabs-${activeTab}`:''}`}>
+      <Section title="Abilities" icon={Sparkles} visible={showing('overview')}><div className="grid grid-cols-3 gap-3 lg:grid-cols-6">{PF1E_ABILITIES.map(({key,label,short})=>{const ability=data.abilities?.[key];const score=ability?.tempScore??ability?.score??10;const mod=pf1eAbilityModifier(score);const check=pf1eAbilityCheckModifier(data,key);return <Rollable key={key} expression={`1d20${signed(check)}`} purpose={`${label} Check`} onRoll={onRoll} onMenu={showRollMenu} className="rounded-xl border border-stone-200 bg-white p-3 text-center transition hover:border-red-300 hover:bg-red-50"><div className="text-xs font-bold uppercase text-stone-500">{short}</div><div className="text-2xl font-black text-stone-900">{score}</div><div className="text-lg font-bold text-red-800">{signed(mod)}</div></Rollable>;})}</div></Section>
 
       <div className="grid gap-6 lg:grid-cols-2"><Section title="Vitals" icon={Heart}><div className="grid grid-cols-3 gap-3"><Info label="HP" value={`${data.hp?.current??0} / ${data.hp?.total??0}`}/><Info label="AC" value={data.ac?.total??10}/><Info label="Touch / Flat" value={`${data.ac?.touch??10} / ${data.ac?.flatFooted??10}`}/></div><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">{[['Initiative',data.initiative?.total??0],['Fortitude',data.saves?.fort?.total??0],['Reflex',data.saves?.reflex?.total??0],['Will',data.saves?.will?.total??0]].map(([label,value])=><Rollable key={String(label)} expression={`1d20${signed(Number(value))}`} purpose={String(label)} onRoll={onRoll} onMenu={showRollMenu} className="rounded-lg bg-red-800 p-3 text-center text-white hover:bg-red-900"><div className="text-[10px] font-bold uppercase opacity-75">{label}</div><div className="text-2xl font-black">{signed(Number(value))}</div></Rollable>)}</div></Section>
         <Section title="Character" icon={UserRound}><div className="grid grid-cols-2 gap-3"><Info label="Player" value={data.playerName}/><Info label="Size" value={data.size}/><Info label="Deity" value={data.deity}/><Info label="Homeland" value={data.homeland}/><Info label="Languages" value={data.languages}/><Info label="Experience" value={data.xp?.total}/></div></Section></div>
@@ -101,12 +117,13 @@ export default function Pathfinder1eCharacterView({character,onRoll,onDataChange
 
       <Section title="Skills" icon={BookOpen}><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(data.skills??[]).map((skill,index)=><Rollable key={`${skill.name}-${index}`} expression={`1d20${signed(skill.total??0)}`} purpose={`${skill.name} Check`} onRoll={onRoll} onMenu={showRollMenu} className="flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-2 text-left hover:border-red-300 hover:bg-red-50"><span><span className="font-semibold text-stone-800">{skill.name}</span><span className="ml-2 text-xs uppercase text-stone-400">{skill.ability}</span></span><strong className="text-red-800">{signed(skill.total??0)}</strong></Rollable>)}</div>{data.skillConditionalModifiers&&<div className="mt-3 text-sm text-stone-600"><strong>Conditional:</strong> {data.skillConditionalModifiers}</div>}</Section>
 
-      <PF1eSpellbook data={data} editable={false} onSet={onDataChange?updateData:noop} canTrackUses={!!onDataChange} onRoll={onRoll} onRollContext={showRollMenu} onPlaceAoE={onPlaceAoE}/>
+      <div data-pf1-tab="spells"><PF1eSpellbook data={data} editable={false} onSet={onDataChange?updateData:noop} canTrackUses={!!onDataChange} onRoll={onRoll} onRollContext={showRollMenu} onPlaceAoE={onPlaceAoE}/></div>
       <Section title="Inventory" icon={Backpack}><div className="mb-4 flex flex-wrap gap-2 text-sm">{(['pp','gp','sp','cp'] as const).map(key=><span key={key} className="rounded-full bg-white px-3 py-1 font-semibold uppercase text-stone-700">{key} {money[key]??0}</span>)}</div><InventoryCards data={data}/></Section>
       {!!data.feats?.length&&<Section title="Feats" icon={BookOpen}><PF1eFeatList values={data.feats} editable={false} onChange={noop}/></Section>}
       <FeatureGroup title="Special abilities" values={data.specialAbilities??[]}/><FeatureGroup title="Traits" values={data.traits??[]}/>
       {data.notes&&<Section title="Notes" icon={BookOpen}><div className="whitespace-pre-wrap text-sm leading-relaxed text-stone-700">{data.notes}</div></Section>}
     </main>
+    <style>{`.pf1-sheet-main[class*="pf1-tabs-"] [data-pf1-tab]:not([data-pf1-tab="${activeTab}"]){display:none}`}</style>
     {rollMenu&&<div ref={menuRef} className="fixed z-50 min-w-48 overflow-hidden rounded-lg border border-stone-200 bg-white shadow-xl" style={{left:rollMenu.x,top:rollMenu.y}}><div className="truncate bg-red-800 px-3 py-2 text-xs font-semibold text-white">{rollMenu.purpose}</div>{[
       ['Normal',rollMenu.expression,''],['Advantage',withAdvantage(rollMenu.expression),' (Advantage)'],['Disadvantage',withDisadvantage(rollMenu.expression),' (Disadvantage)'],
     ].map(([label,expression,suffix])=><button key={label} type="button" onClick={()=>chooseRoll(expression,rollMenu.purpose+suffix)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-stone-700 hover:bg-red-50"><Dices className="h-4 w-4 text-red-800"/>{label}</button>)}</div>}
