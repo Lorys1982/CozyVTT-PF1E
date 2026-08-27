@@ -279,12 +279,14 @@ export function filterTokensByLighting(
 
   const wallSegs = (Array.isArray(walls) ? walls : []) as unknown as WallSegment[];
   const lightSources = (Array.isArray(lights) ? lights : []) as unknown as LightSource[];
+  // Light sources illuminate areas already within the player's own vision;
+  // they do not grant independent map vision or reveal tokens through fog.
   const enabledLights = lightSources.filter((l) => l.enabled);
 
   // Find all tokens controlled by this player
   const myTokens = tokens.filter((t) => t.controlledBy === playerUserId);
 
-  if (myTokens.length === 0 && enabledLights.length === 0) {
+  if (myTokens.length === 0) {
     // No controlled tokens and no lights — only return tokens explicitly marked visible
     return tokens.filter((t) => t.visible);
   }
@@ -302,16 +304,6 @@ export function filterTokensByLighting(
     const radiusPx = (t.sightRadius ?? 0) * gridSize;
     return computeVisibility({ x: cx, y: cy }, wallSegs, mapWidthPx, mapHeightPx, radiusPx);
   });
-
-  // Additive visibility: also compute visibility polygons from each enabled light source.
-  // Uses dimRadius (outer edge) — anything within dim range is "visible" for token filtering.
-  // Light positions are already in map-space pixels (Y=0 at top), no flip needed.
-  for (const light of enabledLights) {
-    const dimRadiusPx = (light.dimRadius ?? light.brightRadius ?? 3) * gridSize;
-    visPolygons.push(
-      computeVisibility({ x: light.x, y: light.y }, wallSegs, mapWidthPx, mapHeightPx, dimRadiusPx)
-    );
-  }
 
   const elapsed = Date.now() - startMs;
   if (elapsed > 50) {

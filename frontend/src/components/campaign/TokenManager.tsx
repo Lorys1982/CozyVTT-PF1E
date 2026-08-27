@@ -650,6 +650,7 @@ export default function TokenManager({ isOpen, onClose }: TokenManagerProps) {
                 )}
 
                 {/* Size */}
+                {/* Size */}
                 <div className="mb-3">
                   <label className="text-xs text-stone-gray font-medium block mb-1">
                     Size (grid cells)
@@ -819,6 +820,7 @@ export default function TokenManager({ isOpen, onClose }: TokenManagerProps) {
                                 )}
                               </div>
                             </div>
+
 
                             {/* Action buttons */}
                             <div className="flex items-center gap-0.5 flex-shrink-0">

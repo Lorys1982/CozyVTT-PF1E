@@ -54,6 +54,7 @@ interface Token {
   notes?: string;
   initiative?: number | null;
   sightRadius?: number;
+  sightRadiusDim?: number;
   displayMode?: 'pog' | 'top-down' | 'full-art';
   statBlock?: Record<string, any> | null;
   creatureTemplateId?: string | null;
@@ -852,6 +853,8 @@ router.post('/:id/tokens', campaignDM, async (req: AuthenticatedRequest, res: Re
       showHpBar: tokenData.showHpBar !== undefined ? tokenData.showHpBar : false,
       notes: typeof tokenData.notes === 'string' ? tokenData.notes : '',
       initiative: tokenData.initiative !== undefined ? tokenData.initiative : null,
+      sightRadius: tokenData.sightRadius !== undefined ? Math.max(0, Number(tokenData.sightRadius) || 0) : 0,
+      sightRadiusDim: tokenData.sightRadiusDim !== undefined ? Math.max(0, Number(tokenData.sightRadiusDim) || 0) : undefined,
       displayMode: displayMode,
       statBlock: tokenData.statBlock || null,
       creatureTemplateId: tokenData.creatureTemplateId || null,
@@ -1008,7 +1011,7 @@ router.put('/:id/tokens/:tokenId', campaignMember, async (req: AuthenticatedRequ
     // Players may only update position, rotation, and conditions on tokens they control
     // All stat fields (hp, notes, showHpBar, type, disposition, initiative) require DM role
     if (!isDM) {
-      const restrictedFields = ['hp', 'notes', 'showHpBar', 'type', 'disposition', 'initiative', 'visible', 'name', 'imageUrl', 'layer', 'controlledBy', 'displayMode', 'statBlock', 'creatureTemplateId'];
+      const restrictedFields = ['hp', 'notes', 'showHpBar', 'type', 'disposition', 'initiative', 'sightRadius', 'sightRadiusDim', 'visible', 'name', 'imageUrl', 'layer', 'controlledBy', 'displayMode', 'statBlock', 'creatureTemplateId'];
       for (const field of restrictedFields) {
         if (updates[field] !== undefined) {
           return res.status(403).json({ error: 'Forbidden', message: `Only DM can update token field: ${field}` });
@@ -1035,6 +1038,8 @@ router.put('/:id/tokens/:tokenId', campaignMember, async (req: AuthenticatedRequ
       ...(updates.showHpBar !== undefined && { showHpBar: updates.showHpBar }),
       ...(updates.notes !== undefined && { notes: updates.notes }),
       ...(updates.initiative !== undefined && { initiative: updates.initiative }),
+      ...(updates.sightRadius !== undefined && { sightRadius: Math.max(0, Number(updates.sightRadius) || 0) }),
+      ...(updates.sightRadiusDim !== undefined && { sightRadiusDim: Math.max(0, Number(updates.sightRadiusDim) || 0) }),
       ...(updates.displayMode !== undefined && { displayMode: updates.displayMode }),
       ...(updates.statBlock !== undefined && { statBlock: updates.statBlock }),
       ...(updates.creatureTemplateId !== undefined && { creatureTemplateId: updates.creatureTemplateId }),
@@ -1578,4 +1583,3 @@ router.put('/:id/lighting', campaignDM, async (req: AuthenticatedRequest, res: R
 });
 
 export default router;
-

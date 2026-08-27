@@ -14,6 +14,7 @@ import { gridYToCentrePx } from '../coords';
 import type { LightToolMode } from '@/components/campaign/DmLightControls';
 import { mapSizePx, type Viewport } from './types';
 import type { VisionSource } from '../vision';
+import { isPointVisible } from '@/utils/raycasting';
 
 /** Mutable holder for a persistent offscreen canvas (a React ref works). */
 export interface CanvasHolder {
@@ -26,6 +27,8 @@ export interface LightingDrawState {
   enabledLights: readonly LightSource[];
   /** Precomputed via computeVisionState — order must match inputs. */
   tokenVision: readonly VisionSource[];
+  tokenDimVision?: readonly VisionSource[];
+  tokenLineOfSight?: readonly VisionSource[];
   lightVision: readonly VisionSource[];
   /** Persistent offscreen canvases (fog composite + light coverage). */
   lightingCanvas: CanvasHolder;
@@ -91,10 +94,28 @@ export function drawDynamicLighting(
     }
   }
 
+  // Token dim vision contributes partial coverage outside the bright radius.
+  for (const { poly } of state.tokenDimVision ?? []) {
+    if (poly.points.length < 3) continue;
+    covCtx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    covCtx.beginPath();
+    covCtx.moveTo(poly.points[0].x, poly.points[0].y);
+    for (let i = 1; i < poly.points.length; i++) covCtx.lineTo(poly.points[i].x, poly.points[i].y);
+    covCtx.closePath();
+    covCtx.fill();
+    covCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+  }
+
   // Light sources → clipped to visibility polygon for wall shadows.
   // Dim circle at α 0.5; bright circle adds another α 0.5 on top.
   for (let li = 0; li < state.enabledLights.length; li++) {
     const light = state.enabledLights[li];
+    // A light cannot reveal itself (or illuminate the map) until its source
+    // lies inside one of the viewer's own token-vision polygons.
+    const inViewerFov = (state.tokenLineOfSight ?? state.tokenVision).some((source) =>
+      isPointVisible({ x: light.x, y: light.y }, { x: source.cx, y: source.cy }, source.poly)
+    );
+    if (!inViewerFov) continue;
     const poly = state.lightVision[li]?.poly;
     if (!poly || poly.points.length < 3) continue;
 
@@ -127,7 +148,9 @@ export function drawDynamicLighting(
   covCtx.globalCompositeOperation = 'source-over';
 
   // ── Build fog with coverage subtracted ──────────────────────────
-  offCtx.fillStyle = 'rgba(15, 12, 25, 0.95)';
+  // Unlit areas must be fully opaque; visibility is provided exclusively by
+  // the token/light coverage punched out below.
+  offCtx.fillStyle = 'rgba(15, 12, 25, 1)';
   offCtx.fillRect(0, 0, mapWidthPx, mapHeightPx);
   offCtx.globalCompositeOperation = 'destination-out';
   offCtx.drawImage(coverage, 0, 0);
@@ -161,7 +184,12 @@ export function drawDynamicLighting(
   // Two-zone light glow: bright inner + dim outer. Additive compositing
   // lets overlapping dim zones read as bright.
   ctx.globalCompositeOperation = 'lighter';
-  for (const light of state.enabledLights) {
+  for (let li = 0; li < state.enabledLights.length; li++) {
+    const light = state.enabledLights[li];
+    const inViewerFov = (state.tokenLineOfSight ?? state.tokenVision).some((source) =>
+      isPointVisible({ x: light.x, y: light.y }, { x: source.cx, y: source.cy }, source.poly)
+    );
+    if (!inViewerFov) continue;
     const brightPx = light.brightRadius * viewport.gridSize;
     const dimPx = light.dimRadius * viewport.gridSize;
     const r = parseInt(light.color.slice(1, 3), 16);

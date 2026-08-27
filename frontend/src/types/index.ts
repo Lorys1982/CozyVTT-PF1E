@@ -642,6 +642,8 @@ export interface Token {
   initiative:  number | null;
   /** Sight radius in grid squares (0 = unlimited). Used by dynamic lighting. */
   sightRadius?: number;
+  /** Outer dim-vision radius; defaults to sightRadius when omitted. */
+  sightRadiusDim?: number;
   /** Display mode: pog (circular + border), top-down (circular, no border), full-art (rectangular, alpha). Default: pog */
   displayMode?: TokenDisplayMode;
   /** NPC stat block — populated when placing from creature library or entered manually. */
@@ -918,6 +920,8 @@ export interface CreateTokenRequest {
   showHpBar?: boolean;
   notes?: string;
   initiative?: number | null;
+  sightRadius?: number | null;
+  sightRadiusDim?: number | null;
 }
 
 export interface UpdateTokenRequest {
@@ -938,6 +942,8 @@ export interface UpdateTokenRequest {
   showHpBar?: boolean;
   notes?: string;
   initiative?: number | null;
+  sightRadius?: number | null;
+  sightRadiusDim?: number | null;
 }
 
 // ============================================

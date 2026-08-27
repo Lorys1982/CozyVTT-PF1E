@@ -49,4 +49,5 @@ export interface LightSource {
   dimRadius: number;    // dim-light radius in grid squares (lightly obscured, faint glow; >= brightRadius)
   color: string;        // hex color e.g. '#ffcc66' (warm amber default)
   enabled: boolean;     // toggle without deleting (extinguished torch)
+  attachedTokenId?: string | null;
 }

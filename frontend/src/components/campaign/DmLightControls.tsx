@@ -11,6 +11,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { LightSource } from '@/types/walls';
+import type { Token } from '@/types';
 
 export type LightToolMode = 'light-place' | 'light-select' | null;
 
@@ -62,6 +63,7 @@ interface DmLightControlsProps {
   onDefaultsChange?: (defaults: LightPlacementDefaults) => void;
   /** Current placement defaults (parent is source of truth). */
   placementDefaults?: LightPlacementDefaults;
+  tokens?: readonly Token[];
 }
 
 /**
@@ -101,6 +103,7 @@ export default function DmLightControls({
   lightingEnabled = false,
   onDefaultsChange,
   placementDefaults = DEFAULT_PLACEMENT,
+  tokens = [],
 }: DmLightControlsProps) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -185,6 +188,15 @@ export default function DmLightControls({
       {!collapsed && (
         <div className="flex flex-col gap-2 p-2 pt-1">
           {/* Warning when lighting is off */}
+          {isEditing && (
+            <label className="text-[11px] text-stone-300">Attach to token
+              <select value={selectedLight?.attachedTokenId ?? ''} onChange={(e) => updateSelected({ attachedTokenId: e.target.value || null })} className="mt-1 w-full rounded bg-stone-700 px-2 py-1 text-xs">
+                <option value="">Fixed position</option>
+                {tokens.map((token) => <option key={token.id} value={token.id}>{token.name}</option>)}
+              </select>
+            </label>
+          )}
+
           {!lightingEnabled && (
             <div className="text-[10px] text-amber-400/60 bg-amber-400/5 rounded px-1.5 py-1 border border-amber-400/10">
               Dynamic lighting is off. Enable it in Map Settings for lights to affect player visibility.

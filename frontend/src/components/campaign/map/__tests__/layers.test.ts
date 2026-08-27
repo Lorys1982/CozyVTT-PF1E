@@ -183,6 +183,19 @@ describe('drawFog', () => {
     }, viewport3x3);
     expect(count(ctx, 'fillRect')).toBe(7);
   });
+
+  it('DM player preview uses opaque fog from the full fog grid', () => {
+    const ctx = makeMockCtx();
+    drawFog(ctx, {
+      isDM: true,
+      playerPreview: true,
+      fogState: { fogCols: 3, fogRows: 3, cellPx: 50, revealed: [true, false, false, false, false, false, false, false, true] },
+      revealedCells: null,
+      revealOpacity: new Map(),
+    }, viewport3x3);
+    expect(count(ctx, 'fillRect')).toBe(7);
+    expect(ctx.fillStyle).toBe('rgba(15, 12, 25, 1)');
+  });
 });
 
 describe('drawTokens', () => {

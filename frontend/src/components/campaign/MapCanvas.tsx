@@ -163,6 +163,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [isMovingTokenLayer, setIsMovingTokenLayer] = useState(false);
   const [contextMenuMoveToMapOpen, setContextMenuMoveToMapOpen] = useState(false);
+  const [visionDraft, setVisionDraft] = useState<{ bright: string; dim: string } | null>(null);
   const [isMoveToMapLoading, setIsMoveToMapLoading] = useState(false);
 
   // Character sheet viewer state
@@ -1439,6 +1440,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     //    appear above fog)
     drawFog(ctx, {
       isDM: renderIsDM,
+      playerPreview: dmPreviewPlayerView,
       fogState,
       revealedCells,
       revealOpacity: revealOpacityRef.current,
@@ -1457,7 +1459,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     }
 
     ctx.restore();
-  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, campaign?.spiritLayerEnabled, playerSpiritVisible, dmViewBothPlanes, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity]);
+  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, campaign?.spiritLayerEnabled, playerSpiritVisible, dmViewBothPlanes, dmPreviewPlayerView, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity]);
 
   /**
    * Draw the TOKENS layer (middle canvas): every token + the drag ghost.
@@ -1541,6 +1543,12 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     };
 
     const renderIsDM = userRole === 'DM';
+    const effectiveLights = lightSources.map((light) => {
+      if (!light.attachedTokenId) return light;
+      const token = tokens.find((t) => t.id === light.attachedTokenId);
+      if (!token) return light;
+      return { ...light, x: (token.position.x + token.size.width / 2) * currentMap.gridSize, y: (currentMap.height - token.position.y - token.size.height / 2) * currentMap.gridSize };
+    });
     // Ownership predicate — lighting vision sources
     const isOwnToken = (t: Token): boolean =>
       t.controlledBy === user?.id ||
@@ -1551,14 +1559,21 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     //    The vision polygons also feed the walls layer's door LOS filter.
     const lightingEnabled = currentMap.lightingEnabled ?? false;
     let visPolygons: VisionSource[] = [];
-    if (lightingEnabled) {
+    // Preview must apply the player's vision radius even when the map's
+    // lighting toggle is off; otherwise the DM will continue seeing the full
+    // map and the preview cannot reflect token POV settings.
+    if (lightingEnabled || dmPreviewPlayerView) {
       const renderAsPlayer = !renderIsDM || dmPreviewPlayerView;
       if (renderAsPlayer) {
         const myTokens = tokens.filter((t) => {
-          if (renderIsDM && dmPreviewPlayerView) return true; // DM preview: use all tokens
+          if (renderIsDM && dmPreviewPlayerView) {
+            // DM preview combines every token's sight polygon, including
+            // player and NPC tokens, so the DM can inspect all POVs together.
+            return true;
+          }
           return isOwnToken(t);
         });
-        const enabledLights = lightSources.filter((l) => l.enabled);
+        const enabledLights = effectiveLights.filter((l) => l.enabled);
         // Memoized: only sources whose position/radius changed —
         // or all sources when a wall was edited — actually recompute.
         const vision = visionCacheRef.current.compute(myTokens, enabledLights, wallSegments, viewport);
@@ -1567,6 +1582,8 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           myTokens,
           enabledLights,
           tokenVision: vision.tokenVision,
+          tokenDimVision: vision.tokenDimVision,
+          tokenLineOfSight: vision.tokenLineOfSight,
           lightVision: vision.lightVision,
           lightingCanvas: lightingOffscreenRef,
           coverageCanvas: lightCoverageOffscreenRef,
@@ -1578,7 +1595,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     // 7. DM light source icons (visible in player preview too, so DM can edit)
     if (renderIsDM) {
       drawLightIcons(ctx, {
-        lights: lightSources,
+        lights: effectiveLights,
         selectedLightId,
         lightMode,
       }, viewport);
@@ -1708,7 +1725,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // Terrain-only content.
   useEffect(() => {
     markDirty('terrain');
-  }, [markDirty, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity]);
+  }, [markDirty, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity, dmPreviewPlayerView]);
 
   // Spirit flags affect the base/spirit images (terrain) and spirit-token
   // alpha (tokens).
@@ -1720,8 +1737,8 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // shifts the viewer's vision, so repaint the overlay (darkness) too.
   useEffect(() => {
     markDirty('tokens');
-    if (currentMap?.lightingEnabled) markDirty('overlay');
-  }, [markDirty, tokens, tokenImages, animatingTokens, hoverToken, characterHpCache, dmShowSpiritTokens, currentMap?.lightingEnabled, currentTurnTokenId, peekTokenId]);
+    if (currentMap?.lightingEnabled || lightSources.some((light) => light.attachedTokenId)) markDirty('overlay');
+  }, [markDirty, tokens, tokenImages, animatingTokens, hoverToken, characterHpCache, dmShowSpiritTokens, currentMap?.lightingEnabled, lightSources, currentTurnTokenId, peekTokenId]);
 
   // Publish this map's own token hover so the initiative tracker can tint the
   // matching row — the other half of the cross-highlight.
@@ -1813,6 +1830,17 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     },
     [campaign, userRole, user?.id]
   );
+
+  const saveTokenVision = async (token: Token) => {
+    if (!isDM || !currentMap || !visionDraft) return;
+    const sightRadius = Math.max(0, Math.min(200, Number(visionDraft.bright) || 0));
+    const sightRadiusDim = Math.max(0, Math.min(200, Number(visionDraft.dim) || 0));
+    try {
+      await api.updateToken(campaign!.id, currentMap.id, token.id, { sightRadius, sightRadiusDim });
+      useGameStore.getState().patchToken(token.id, { sightRadius, sightRadiusDim });
+      socket?.emitMapChange(currentMap.id);
+    } catch { showToast('Failed to update token vision', 'error'); }
+  };
 
   /** Move the hovered (or currently dragged) token by one grid square. */
   const moveTokenByArrow = useCallback((key: string) => {
@@ -2688,6 +2716,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     const token = getTokenAtPosition(gridCoords.x, gridCoords.y);
     if (token) {
       setContextMenu({ token, x: e.clientX, y: e.clientY });
+      setVisionDraft({ bright: String(token.sightRadius ?? 0), dim: String(token.sightRadiusDim ?? token.sightRadius ?? 0) });
       return;
     }
     setContextMenu(null);
@@ -3226,6 +3255,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
             }}
             lightingEnabled={currentMap.lightingEnabled ?? false}
             placementDefaults={lightPlacementDefaults}
+            tokens={tokens}
             onDefaultsChange={setLightPlacementDefaults}
           />
         </DmToolPanelContainer>
@@ -3426,6 +3456,15 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {isDM && contextMenu.token.type === TokenType.PLAYER && visionDraft && (
+            <div className="border-b border-moss-green/20 px-3 py-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase text-stone-gray">Dynamic vision (squares)</div>
+              <div className="grid grid-cols-2 gap-1">
+                <input aria-label="Bright vision" type="number" min="0" max="200" value={visionDraft.bright} onChange={(e) => setVisionDraft((v) => v && { ...v, bright: e.target.value })} onBlur={() => void saveTokenVision(contextMenu.token)} className="w-full rounded border border-moss-green/20 bg-white px-1.5 py-1 text-xs" placeholder="Full" />
+                <input aria-label="Dim vision" type="number" min="0" max="200" value={visionDraft.dim} onChange={(e) => setVisionDraft((v) => v && { ...v, dim: e.target.value })} onBlur={() => void saveTokenVision(contextMenu.token)} className="w-full rounded border border-moss-green/20 bg-white px-1.5 py-1 text-xs" placeholder="Dim" />
+              </div>
+            </div>
+          )}
           {contextMenu.token.characterId && (
             <>
               <button

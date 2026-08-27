@@ -28,6 +28,9 @@ export interface VisionSource {
 export interface VisionState {
   /** One entry per viewer-controlled token (sight radius applied). */
   tokenVision: VisionSource[];
+  tokenDimVision: VisionSource[];
+  /** Unbounded line-of-sight polygons used to determine visible light sources. */
+  tokenLineOfSight: VisionSource[];
   /** One entry per enabled light source (dim radius applied). */
   lightVision: VisionSource[];
   /** Concatenated in draw order — used by the walls layer door filter. */
@@ -35,12 +38,14 @@ export interface VisionState {
 }
 
 /** Token center (canvas px) + sight radius (px) for a viewer token. */
-function tokenSource(token: Token, viewport: Viewport): { cx: number; cy: number; r: number } {
+function tokenSource(token: Token, viewport: Viewport, dim = false): { cx: number; cy: number; r: number } {
   // Token grid coords use Y=0 at bottom; canvas pixel coords use Y=0 at top.
   return {
     cx: (token.position.x + token.size.width / 2) * viewport.gridSize,
     cy: gridYToCentrePx(token.position.y, token.size.height, viewport.mapHeight, viewport.gridSize),
-    r: (token.sightRadius ?? 0) * viewport.gridSize,
+    // Use the outer range for the visibility boundary; the lighting pass can
+    // then treat the inner sightRadius as the bright/full-visibility range.
+    r: (dim ? (token.sightRadiusDim ?? token.sightRadius ?? 0) : (token.sightRadius ?? 0)) * viewport.gridSize,
   };
 }
 
@@ -62,6 +67,10 @@ export function computeVisionState(
     const poly = computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, r);
     return { poly, cx, cy };
   });
+  const tokenDimVision: VisionSource[] = myTokens.map((token) => {
+    const { cx, cy, r } = tokenSource(token, viewport, true);
+    return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, r), cx, cy };
+  });
 
   const lightVision: VisionSource[] = enabledLights.map((light) => {
     const dimRadiusPx = light.dimRadius * viewport.gridSize;
@@ -69,7 +78,11 @@ export function computeVisionState(
     return { poly, cx: light.x, cy: light.y };
   });
 
-  return { tokenVision, lightVision, all: [...tokenVision, ...lightVision] };
+  const tokenLineOfSight = myTokens.map((token) => {
+    const { cx, cy } = tokenSource(token, viewport);
+    return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, 0), cx, cy };
+  });
+  return { tokenVision, tokenDimVision, tokenLineOfSight, lightVision, all: [...tokenVision, ...lightVision] };
 }
 
 /**
@@ -144,7 +157,15 @@ export function createVisionCache(): VisionCache {
       });
       for (const id of lightCache.keys()) if (!seenLights.has(id)) lightCache.delete(id);
 
-      return { tokenVision, lightVision, all: [...tokenVision, ...lightVision] };
+      const tokenLineOfSight = myTokens.map((token) => {
+        const { cx, cy } = tokenSource(token, viewport);
+        return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, 0), cx, cy };
+      });
+      const tokenDimVision: VisionSource[] = myTokens.map((token) => {
+        const { cx, cy, r } = tokenSource(token, viewport, true);
+        return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, r), cx, cy };
+      });
+      return { tokenVision, tokenDimVision, tokenLineOfSight, lightVision, all: [...tokenVision, ...lightVision] };
     },
   };
 }
