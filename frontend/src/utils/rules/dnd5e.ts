@@ -300,6 +300,36 @@ export function decomposeBonus(
 }
 
 // ---------------------------------------------------------------------------
+// Passive scores
+// ---------------------------------------------------------------------------
+
+/**
+ * The base a passive score is measured from: the character takes 10 rather than
+ * rolling, so a passive check is 10 plus the check's total modifier.
+ */
+export const PASSIVE_BASE = 10;
+
+/**
+ * Passive score for a check with the given total bonus.
+ *
+ * The bonus passed in must already be the *complete* modifier for the check —
+ * ability modifier plus proficiency, doubled for expertise. That is the whole
+ * point of taking it as an argument: passive Perception was previously stored
+ * as its own number, computed separately from the Perception bonus, so the two
+ * could and did disagree. A character with expertise in Perception showed the
+ * right +5 on the skill and a passive score that had only counted proficiency
+ * once. Derive the bonus once, then pass it here.
+ *
+ * Advantage on the check adds 5 and disadvantage subtracts 5 (Basic Rules,
+ * "Passive Checks"). Those are situational rather than properties of the sheet,
+ * so they are not applied here.
+ */
+export function passiveScore(totalBonus: number): number {
+  if (!Number.isFinite(totalBonus)) return PASSIVE_BASE;
+  return PASSIVE_BASE + totalBonus;
+}
+
+// ---------------------------------------------------------------------------
 // Bounds
 // ---------------------------------------------------------------------------
 

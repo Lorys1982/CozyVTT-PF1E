@@ -3,9 +3,9 @@
 // Allows editing characters for any game system
 // ============================================
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, AlertCircle, Loader2, Lock, Download, FileText } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Loader2, Lock, Download, FileText } from 'lucide-react';
 import NewCharacterTemplateModal from '@/components/character/NewCharacterTemplateModal';
 import CharacterSheetSkeleton from '@/components/skeletons/CharacterSheetSkeleton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -28,16 +28,16 @@ export default function CharacterEditorPage() {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  // Whether the sheet currently holds edits that have not been saved. Reported
+  // by the sheet itself, which is the only thing that knows: it owns the form
+  // state. Reset on save and whenever the sheet returns to view mode.
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [showSaveAsTemplate, setShowSaveAsTemplate] = useState(false);
 
-  // Auto-save timer ref
-  const autoSaveTimerRef = useRef<number | null>(null);
-  const pendingDataRef = useRef<any>(null);
 
   // ============================================
   // Fetch Character & Check Permissions
@@ -127,18 +127,22 @@ export default function CharacterEditorPage() {
         setSaving(true);
 
         // Update character via API
+        //
+        // `name` is deliberately not sent. The sheet carries its own name field,
+        // and the server derives the `name` column from it — but only when the
+        // request doesn't name it explicitly. Passing `character.name` here sent
+        // the *old* column value on every save, which counted as an explicit
+        // name and suppressed the sync, so renaming on the sheet never reached
+        // the gallery or the title bar from this page.
         // Use the new tokenImageUrl if provided, otherwise keep the existing one
         const updated = await characterService.updateCharacter(character.id, {
-          name: character.name,
           data,
           tokenImageUrl: tokenImageUrl !== undefined ? tokenImageUrl : (character.tokenImageUrl || undefined),
         });
 
         // Update local state
         setCharacter(updated);
-        setHasUnsavedChanges(false);
         setLastSaved(new Date());
-        pendingDataRef.current = null;
 
         if (doShowToast) {
           showToast('Character saved!', 'success');
@@ -175,36 +179,28 @@ export default function CharacterEditorPage() {
       // Save immediately when user clicks save in character sheet
       // Pass tokenImageUrl through so token images are persisted
       await handleSave(data, showToast ?? true, tokenImageUrl);
-
-      // Store for top save button reference
-      pendingDataRef.current = data;
     },
     [handleSave]
   );
 
   // ============================================
-  // Cleanup Auto-save Timer
-  // ============================================
-
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, []);
-
-  // ============================================
   // Unsaved Changes Warning
   // ============================================
 
-  // Warn user before closing/refreshing page
+  // Warn before closing or refreshing the tab. This was previously removed
+  // because `hasUnsavedChanges` was never set, making it dead code that could
+  // only ever be a no-op. Now that the sheet reports its dirty state the guard
+  // is meaningful again — and it covers the one exit route the in-app
+  // confirmation cannot: the browser's own close and reload.
   useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
+      // Both lines are deliberate: `preventDefault()` is what current browsers
+      // act on, and `returnValue` — deprecated but not removed — is what older
+      // ones still require. Setting only one leaves a gap somewhere.
+      e.preventDefault();
+      e.returnValue = '';
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -215,7 +211,20 @@ export default function CharacterEditorPage() {
   // Navigation Handlers
   // ============================================
 
+  /**
+   * Confirm before leaving, but only with unsaved work.
+   *
+   * The flag comes from the sheet via `onDirtyChange`, because the sheet owns
+   * the form state and is the only thing that knows. It went through two wrong
+   * shapes first: originally nothing ever set it, so the guard could never fire
+   * and the back arrow discarded edits silently; then it warned unconditionally,
+   * which asked even straight after a save — the sheet drops back to view mode
+   * once saved, so people were being warned about losing nothing.
+   */
   const handleBack = () => {
+    // Only ask when there is genuinely something to lose. Warning
+    // unconditionally meant the prompt appeared after a successful save, and
+    // even when merely viewing — which teaches people to click through it.
     if (hasUnsavedChanges) {
       setConfirmLeave(true);
       return;
@@ -225,16 +234,6 @@ export default function CharacterEditorPage() {
 
   const handleCancel = () => {
     handleBack();
-  };
-
-  // ============================================
-  // Manual Save Handler
-  // ============================================
-
-  const handleManualSave = async () => {
-    if (pendingDataRef.current) {
-      await handleSave(pendingDataRef.current, true);
-    }
   };
 
   // ============================================
@@ -324,10 +323,11 @@ export default function CharacterEditorPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Save Status */}
-            {hasUnsavedChanges && (
-              <span className="text-sm text-sunset-orange">Unsaved changes</span>
-            )}
+            {/* Save Status. The sheet reports its dirty state via
+                `onDirtyChange`, but that is used only to gate the leave
+                confirmation — there is deliberately no persistent "unsaved
+                changes" badge here, since the sheet's own Save button is
+                already the thing you would reach for. */}
             {saving && (
               <span className="text-sm text-brand-ink flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -340,15 +340,10 @@ export default function CharacterEditorPage() {
               </span>
             )}
 
-            {/* Manual Save Button */}
-            <Button
-              onClick={handleManualSave}
-              disabled={!hasUnsavedChanges || saving}
-              className="flex items-center gap-2"
-            >
-              <Save className="w-4 h-4" />
-              Save
-            </Button>
+            {/* No Save button here on purpose. The sheet renders its own, and a
+                second one in this header was both a duplicate and permanently
+                disabled. Whatever hosts a sheet leaves Save, Cancel and Edit to
+                the sheet itself. */}
 
             {/* Save as Template — publishes this sheet for everyone to copy */}
             <Button
@@ -376,6 +371,7 @@ export default function CharacterEditorPage() {
       {/* Character Sheet Editor */}
       <div className="p-4">
         <CharacterSheetRouter
+          onDirtyChange={setHasUnsavedChanges}
           character={character}
           mode="edit"
           onSave={handleSheetSave}

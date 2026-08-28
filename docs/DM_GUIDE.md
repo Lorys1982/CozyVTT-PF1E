@@ -54,12 +54,16 @@ From here you can update:
 
 To invite a player to your campaign:
 
-1. Open **Campaign Settings**
-2. Find the **Invite Players** section
-3. Enter the player's email address — they must already have an account on your CozyVTT instance
-4. The player will see a **Pending Invitation** banner on their dashboard
+1. Click **Invite Player** in the left sidebar, or open **Campaign Settings**
+2. Pick them from the list — it shows everyone on your instance who isn't already a member or already invited. They must have an account first
+3. Optionally tick **Also email them an invitation**
+4. The player sees a **Pending Invitation** on their dashboard
 
 *Screenshot pending — Invite player flow.*
+
+**About that checkbox.** It's off by default, and the invitation reaches them either way — the dashboard is what they actually accept from. Tick it only when a nudge in their inbox is genuinely useful; if they're sitting across the table from you, it isn't. If your instance has no mail server set up the option is greyed out and says so, rather than pretending to send something.
+
+The list deliberately shows display names and not email addresses, so running a campaign doesn't become a way to collect everyone's address.
 
 When a player accepts, they'll choose which of their characters to bring. Once they've joined, their character appears in the **Campaign Roster** on the left sidebar.
 
@@ -68,6 +72,10 @@ When a player accepts, they'll choose which of their characters to bring. Once t
 ### The Campaign Roster
 
 The left sidebar's **Campaign Roster** shows all players currently in your campaign along with their assigned characters. This is a quick-reference during sessions for names, character names, and party composition.
+
+**Who's actually here.** A small dot on each person's icon shows whether they're connected right now — green for in session, grey for not. It updates as people arrive and leave, so you can tell at a glance whether the quiet player is thinking or has dropped off. Someone with the campaign open in two tabs stays green until they close the last one.
+
+This replaced the "X has joined the campaign" messages that used to appear in chat. Those fired on every page load and every momentary disconnect, so a player with a patchy connection could bury the conversation without saying a word. If your campaign still has a backlog of them, the **eraser button** at the top of the chat panel clears them for everyone — it only removes those notices, and leaves the rest of the conversation alone. Nothing was deleted automatically when you upgraded.
 
 ---
 
@@ -173,7 +181,7 @@ Click any token on the map to open the **Quick Editor**. From here you can:
 - View and edit the stat block (for NPC tokens with creature template data)
 - **Change the token image** — click the token avatar in the Quick Editor header to open the image picker
 - **Save the image back to the creature template** — so future placements of that creature reuse the same image
-- Apply or remove conditions (visual badges appear on the token)
+- Apply or remove conditions. Each one shows as a small amber badge above the token — a two-letter code, so **PA**ralyzed, **PO**isoned, **PE**trified and **PR**one stay distinguishable at a glance. Past four, the rest collapse into a grey **+N** badge so the row never grows wider than the token. Anyone can hover a token to read its conditions in full, players included — they can't act around a condition they can't identify
 
 *Screenshot pending — NPC quick editor popup with image picker.*
 
@@ -203,7 +211,7 @@ After setting a token's image, you can save it back to the creature template so 
 
 ### Rolling for NPC Tokens
 
-Right-click any NPC token on the map (DM only) and choose **Roll...** to open the NPC roll picker. It surfaces every rollable option from the token's stat block:
+Right-click an NPC token on the map (DM only) and choose **Roll...** to open the NPC roll picker. It surfaces every rollable option from the token's stat block:
 
 - **Ability checks** — STR, DEX, CON, INT, WIS, CHA (1d20 + ability modifier)
 - **Saving throws** — all six saves. A proficient save is marked ●, an expert one ◆
@@ -211,6 +219,8 @@ Right-click any NPC token on the map (DM only) and choose **Roll...** to open th
 - **Combat** — attack rolls (`+N to hit` parsed from action descriptions) and damage rolls (every `XdY+Z` expression extracted from each action)
 
 For d20 systems (D&D 5e, PF2e) the picker also has an **Advantage / Disadvantage** selector that rewrites the dice expression before rolling (`2d20kh1` / `2d20kl1`). Pathfinder 2e shows the same selector labeled **Fortune / Misfortune**.
+
+> **Tokens linked to a player's character** are the exception. They roll from the character sheet rather than from a stat block, so their menu offers the sheet's own **Roll...** and a **View Character Sheet** entry instead of the NPC picker. Both used to be listed at once, which put two identical-looking **Roll...** entries on the same menu.
 
 **What each system offers.** The rolls on the menu depend on your campaign's game system, because not every system has something meaningful to compute from a stat block:
 
@@ -224,6 +234,16 @@ For d20 systems (D&D 5e, PF2e) the picker also has an **Advantage / Disadvantage
 If a token doesn't have a stat block, or you're running one of the systems above that offers none, there's a **Custom Roll** input at the bottom of the picker — type any valid dice expression (e.g. `3d8+2`) and optional label, then roll. The result is broadcast to chat with the token name as context (e.g. *"Goblin: Scimitar Damage = 5"*).
 
 *Screenshot pending — NPC roll picker with stat-block-derived options.*
+
+### Roll History
+
+The **Dice** tab keeps the rolls made in your campaign, newest first, with arrows to step back through them. It's stored on the server, so it survives a refresh, a navigation away and back, and a dropped connection — yours and your players'. Come back the next evening and last session's rolls are still there.
+
+**What each person sees.** Players see the open rolls plus their own secret ones. You see everything, including your players' secret rolls, marked as such — the same oversight you have live. That filtering happens on the server, so a player reloading the page never picks up a roll they weren't meant to see.
+
+**Clearing it.** Only you can, using the trash icon on the Dice panel. It empties the panel for everyone and stays empty when they reload. The rolls aren't destroyed — they're hidden from the panel from that point on, so a dispute about what someone rolled an hour ago is still settleable from the database. Ending a session does *not* clear history; if you want a clean slate, clear it yourself.
+
+> **One exception.** While a session is **paused**, players' rolls are worked out in their own browser and never sent to the server — that's deliberate, so a paused table can still fiddle with dice without it counting. Those rolls aren't in the history and won't survive a refresh.
 
 ### Managing Token Visibility
 
@@ -576,6 +596,24 @@ Combatants are the tokens already on your map — you don't type names in by han
 - Right-click a token on the map and choose **Add to Initiative**.
 
 Each combatant carries its token's name, portrait and HP across automatically. Set an initiative value by clicking the number beside a combatant, or use the dice button on a row to roll one. Initiative values are saved on the token, so they survive ending and restarting combat.
+
+**Players can roll their own.** Once you've added a player's token, a dice button appears for them too — but only on their own row, and only for a token they control. They can also right-click their token on the map and pick **Roll Initiative** from the **Roll...** menu. Either way it lands in your turn order and the roll shows in chat.
+
+You keep everything else: only you decide who is in the fight, drag the order around, type a value in by hand, advance the turn, or end combat. You can still roll for any combatant, players included — useful when someone is away from the keyboard as the fight starts. A player who isn't in the tracker yet has nothing to roll: the option doesn't appear until you add them.
+
+**What gets rolled follows the game system**, worked out from the combatant's sheet or stat block rather than being a plain d20:
+
+| System | Initiative |
+|---|---|
+| **D&D 5e** | `d20 +` Dexterity modifier, plus the sheet's **other bonus** box (Alert, Jack of All Trades, and so on) |
+| **Pathfinder 2e** | `d20 +` the stat named by the sheet's **Uses:** dropdown — Perception by default, Stealth when someone is sneaking |
+| **Call of Cthulhu 7e** | **No roll.** Investigators are ranked in DEX order, so the control reads **Set Initiative** and takes their DEX. Nothing appears in the dice log, because no dice were thrown |
+| **Shadowrun 6e** | The character's initiative dice and base from their sheet |
+| **NPCs** | A D&D 5e stat block rolls from its recorded Dexterity. A token with no sheet or stat block rolls a plain d20 |
+
+Two things worth knowing. **Call of Cthulhu's readied firearms** act at DEX + 50 — that depends on the round rather than the investigator, so click the value and type it in when it applies. And **advantage on initiative** (a Sentinel Shield) isn't automatic; roll `2d20kh1` in the dice panel and enter the result.
+
+Since values are saved on the token, you can always click a number and correct it, whatever produced it.
 
 *GIF pending — Adding combatants and setting initiative order.*
 

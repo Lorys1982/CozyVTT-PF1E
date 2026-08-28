@@ -38,6 +38,31 @@ _Nothing in progress._
 
 ### Polish / tech debt
 
+- **Map events still die on a reconnect.** `frontend/src/services/socket.ts` keeps
+  a listener registry so subscriptions survive the socket being replaced, and the
+  components fixed in 1.2.2 go through it. `MapCanvas.tsx` does not: roughly
+  fifteen subscriptions there (walls, fog, lights, spirit layer, map changes,
+  pings, token appear/disappear) still bind straight to `socket.getSocket()`, so
+  they are lost when the underlying socket is rebuilt and never re-attached. The
+  pairs are symmetric, so nothing leaks — the events simply stop arriving until
+  the page is reloaded. `token.moved` and the initiative and session listeners
+  were converted as they were touched; the rest is a mechanical sweep, changing
+  `socketInstance.on(...)` to the typed `socket.onXxx(...)` wrappers and
+  `socketInstance.off(...)` to `socket.off(...)`.
+
+- **Advantage on initiative.** Initiative is worked out per system in
+  `utils/rules/initiative.ts`, but nothing expresses *advantage* on the roll — a
+  Sentinel Shield in D&D 5e, for instance. The dice layer already understands
+  `2d20kh1` (the roll pickers use it), so this is a sheet field and a branch in
+  the resolver rather than new dice work. Left out of 1.2.2 to keep that change
+  to the modifier.
+
+- **Shadowrun 6e initiative base is taken as stored.** The resolver reads
+  `derivedStats.initiative.meatspace.base` rather than deriving it from Reaction
+  + Intuition, so it shares the "displayed but never calculated" weakness that
+  D&D 5e and Pathfinder 2e were just fixed for. Doing it properly means the same
+  derive-and-display treatment on the Shadowrun sheet.
+
 - **Call of Cthulhu 7e and Shadowrun 6e creature stat blocks.** Creature rolls are
   now dispatched per game system, and these two deliberately offer nothing rather
   than the wrong dice — a d100 game and a dice-pool game have no d20 rolls,
@@ -48,6 +73,30 @@ _Nothing in progress._
   pools and limits for Shadowrun, plus their own stat block editors and viewers.
   Neither has SRD seed data to test against. See the "Creature and NPC stat
   blocks" section of `docs/GAME_SYSTEMS.md` for where the branch points are.
+
+- **Chat "load more" refetches the same 50 messages.** Two separate faults in one
+  path, found while adding roll-history persistence in 1.2.2. The client sends a
+  `before` cursor that `GET /:campaignId/messages` never reads, so scrolling back
+  returns the newest page every time. And that route applies `take` *before*
+  filtering `DICE_ROLL` rows out, so a campaign with a lot of rolls returns fewer
+  than `limit` chat messages — occasionally none at all, which looks like empty
+  history. Fixing the cursor properly means keyset pagination on `createdAt`;
+  fixing the filter means excluding the type in the `where` clause rather than
+  afterwards. Neither is urgent while chat fits in one page, and both were left
+  alone in 1.2.2 to keep that change to its reported scope.
+
+- **A shared character-sheet header / action bar.** Each per-system editor
+  copy-pastes its own header: the Save and Cancel cluster, the palette button,
+  the colour dropdown and the name and token fields are duplicated four times
+  over, with no shared component between them. 1.2.2 fixed three separate
+  duplicate-control bugs that all had the same shape — a page or modal drawing
+  Save, Cancel or Edit that the sheet already draws — plus an overlap that had
+  to be corrected in three files rather than one. The rule that resolved them is
+  worth keeping: **the sheet owns Save, Cancel and Edit; whatever hosts it does
+  not repeat them.** Extracting a shared header would make that structural
+  instead of a convention, and would stop the next system added from inheriting
+  the same layout bugs. `frontend/src/components/character-sheets/types.ts` holds
+  the props contract the extraction would build on.
 
 ---
 

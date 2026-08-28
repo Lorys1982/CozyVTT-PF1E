@@ -27,4 +27,15 @@ export interface CharacterSheetProps {
 
   /** Callback when edit mode is cancelled */
   onCancel?: () => void;
+
+  /**
+   * Fired the first time the user changes anything, and again after each save,
+   * so a host can tell whether leaving would lose work.
+   *
+   * The sheets own their form state and used to report nothing, which left the
+   * page editor's "unsaved changes" guard permanently unable to fire. Making it
+   * always warn instead was worse: it asked after a successful save, and even
+   * when only viewing.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
 }

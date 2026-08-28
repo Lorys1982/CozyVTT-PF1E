@@ -98,6 +98,11 @@ backend/tests/
 # ---- Claude Code local settings ---------------------------------------------
 .claude/
 
+# ---- Scratch space -----------------------------------------------------------
+# Throwaway compose overrides, env files and fixtures used to stand a test
+# instance up against this checkout. Nothing here belongs in the repository.
+scratchpad/
+
 # ---- Playwright output -------------------------------------------------------
 # Page snapshots, console logs and screenshots written into the working
 # directory when a browser is driven against a local dev instance, plus the

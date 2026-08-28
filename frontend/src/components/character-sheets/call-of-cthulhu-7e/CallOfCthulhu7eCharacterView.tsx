@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Character } from '../../../types';
 import { CharacteristicBlock } from './components/CharacteristicBlock';
+import { orderedCharacteristics } from './characteristics';
 import { SanityTracker } from './components/SanityTracker';
 import { SkillsList } from './components/SkillsList';
 import { WeaponsList } from './components/WeaponsList';
@@ -301,62 +302,16 @@ export const CallOfCthulhu7eCharacterView: React.FC<CallOfCthulhu7eCharacterView
         <div className="grid grid-cols-4 md:grid-cols-8 gap-4">
           {data.characteristics && (
             <>
-              <CharacteristicBlock
-                label="STR"
-                regular={data.characteristics.STR.regular}
-                half={data.characteristics.STR.half}
-                fifth={data.characteristics.STR.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="CON"
-                regular={data.characteristics.CON.regular}
-                half={data.characteristics.CON.half}
-                fifth={data.characteristics.CON.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="SIZ"
-                regular={data.characteristics.SIZ.regular}
-                half={data.characteristics.SIZ.half}
-                fifth={data.characteristics.SIZ.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="DEX"
-                regular={data.characteristics.DEX.regular}
-                half={data.characteristics.DEX.half}
-                fifth={data.characteristics.DEX.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="APP"
-                regular={data.characteristics.APP.regular}
-                half={data.characteristics.APP.half}
-                fifth={data.characteristics.APP.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="INT"
-                regular={data.characteristics.INT.regular}
-                half={data.characteristics.INT.half}
-                fifth={data.characteristics.INT.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="POW"
-                regular={data.characteristics.POW.regular}
-                half={data.characteristics.POW.half}
-                fifth={data.characteristics.POW.fifth}
-                onRoll={onRoll}
-              />
-              <CharacteristicBlock
-                label="EDU"
-                regular={data.characteristics.EDU.regular}
-                half={data.characteristics.EDU.half}
-                fifth={data.characteristics.EDU.fifth}
-                onRoll={onRoll}
-              />
+              {orderedCharacteristics(data.characteristics).map((key) => (
+                <CharacteristicBlock
+                  key={key}
+                  label={key}
+                  regular={data.characteristics[key].regular}
+                  half={data.characteristics[key].half}
+                  fifth={data.characteristics[key].fifth}
+                  onRoll={onRoll}
+                />
+              ))}
             </>
           )}
         </div>

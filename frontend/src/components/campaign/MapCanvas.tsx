@@ -167,8 +167,12 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // Character sheet viewer state
   const [viewingCharacter, setViewingCharacter] = useState<Character | null>(null);
 
-  // Roll picker (right-click token → Roll...)
-  const [rollPicker, setRollPicker] = useState<{ characterId: string; x: number; y: number } | null>(null);
+  // Roll picker (right-click token → Roll...). Carries the token as well as the
+  // character because initiative belongs to the token on the map, not to the
+  // sheet — the same character could be represented by more than one token.
+  const [rollPicker, setRollPicker] = useState<
+    { characterId: string; tokenId: string; canRollInitiative: boolean; x: number; y: number } | null
+  >(null);
   const [npcRollPicker, setNpcRollPicker] = useState<{ tokenId: string; x: number; y: number } | null>(null);
 
   // DM-only: toggle whether spirit-layer tokens are drawn on canvas
@@ -859,17 +863,19 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       store.applyTokenMove(event.tokenId, { x: event.x, y: event.y });
     };
 
-    // Listen for token moved events
-    const socketInstance = socket.getSocket();
-    if (socketInstance) {
-      socketInstance.on('token.moved', handleTokenMoved);
-    }
+    // Listen for token moved events.
+    //
+    // Subscribe through the client rather than the raw io instance: the client
+    // keeps a registry and re-attaches on reconnect. Binding to `getSocket()`
+    // directly meant this listener died with the socket it was attached to,
+    // and since `socket` here is the stable singleton the effect never re-ran
+    // to rebind — so remote token movement silently stopped arriving after any
+    // reconnect until the page was reloaded.
+    socket.onTokenMoved(handleTokenMoved);
 
     // Cleanup listener on unmount
     return () => {
-      if (socketInstance) {
-        socketInstance.off('token.moved', handleTokenMoved);
-      }
+      socket.off('token.moved', handleTokenMoved);
     };
   }, [socket]); // handler reads/writes via the store, no reactive deps needed
 
@@ -2598,6 +2604,50 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
    * Handle right-click (context menu)
    * Cancels any picked-up token before showing menu
    */
+  /**
+   * Whether initiative may be rolled for a token from the map menu.
+   *
+   * Two conditions: the token is already in the initiative order, and the
+   * viewer is either the DM or the token's controller. Rolling is how you take
+   * part in a fight the DM has already put you in — it is not a way to add
+   * yourself to one, which is why being in the order is required rather than
+   * implied.
+   *
+   * The combat snapshot is read imperatively instead of subscribed to: this
+   * component deliberately avoids re-rendering the canvas when a combatant's HP
+   * ticks (see `useCurrentTurnTokenId`), and the answer is only needed at the
+   * moment of a right-click.
+   */
+  const canRollInitiativeFor = (token: Token): boolean => {
+    const combat = useGameStore.getState().combat;
+    if (!combat.combatants.some((c) => c.tokenId === token.id)) return false;
+    if (isDM) return true;
+    // Spectators are watching, not playing; and once combat is under way a
+    // re-roll re-sorts the order and can skip a turn, so that is the DM's call.
+    // The server enforces both.
+    if (userRole === 'SPECTATOR' || combat.active) return false;
+    return !!user && token.controlledBy === user.id;
+  };
+
+  /**
+   * Roll initiative for a token, sending the result to the tracker rather than
+   * only to the dice log.
+   *
+   * No dice expression is sent. The server works out what initiative means for
+   * this combatant from its character sheet or stat block — it is the only side
+   * holding either, and some systems do not roll at all. That also means this
+   * and the tracker's own die button cannot disagree.
+   */
+  const rollInitiativeForToken = (tokenId: string) => {
+    if (!socket || !currentMap) return;
+    const token = tokens.find((t) => t.id === tokenId);
+    socket.emitInitiativeRoll({
+      tokenId,
+      mapId: currentMap.id,
+      characterName: token?.name,
+    });
+  };
+
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     if (!canvasRef.current || !currentMap) return;
@@ -3298,9 +3348,15 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         </div>
       )}
 
-      {/* Hover Token Name */}
+      {/* Hover Token Name.
+
+          Conditions are listed here in full, for everyone rather than the DM
+          alone. The badges drawn on the token are only two letters each, which
+          is enough to tell them apart at a glance but not to learn them — and a
+          player who cannot read what is afflicting a creature cannot play
+          around it. */}
       {hoverToken && hoverCoords && (
-        <div className="absolute bottom-4 left-4 glass-panel px-3 py-1.5 bg-parchment/90 backdrop-blur-sm">
+        <div className="absolute bottom-4 left-4 glass-panel px-3 py-1.5 bg-parchment/90 backdrop-blur-sm max-w-xs">
           <div className="flex items-center gap-2">
             <span className="text-xs text-brand-ink font-semibold">
               {hoverToken.name}
@@ -3309,6 +3365,18 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
               ({hoverCoords.x}, {hoverCoords.y})
             </span>
           </div>
+          {hoverToken.conditions && hoverToken.conditions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {hoverToken.conditions.map((condition) => (
+                <span
+                  key={condition}
+                  className="px-1.5 py-0.5 rounded-cozy bg-warm-amber/20 border border-warm-amber/40 text-[10px] font-medium text-brand-ink"
+                >
+                  {condition}
+                </span>
+              ))}
+            </div>
+          )}
           {!canMoveToken(hoverToken) && (
             <span className="text-[10px] text-warm-gray">
               (Locked)
@@ -3350,11 +3418,24 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         </div>
       )}
 
-      {/* Token Context Menu */}
+      {/* Token Context Menu.
+
+          `flex flex-col` is what actually makes this fit its content, and it
+          has to be paired with `w-max`. A <button> is inline-block by default,
+          so in plain block layout every item shared one inline formatting
+          context and the menu's max-content width came out as the *sum* of all
+          the labels laid end to end — measured at 935px for an eleven-item
+          menu, which is why it stretched most of the way across the screen.
+          The items only looked stacked because `w-full` pushed each onto its
+          own line. In a flex column they are real block-level items, so
+          max-content is the *widest* label instead of the total.
+
+          `max-w` is now only a guard against one very long label (a map name
+          in the Move to Map submenu), not the thing doing the sizing. */}
       {contextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 glass-panel bg-parchment/95 backdrop-blur-sm border border-moss-green/20 shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 glass-panel bg-parchment/95 backdrop-blur-sm border border-moss-green/20 shadow-lg py-1 flex flex-col w-max min-w-[160px] max-w-[18rem]"
           style={{
             left: `${contextMenuPos ? contextMenuPos.x : contextMenu.x}px`,
             top: `${contextMenuPos ? contextMenuPos.y : contextMenu.y}px`,
@@ -3382,9 +3463,16 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
               <button
                 className="w-full px-4 py-2 text-left text-sm text-stone-gray hover:bg-moss-green/10 transition-colors"
                 onClick={() => {
-                  const { characterId, x, y } = { characterId: contextMenu.token.characterId!, x: contextMenu.x, y: contextMenu.y };
+                  const token = contextMenu.token;
+                  const picker = {
+                    characterId: token.characterId!,
+                    tokenId: token.id,
+                    canRollInitiative: canRollInitiativeFor(token),
+                    x: contextMenu.x,
+                    y: contextMenu.y,
+                  };
                   setContextMenu(null);
-                  setRollPicker({ characterId, x, y });
+                  setRollPicker(picker);
                 }}
               >
                 Roll...
@@ -3399,8 +3487,12 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
             const isNpcOrObject = cmType === TokenType.NPC || cmType === TokenType.OBJECT;
             return (
             <>
-              {/* Roll... — NPC tokens only (player tokens have their own Roll above) */}
-              {cmType === TokenType.NPC && (
+              {/* Roll... — NPC tokens only. The `characterId` check is what
+                  actually enforces "player tokens have their own Roll above":
+                  a token can be typed NPC *and* still be bound to a character
+                  (a companion, or a PC the DM re-typed), and that combination
+                  rendered this entry a second time. */}
+              {cmType === TokenType.NPC && !cmToken.characterId && (
                 <button
                   className="w-full px-4 py-2 text-left text-sm text-stone-gray hover:bg-moss-green/10 transition-colors"
                   onClick={() => {
@@ -3692,6 +3784,14 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           anchorX={rollPicker.x}
           anchorY={rollPicker.y}
           onRoll={(expression, purpose) => socket?.emitDiceRoll({ expression, purpose })}
+          // Only offered when this token is already in the initiative order and
+          // this viewer may roll for it — the DM for anyone, a player for a
+          // token they control. The server checks the same thing.
+          onRollInitiative={
+            rollPicker.canRollInitiative
+              ? () => rollInitiativeForToken(rollPicker.tokenId)
+              : undefined
+          }
           onClose={() => setRollPicker(null)}
         />
       )}
@@ -3712,10 +3812,11 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
         );
       })()}
 
-      {/* Door Context Menu — right-click on a door segment */}
+      {/* Door Context Menu — right-click on a door segment.
+          Same flex-column sizing as the token menu above; see the note there. */}
       {doorContextMenu && (
         <div
-          className="fixed z-50 glass-panel bg-parchment/95 backdrop-blur-sm border border-moss-green/20 shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 glass-panel bg-parchment/95 backdrop-blur-sm border border-moss-green/20 shadow-lg py-1 flex flex-col w-max min-w-[160px] max-w-[18rem]"
           style={{ left: `${doorContextMenu.x}px`, top: `${doorContextMenu.y}px` }}
           onClick={(e) => e.stopPropagation()}
         >

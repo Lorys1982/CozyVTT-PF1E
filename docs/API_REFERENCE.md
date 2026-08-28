@@ -299,6 +299,45 @@ Get chat history for a campaign. Supports cursor-based pagination.
 - `limit` — number of messages to return (default: 50, max: 100)
 - `before` — message ID to paginate before (for "load more" scrollback)
 
+### `POST /api/campaigns/:campaignId/invite`
+
+Invite a user to the campaign. **Requires DM role.**
+
+**Body:**
+- `userId` *(required)* — the user to invite; they must already have an account
+- `sendEmail` *(optional, default `false`)* — whether to email them as well. Only an explicit `true` counts
+- `expiresInDays` *(optional)* — invitation lifetime; omitted means it does not expire
+
+**Response `201`:** `{ message, invitation, emailSent }`
+
+The invitation is created whether or not an email goes out — it is what the invitee accepts from, on their dashboard. `emailSent` reports what actually happened: it is `false` when the caller did not ask, when the instance has no SMTP configured, and when the send failed. A failed send is logged and does not fail the request, because the invitation already exists by that point. This is deliberately unlike `POST /api/admin/users/invite`, which refuses outright without SMTP because there an email is the only way in.
+
+### `DELETE /api/campaigns/:campaignId/messages/join-leave`
+
+Remove the legacy "X has joined / has left the campaign" system messages from a campaign's chat. **Requires DM role.**
+
+**Response `200`:** `{ message, deleted }` — `deleted` is the row count, `0` when there was nothing to clear.
+
+These messages are no longer written: they fired on every socket authentication and every disconnect, so a page load, a refresh or a brief network drop each added a permanent row, and presence in the roster now conveys the same thing. Rows already in the database are deliberately **not** removed on upgrade — a chat log is a record of a session — so this is how a DM clears the backlog deliberately.
+
+Matching is on `metadata.action` (`user.joined` / `user.left`), **not** on the message text: the wording is display copy that could change or be translated, while the action tag is what the writer meant. Other system messages and the conversation itself are untouched.
+
+### `GET /api/campaigns/:campaignId/dice-rolls`
+
+Roll history for a campaign, newest first. **Requires campaign membership.**
+
+**Query params:**
+- `limit` — rolls to return (default: 50, max: 100)
+- `offset` — rolls to skip (default: 0)
+
+**Response `200`:** `{ rolls, pagination }`, each roll `{ id, userId, userName, characterName, expression, result, breakdown, purpose, secret, timestamp }`.
+
+**Visibility is enforced here, not in the client.** A DM receives every roll in the campaign. Anyone else receives public rolls plus their *own* secret rolls, and never another user's — matching what the live `dice.rolled` socket event delivers. Filtering client-side would still have put the rolls on the wire, so the rule lives in the query.
+
+Rolls made before the DM last cleared the history are excluded (see `Campaign.rollHistoryClearedAt`). They remain in the table: clearing hides rolls from this endpoint rather than deleting them, so the secret-roll audit trail survives an accidental Clear.
+
+Note that rolls made while a session is **paused** are evaluated client-side and never persisted, so they never appear here.
+
 ---
 
 ## Token Template Endpoints
@@ -402,7 +441,7 @@ Upload a `.cozyvtt` archive and return its manifest preview without creating any
   "preview": {
     "formatVersion": 1,
     "exportedAt": "2026-04-18T12:00:00.000Z",
-    "exportedFrom": "CozyVTT v1.2.1",
+    "exportedFrom": "CozyVTT v1.2.2",
     "campaignName": "The Lost Mines",
     "gameSystem": "DND_5E",
     "mapCount": 5,
@@ -1215,7 +1254,7 @@ Restore a database backup. **Destructive — overwrites all current data.**
 
 ### `GET /api/config`
 
-Public. Returns the upload limits the server enforces, derived from the `MAX_<TYPE>_SIZE_MB` environment variables. The SPA reads these at runtime, so changing a limit takes a restart rather than a frontend rebuild.
+Public. Returns the upload limits the server enforces, derived from the `MAX_<TYPE>_SIZE_MB` environment variables, and whether the instance can send email. The SPA reads these at runtime, so changing a limit takes a restart rather than a frontend rebuild.
 
 **Response:**
 ```json
@@ -1226,11 +1265,14 @@ Public. Returns the upload limits the server enforces, derived from the `MAX_<TY
     "AUDIO": 20971520,
     "AVATAR": 2097152
   },
-  "maxUploadBytes": 52428800
+  "maxUploadBytes": 52428800,
+  "smtp": { "configured": true }
 }
 ```
 
 Sizes are in bytes. `maxUploadBytes` is the largest configured limit — the cap applied while parsing an upload, before the asset type is known. See [Upload Size Limits](DEPLOYMENT.md#upload-size-limits) for the environment variables and the matching reverse-proxy setting.
+
+`smtp.configured` is a bare boolean and deliberately nothing more — the host, port, username and TLS mode stay on the admin-only `GET /api/admin/config`. It exists so the campaign invite dialog can disable its "also email them" option on an instance with no mail server, which a campaign DM could not otherwise discover, since a DM is not necessarily a platform admin.
 
 ---
 
@@ -1304,7 +1346,7 @@ Server → Client: emit('authenticated')   ← connection ready
 | `initiative.add` | `{ tokenId, mapId }` | DM — add a map token as a combatant |
 | `initiative.remove` | `{ tokenId }` | DM — remove combatant |
 | `initiative.set` | `{ tokenId, mapId, value }` | DM — set initiative value (persisted on the token) |
-| `initiative.roll` | `{ tokenId, mapId, expression, characterName? }` | DM — roll initiative; also emits `dice.rolled` |
+| `initiative.roll` | `{ tokenId, mapId, expression?, characterName? }` | Roll initiative. DM — any token, adding it as a combatant if it is not one already. Player — only a token they control (`controlledBy`) that is **already** a combatant; a player's roll never adds one. **The server derives what is rolled** from the token's character sheet, else its stat block (see `utils/rules/initiative.ts`); `expression` is only a fallback for a combatant nothing can be derived for, and is ignored otherwise. `dice.rolled` is emitted only when dice were actually thrown — Call of Cthulhu takes the investigator's DEX with no roll, so it emits `initiative.state` alone |
 | `initiative.reorder` | `{ orderedTokenIds }` | DM — reorder combatants |
 | `initiative.start` | — | DM — start combat |
 | `initiative.next` | — | DM — advance to next turn |

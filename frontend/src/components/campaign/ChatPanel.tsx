@@ -4,12 +4,14 @@
 // ============================================
 
 import { useState, useEffect, useRef, FormEvent, KeyboardEvent } from 'react';
-import { MessageCircle, Send, Loader, AlertCircle } from 'lucide-react';
+import { MessageCircle, Send, Loader, AlertCircle, Eraser } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCampaign } from '@/contexts/CampaignContext';
 import { getMessages } from '@/services/message.service';
+import { api } from '@/services/api';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import ChatMessage from './ChatMessage';
 import ChatMessageSkeleton from '@/components/skeletons/ChatMessageSkeleton';
 import { MessageType, PlatformRole } from '@/types';
@@ -21,6 +23,35 @@ export default function ChatPanel() {
   const { socket, reconnectCount } = useWebSocket();
   const { user } = useAuth();
   const { userRole, campaign } = useCampaign();
+
+  // Older versions wrote a chat message every time someone connected or
+  // dropped, which on a flaky connection buried the actual conversation. They
+  // are no longer written, but existing campaigns still carry the backlog —
+  // this lets the DM clear it when they choose rather than a migration doing it
+  // silently on upgrade.
+  const [confirmClearJoins, setConfirmClearJoins] = useState(false);
+  const [clearingJoins, setClearingJoins] = useState(false);
+
+  const handleClearJoinLeave = async () => {
+    if (!campaign?.id) return;
+    setConfirmClearJoins(false);
+    setClearingJoins(true);
+    try {
+      const { deleted } = await api.clearJoinLeaveMessages(campaign.id);
+      if (deleted > 0) {
+        setMessages((prev) =>
+          prev.filter((m) => {
+            const action = (m.metadata as { action?: string } | null)?.action;
+            return action !== 'user.joined' && action !== 'user.left';
+          })
+        );
+      }
+    } catch (err) {
+      console.error('[ChatPanel] Failed to clear join/leave messages:', err);
+    } finally {
+      setClearingJoins(false);
+    }
+  };
 
   // State
   const [messages, setMessages] = useState<Message[]>([]);
@@ -434,7 +465,31 @@ export default function ChatPanel() {
             {messages.length} {messages.length === 1 ? 'message' : 'messages'}
           </span>
         )}
+        {userRole === 'DM' && (
+          <button
+            onClick={() => setConfirmClearJoins(true)}
+            disabled={clearingJoins}
+            aria-label="Clear old join and leave messages"
+            title="Clear old join and leave messages"
+            className={`p-1.5 rounded-lg text-stone-gray hover:text-brand-ink hover:bg-moss-green/10 transition-colors disabled:opacity-50 ${
+              messages.length > 0 ? '' : 'ml-auto'
+            }`}
+          >
+            <Eraser className="w-4 h-4" />
+          </button>
+        )}
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmClearJoins}
+        title="Clear join and leave messages?"
+        message="Removes the old “has joined” and “has left” notices from this campaign's chat for everyone. The rest of the conversation is untouched, and no new ones are created."
+        confirmLabel="Clear"
+        cancelLabel="Keep"
+        variant="warning"
+        onConfirm={handleClearJoinLeave}
+        onCancel={() => setConfirmClearJoins(false)}
+      />
 
       {/* Error Display */}
       {error && (

@@ -38,7 +38,12 @@ export function useInitiativeSync() {
     socket.emitInitiativeRequestState();
 
     return () => {
-      socket.getSocket()?.off('initiative.state', handleState);
+      // Must go through the client, not the raw io instance: the client keeps
+      // a registry so listeners survive a reconnect, and `getSocket().off()`
+      // only detaches from the current instance. The registry entry would
+      // survive and be re-attached on the next reconnect, stacking up one
+      // stale handler per reconnect and outliving this hook entirely.
+      socket.off('initiative.state', handleState);
     };
   }, [socket, status, reconnectCount]);
 }

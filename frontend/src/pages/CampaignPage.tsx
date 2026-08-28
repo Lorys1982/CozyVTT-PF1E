@@ -84,6 +84,27 @@ function CampaignPageContent() {
     }
     // refreshCurrentMap is stable enough for this trigger pattern
   }, [reconnectCount]);
+
+  // A player changing their character's token image rewrites the image on every
+  // token bound to that character, server-side — tokens hold their own copy. The
+  // map has to refetch to show it, but only when tokens really changed: this
+  // event also fires for every HP tweak and sheet save.
+  useEffect(() => {
+    if (!socket) return;
+    const handleCharacterUpdated = (data: { tokensChanged?: boolean }) => {
+      if (data?.tokensChanged) refreshCurrentMap();
+    };
+    socket.on('character.updated', handleCharacterUpdated);
+    return () => {
+      socket.off('character.updated', handleCharacterUpdated);
+    };
+    // refreshCurrentMap MUST be a dependency. It is a useCallback keyed on the
+    // campaign and map ids, so its identity changes once they load. Keyed on
+    // `socket` alone this effect would run once and capture the version built
+    // before either existed — whose body returns immediately — and the refresh
+    // would silently never happen. (`socket` is a module singleton, so it never
+    // changes identity and cannot re-trigger this on its own.)
+  }, [socket, refreshCurrentMap]);
   const [isMapManagerOpen, setIsMapManagerOpen] = useState(false);
   const [isTokenManagerOpen, setIsTokenManagerOpen] = useState(false);
   const [isSpiritLayerOpen, setIsSpiritLayerOpen] = useState(false);
@@ -168,12 +189,15 @@ function CampaignPageContent() {
     socket.onSessionResumed(handleResumed);
 
     return () => {
-      const socketInstance = socket.getSocket();
-      if (!socketInstance) return;
-      socketInstance.off('session.started', handleStarted);
-      socketInstance.off('session.paused', handlePaused);
-      socketInstance.off('session.ended', handleEnded);
-      socketInstance.off('session.resumed', handleResumed);
+      // Through the client, not the raw io instance. The client keeps a registry
+      // so listeners survive a reconnect, and `getSocket().off()` only detaches
+      // from the current instance — the registry entry would survive and be
+      // re-attached on the next reconnect, stacking up four more stale handlers
+      // every time this effect re-ran.
+      socket.off('session.started', handleStarted);
+      socket.off('session.paused', handlePaused);
+      socket.off('session.ended', handleEnded);
+      socket.off('session.resumed', handleResumed);
     };
   }, [socket, status, updateCampaignStatus, setActiveSession]);
 
