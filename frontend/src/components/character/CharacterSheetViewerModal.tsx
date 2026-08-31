@@ -123,6 +123,7 @@ export default function CharacterSheetViewerModal({
   const modalRef = useFocusTrap(!standalone, onClose);
 
   const openStandalone = () => {
+    if (!campaignId) return;
     const url = `/campaigns/${encodeURIComponent(campaignId)}/characters/${encodeURIComponent(character.id)}/sheet`;
     window.open(url, `cozyvtt-character-${character.id}`, 'popup,width=1400,height=1000');
   };
@@ -169,7 +170,7 @@ export default function CharacterSheetViewerModal({
       case 'DND_5E':
         return <DnD5eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'PATHFINDER_1E':
-        return <Pathfinder1eCharacterSheet character={character} mode="view" onRoll={handleRoll} onDataChange={canEdit?handleQuickDataChange:undefined} onPlaceAoE={onPlaceSpellAoE} />;
+        return <Pathfinder1eCharacterSheet character={character} mode="view" onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} onDataChange={canEdit?handleQuickDataChange:undefined} onPlaceAoE={onPlaceSpellAoE} />;
       case 'PATHFINDER_2E':
         return <Pathfinder2eCharacterView character={character} onEdit={canEdit ? handleEdit : undefined} onRoll={handleRoll} />;
       case 'SHADOWRUN_6E':
@@ -229,15 +230,7 @@ export default function CharacterSheetViewerModal({
               produced two working Edit buttons on every character. */}
           <div className="flex items-center gap-2 ml-4">
             {!standalone && (
-              <button
-                type="button"
-                onClick={openStandalone}
-                title="Open this sheet in a separate window"
-                className="flex items-center gap-2 rounded-lg border border-moss-green/30 px-4 py-2 text-brand-ink hover:bg-moss-green/10"
-              >
-                <ExternalLink className="h-4 w-4" />
-                New window
-              </button>
+              <button type="button" onClick={openStandalone} title="Open this sheet in a separate window" className="flex items-center gap-2 rounded-lg border border-moss-green/30 px-4 py-2 text-brand-ink hover:bg-moss-green/10"><ExternalLink className="h-4 w-4" />New window</button>
             )}
             <button
               onClick={onClose}

@@ -38,6 +38,7 @@ interface Pathfinder1eCharacterSheetProps extends CharacterSheetProps {
   onRoll?:(expression:string,purpose:string)=>void;
   onDataChange?:(data:PF1eCharacterData)=>void|Promise<void>;
   onPlaceAoE?:(config:SpellAoEConfig,spell:PF1eSpell)=>void;
+  onEdit?:()=>void;
 }
 
 interface InputProps {
@@ -370,6 +371,6 @@ function Pathfinder1eCharacterEditor({character,mode,onSave,onCancel,onRoll}:Pat
 }
 
 export default function Pathfinder1eCharacterSheet(props:Pathfinder1eCharacterSheetProps) {
-  if(props.mode==='view')return <Pathfinder1eCharacterView character={props.character} onRoll={props.onRoll} onDataChange={props.onDataChange} onPlaceAoE={props.onPlaceAoE}/>;
+  if(props.mode==='view')return <Pathfinder1eCharacterView character={props.character} onEdit={props.onEdit} onRoll={props.onRoll} onDataChange={props.onDataChange} onPlaceAoE={props.onPlaceAoE}/>;
   return <Pathfinder1eCharacterEditor {...props}/>;
 }

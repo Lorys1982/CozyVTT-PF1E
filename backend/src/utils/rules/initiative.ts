@@ -76,6 +76,16 @@ function d20With(modifier: number): InitiativeResolution {
   return { kind: 'roll', expression, label: expression };
 }
 
+function pf1eInitiativeBonus(data: unknown): number {
+  const d = rec(data);
+  const dex = rec(rec(d)?.abilities)?.dex;
+  const score = num(dex?.tempScore ?? dex?.score, 10);
+  const dexMod = Math.floor((score - 10) / 2);
+  const initiative = rec(d)?.initiative;
+  if (typeof initiative?.total === 'number' && Number.isFinite(initiative.total)) return initiative.total;
+  return dexMod + num(initiative?.miscModifier) + num(initiative?.tempModifier);
+}
+
 /**
  * Is this a plain "XdY" dice pool we can safely build an expression from?
  *
@@ -253,6 +263,9 @@ export function resolveCharacterInitiative(
 
     case 'PATHFINDER_2E':
       return d20With(pf2eInitiativeBonus(data));
+
+    case 'PATHFINDER_1E':
+      return d20With(pf1eInitiativeBonus(data));
 
     case 'CALL_OF_CTHULHU_7E': {
       // Deliberately not a roll. Call of Cthulhu ranks combatants in DEX order,

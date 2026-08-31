@@ -175,6 +175,7 @@ function createBlankPF1eCharacter(): PF1eCharacterData {
  */
 const SHEET_NAME_FIELD: Record<GameSystem, string> = {
   [GameSystem.DND_5E]: 'characterName',
+  [GameSystem.PATHFINDER_1E]: 'characterName',
   [GameSystem.PATHFINDER_2E]: 'characterName',
   [GameSystem.SHADOWRUN_6E]: 'characterName',
   [GameSystem.CALL_OF_CTHULHU_7E]: 'investigatorName',

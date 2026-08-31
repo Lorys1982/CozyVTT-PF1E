@@ -7,6 +7,8 @@
  *  - CharacterRollPicker modal (right-click context menus on roster/tokens)
  */
 
+import { resolveCharacterInitiative } from './rules/initiative';
+
 export interface RollOption {
   /** Short label shown in menus / tooltips */
   label: string;
@@ -34,6 +36,11 @@ export interface CharacterRolls {
 
 function fmt(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`;
+}
+
+export function getInitiativeExpression(gameSystem: string | null, data: any): string | null {
+  const resolution = resolveCharacterInitiative(gameSystem, data);
+  return resolution?.kind === 'roll' ? resolution.expression : null;
 }
 
 /** Returns true if the string looks like a valid dice expression the server can evaluate. */

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { Backpack, BedDouble, BookOpen, Dices, Heart, LayoutGrid, List, Shield, Sparkles, Swords, UserRound } from 'lucide-react';
+import { Backpack, BedDouble, BookOpen, Dices, Edit, Heart, LayoutGrid, List, Shield, Sparkles, Swords, UserRound } from 'lucide-react';
 import type { Character } from '../../../types';
 import type { PF1eAttack, PF1eCharacterData, PF1eFeature } from '../../../types/game-systems/pathfinder1e';
 import { withAdvantage, withDisadvantage } from '../../../utils/characterRolls';
@@ -16,6 +16,7 @@ interface Props {
   onRoll?:(expression:string,purpose:string)=>void;
   onDataChange?:(data:PF1eCharacterData)=>void|Promise<void>;
   onPlaceAoE?:(config:SpellAoEConfig,spell:PF1eSpell)=>void;
+  onEdit?:()=>void;
 }
 
 type ViewLayout = 'long' | 'tabs';
@@ -80,7 +81,7 @@ function InventoryCards({data}:{data:PF1eCharacterData}) {
   return <><div className="mb-3 flex justify-end"><div className="flex rounded-lg border border-stone-200 bg-white p-1"><button type="button" aria-label="List items" aria-pressed={layout==='list'} onClick={()=>setLayout('list')} className={`rounded p-1.5 ${layout==='list'?'bg-red-800 text-white':'text-stone-500'}`}><List className="h-4 w-4"/></button><button type="button" aria-label="Cluster items" aria-pressed={layout==='grid'} onClick={()=>setLayout('grid')} className={`rounded p-1.5 ${layout==='grid'?'bg-red-800 text-white':'text-stone-500'}`}><LayoutGrid className="h-4 w-4"/></button></div></div><div className={layout==='grid'?'grid gap-3 md:grid-cols-2':'space-y-2'}>{gear.map((item,index)=><details key={`${item.name}-${index}`} className="min-w-0 rounded-lg border border-stone-200 bg-white p-3"><summary className="cursor-pointer font-bold text-stone-900">{item.name}<span className="ml-2 text-xs font-normal text-stone-500">{[item.type,item.quantity!==undefined?`Qty ${item.quantity}`:undefined,item.location,item.weight?`${item.weight} each`:undefined].filter(Boolean).join(' · ')}</span>{item.notes&&<span className="mt-1 block line-clamp-1 text-xs font-normal text-stone-500">{item.notes}</span>}</summary><div className="mt-3 grid grid-cols-1 gap-2 border-t border-stone-100 pt-3 text-sm sm:grid-cols-2"><Info label="Quantity" value={item.quantity??1}/><Info label="Weight" value={item.weight}/><Info label="Location" value={item.location}/><Info label="Type" value={item.type}/>{item.notes&&<div className="sm:col-span-2 whitespace-pre-wrap text-stone-600">{item.notes}</div>}</div></details>)}</div></>;
 }
 
-export default function Pathfinder1eCharacterView({character,onRoll,onDataChange,onPlaceAoE}:Props) {
+export default function Pathfinder1eCharacterView({character,onEdit,onRoll,onDataChange,onPlaceAoE}:Props) {
   const data=createPF1eSheetData(character.data as Partial<PF1eCharacterData>,character.name);
   const [rollMenu,setRollMenu]=useState<RollMenuState|null>(null);
   const [layout,setLayout]=useState<ViewLayout>('long');
@@ -109,6 +110,7 @@ export default function Pathfinder1eCharacterView({character,onRoll,onDataChange
 
   return <div className="mx-auto max-w-[1180px] overflow-hidden rounded-xl border border-stone-200 bg-white text-stone-900 shadow-xl">
     <header className="bg-gradient-to-r from-red-700 via-red-800 to-red-950 p-6 text-white">
+      {onEdit && <div className="mb-3 flex justify-end"><button type="button" onClick={onEdit} className="inline-flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2 font-bold hover:bg-white/25" title="Edit character"><Edit className="h-4 w-4" />Edit</button></div>}
       <div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-center gap-4">{character.tokenImageUrl?<img src={character.tokenImageUrl} alt="" className="h-20 w-20 rounded-full border-4 border-white/20 object-cover"/>:<div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-white/20 bg-black/20"><Swords className="h-8 w-8"/></div>}<div><h2 className="text-3xl font-black">{data.characterName}</h2><div className="mt-2 flex flex-wrap gap-2 text-sm"><span className="rounded-full bg-white/15 px-3 py-1">{data.classAndLevel||'Adventurer'}</span>{data.race&&<span className="rounded-full bg-white/10 px-3 py-1">{data.race}</span>}{data.alignment&&<span className="rounded-full bg-white/10 px-3 py-1">{data.alignment}</span>}</div></div></div><div className="flex flex-wrap items-center gap-2">{onDataChange&&<button type="button" onClick={()=>void onDataChange(applyPF1eLongRest(data))} className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-bold text-red-900 shadow hover:bg-red-50"><BedDouble className="h-4 w-4"/>Long rest</button>}<div className="flex rounded-lg border border-white/25 bg-black/15 p-1" role="group" aria-label="Character sheet layout"><button type="button" aria-pressed={layout==='long'} onClick={()=>setLayout('long')} className={`rounded px-3 py-2 text-sm font-bold ${layout==='long'?'bg-white text-red-900':'text-white hover:bg-white/15'}`}>Long view</button><button type="button" aria-pressed={layout==='tabs'} onClick={()=>setLayout('tabs')} className={`rounded px-3 py-2 text-sm font-bold ${layout==='tabs'?'bg-white text-red-900':'text-white hover:bg-white/15'}`}>Tabs</button></div></div></div>
       {layout==='tabs'&&<nav className="mt-5 flex gap-1 overflow-x-auto border-t border-white/20 pt-3" role="tablist" aria-label="Character sheet sections">{VIEW_TABS.map(({id,label,icon:Icon})=><button key={id} type="button" role="tab" aria-selected={activeTab===id} onClick={()=>setActiveTab(id)} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${activeTab===id?'bg-white text-red-900':'text-white/85 hover:bg-white/15'}`}><Icon className="h-4 w-4"/>{label}</button>)}</nav>}
     </header>
