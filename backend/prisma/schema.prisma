@@ -187,6 +187,14 @@ model Campaign {
   chatCooldownEnabled Boolean @default(false)
   chatCooldownSeconds Int     @default(5)
 
+  // Dice Settings
+  // When the DM clears roll history, this records when — rolls older than it
+  // are hidden from the panel. A watermark rather than a delete, because every
+  // roll including secret ones is kept deliberately for audit (see the
+  // DiceRoll.secret column), and an accidental clear should not destroy that.
+  // Null means never cleared.
+  rollHistoryClearedAt DateTime?
+
   // Metadata
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

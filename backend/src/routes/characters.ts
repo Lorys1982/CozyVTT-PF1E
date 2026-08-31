@@ -2,9 +2,10 @@ import { Router, Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/rbac';
 import { authenticated } from '../middleware/compose';
 import { prisma } from '../config/database';
+import type { Prisma } from '@prisma/client';
 import { normalizeAssetUrl } from '../utils/asset-urls';
 import { GameSystem } from '../game-systems';
-import { validateCharacterData } from '../validators/game-systems';
+import { validateCharacterData, applyIdentityToSheet, sheetNameFor } from '../validators/game-systems';
 import { CreateCharacterSchema, UpdateCharacterSchema } from '../validators/characters';
 import { broadcastToCampaign } from '../websocket/utils';
 import logger from '../utils/logger';
@@ -51,6 +52,23 @@ router.post('/', authenticated, async (req: AuthenticatedRequest, res: Response)
       }
     }
 
+    // Put the name the user typed, and their display name, into the sheet
+    // itself. The sheet blob carries its own name field separate from the
+    // `name` column, and nothing joined the two — so a character created as
+    // "Aldra" opened showing the factory placeholder "New Character" with an
+    // empty player name. Done here rather than in the modal so it also covers
+    // copying a template and any API client.
+    const owner = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { displayName: true },
+    });
+    const dataWithIdentity = applyIdentityToSheet(
+      finalGameSystem as GameSystem | null,
+      data as Record<string, unknown> | undefined,
+      name,
+      owner?.displayName ?? ''
+    );
+
     // Validate gameSystem if provided
     if (finalGameSystem !== undefined && finalGameSystem !== null) {
       const validSystems: string[] = [
@@ -68,7 +86,7 @@ router.post('/', authenticated, async (req: AuthenticatedRequest, res: Response)
       }
 
       // Validate character data against schema if gameSystem is specified
-      const validationResult = validateCharacterData(finalGameSystem as GameSystem, data || {});
+      const validationResult = validateCharacterData(finalGameSystem as GameSystem, dataWithIdentity);
       if (!validationResult.success) {
         return res.status(400).json({
           error: 'Validation Error',
@@ -90,7 +108,7 @@ router.post('/', authenticated, async (req: AuthenticatedRequest, res: Response)
       data: {
         userId,
         name,
-        data: data || {}, // Default to empty object if no data provided
+        data: dataWithIdentity as Prisma.InputJsonValue,
         tokenImageUrl: normalizedTokenImageUrl,
         campaignId: campaignId || null,
         gameSystem: finalGameSystem || null,
@@ -477,6 +495,21 @@ router.put('/:id', authenticated, async (req: AuthenticatedRequest, res: Respons
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (data !== undefined) updateData.data = data;
+
+    // Keep the `name` column in step with the name typed on the sheet.
+    //
+    // A character carries its name twice — the column, which the gallery, the
+    // roster and the editor's title bar read, and a field inside the sheet blob,
+    // which is what the sheet's own input edits. Renaming on the sheet updated
+    // only the blob, so everything outside the sheet went on showing the name
+    // the character was created with. The sheet is the thing the user typed
+    // into, so it wins; an explicit `name` in the request still takes priority.
+    if (name === undefined && data !== undefined && character.gameSystem) {
+      const sheetName = sheetNameFor(character.gameSystem as GameSystem, data as Record<string, unknown>);
+      if (sheetName && sheetName !== character.name) {
+        updateData.name = sheetName;
+      }
+    }
     if (tokenImageUrl !== undefined) {
       // Normalize tokenImageUrl to full path (or null)
       updateData.tokenImageUrl = tokenImageUrl ? normalizeAssetUrl(tokenImageUrl, 'tokens') : null;
@@ -495,6 +528,52 @@ router.put('/:id', authenticated, async (req: AuthenticatedRequest, res: Respons
       },
     });
 
+    // A map token stores its own COPY of the character's image, taken when it
+    // was placed — there is no Token table, tokens live as JSON on the map. So
+    // changing the sheet's token image left every placed token showing the old
+    // picture until the DM removed and re-added it.
+    //
+    // This has to happen here rather than from the client: `imageUrl` is a
+    // DM-only field on PUT /maps/:id/tokens/:tokenId, so a player editing their
+    // own character would be refused.
+    //
+    // Only the image is synced. A token's NAME is deliberately left alone: the
+    // DM may have renamed it ("Aldra (charmed)", or A/B for duplicates) and
+    // silently overwriting that on the player's next save would be its own bug.
+    let tokensChanged = false;
+    if (
+      updateData.tokenImageUrl !== undefined &&
+      updateData.tokenImageUrl !== character.tokenImageUrl &&
+      updatedCharacter.campaignId
+    ) {
+      try {
+        const maps = await prisma.map.findMany({
+          where: { campaignId: updatedCharacter.campaignId },
+          select: { id: true, tokens: true },
+        });
+
+        for (const map of maps) {
+          const tokens = Array.isArray(map.tokens) ? (map.tokens as any[]) : [];
+          let mapChanged = false;
+
+          const nextTokens = tokens.map((token) => {
+            if (token?.characterId !== updatedCharacter.id) return token;
+            mapChanged = true;
+            return { ...token, imageUrl: updateData.tokenImageUrl ?? '' };
+          });
+
+          if (mapChanged) {
+            await prisma.map.update({ where: { id: map.id }, data: { tokens: nextTokens } });
+            tokensChanged = true;
+          }
+        }
+      } catch (error) {
+        // The character update itself already succeeded and is what the user
+        // asked for; a failure to repaint tokens must not fail the request.
+        logger.error('Failed to sync token images after character update', { err: error });
+      }
+    }
+
     // Broadcast character update to campaign if character is in a campaign
     if (updatedCharacter.campaignId) {
       try {
@@ -502,6 +581,9 @@ router.put('/:id', authenticated, async (req: AuthenticatedRequest, res: Respons
           characterId: updatedCharacter.id,
           character: updatedCharacter,
           userId,
+          // Lets the map refetch only when a token actually changed, rather
+          // than on every sheet save — HP edits broadcast through here too.
+          tokensChanged,
         });
       } catch (error) {
         logger.error('Failed to broadcast character update', { err: error });

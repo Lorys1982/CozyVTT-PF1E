@@ -250,6 +250,33 @@ Specific events also check role:
 }
 ```
 
+> **Note:** neither `user.joined` nor `user.left` writes a chat message any more.
+> They used to, and because they fire on every socket authentication and every
+> disconnect — so on each page load, refresh and momentary drop — the chat log
+> filled with notices. Presence is reported by `presence.state` instead.
+
+#### `presence.state`
+**Direction:** Server → All Campaign Members
+**When:** Anyone joins or leaves, and in reply to `presence.request`
+**Payload:**
+```typescript
+{
+  campaignId: string;
+  onlineUserIds: string[];   // distinct users with at least one live socket
+}
+```
+
+The **whole set** is sent rather than a join/leave delta, so a client that missed
+an event cannot drift out of step. A user may hold several sockets at once (two
+tabs); they appear once in the list and stay in it until their last socket goes,
+which is why this is derived from room membership rather than a counter.
+
+#### `presence.request`
+**Direction:** Client → Server
+**Purpose:** Ask for the current set — for a view that mounted after the last
+push and would otherwise show everyone offline until somebody moved.
+**Payload:** None. The reply goes to the requesting socket alone.
+
 ---
 
 ### Heartbeat Events
@@ -897,9 +924,14 @@ The following events are fully implemented beyond the token movement documented 
 - `spirit_layer.style_change` — DM changes the spirit layer style (wispy or custom color). Broadcasts `spirit_layer.style_changed`.
 
 ### Initiative Tracker
-- `initiative.add` / `initiative.remove` / `initiative.set` / `initiative.roll` — Manage combatants.
-- `initiative.reorder` — Reorder combatants manually.
-- `initiative.start` / `initiative.next` / `initiative.end` — Combat lifecycle.
+- `initiative.add` / `initiative.remove` / `initiative.set` — Manage combatants. **DM only.**
+- `initiative.roll` — Roll initiative for a token. The **DM** may roll for any token on the map, and doing so adds it to the combatant list if it is not already there. A **player** may roll only for a token whose `controlledBy` is their own user id, and only when that token is already a combatant — a player's roll never adds anyone to the list. Rejected rolls emit `error` with `You can only roll initiative for your own token` or `That token is not in the initiative order yet`.
+
+  **The server decides what is rolled**, from the token's linked character, else its stat block, via `utils/rules/initiative.ts` — which is per-system: D&D 5e uses Dexterity plus the sheet's `initiativeBonus`, Pathfinder 2e uses the stat named by `initiative.usedStat`, Shadowrun 6e uses the character's own initiative dice, and **Call of Cthulhu does not roll at all** (combatants rank in DEX order). The client's `expression` is optional and used only when nothing can be derived; it is ignored otherwise, so a client cannot choose its own initiative dice.
+
+  The result is persisted to the token and followed by `initiative.state`. `dice.rolled` — attributed to whoever rolled — is emitted **only when dice were actually thrown**, so a Call of Cthulhu initiative produces no dice-log entry.
+- `initiative.reorder` — Reorder combatants manually. **DM only.**
+- `initiative.start` / `initiative.next` / `initiative.end` — Combat lifecycle. **DM only.**
 - `initiative.state` — Server broadcasts the full `CombatState` object after any change.
 
 ### Session Lifecycle

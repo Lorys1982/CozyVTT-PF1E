@@ -3,10 +3,10 @@
  */
 
 import { useState, useEffect } from 'react';
-import { X, Edit, ExternalLink, Shield, User as UserIcon } from 'lucide-react';
+import { X, ExternalLink, Shield, User as UserIcon } from 'lucide-react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useAuth } from '@/contexts/AuthContext';
-import { useWebSocket } from '@/contexts/WebSocketContext';
+import { useOptionalWebSocket } from '@/contexts/WebSocketContext';
 import { useToast } from '@/contexts/ToastContext';
 import { canEditCharacter } from '@/services/permissions';
 import { api } from '@/services/api';
@@ -27,8 +27,13 @@ import CharacterSheetEditorModal from './CharacterSheetEditorModal';
 
 interface CharacterSheetViewerModalProps {
   character: Character;
-  campaignId: string;
-  membership: CampaignMembership;
+  /**
+   * Campaign context, when the sheet was opened from inside a campaign. Absent
+   * when opened from the character gallery, where there is no campaign — and a
+   * character there is always your own, so ownership alone decides editing.
+   */
+  campaignId?: string;
+  membership?: CampaignMembership;
   onClose: () => void;
   onPlaceSpellAoE?: (config: SpellAoEConfig, spell: PF1eSpell) => void;
   standalone?: boolean;
@@ -43,7 +48,11 @@ export default function CharacterSheetViewerModal({
   standalone = false,
 }: CharacterSheetViewerModalProps) {
   const { user } = useAuth();
-  const { socket } = useWebSocket();
+  // Optional: this modal opens both from the campaign roster, where there is a
+  // websocket, and from the character gallery, where there is not. Live updates
+  // and click-to-roll are a bonus in the first case rather than a requirement.
+  const ws = useOptionalWebSocket();
+  const socket = ws?.socket;
   const { showToast } = useToast();
   const [character, setCharacter] = useState(initialCharacter);
   const [ownerName, setOwnerName] = useState<string>('');
@@ -89,7 +98,7 @@ export default function CharacterSheetViewerModal({
   // Check if user can edit
   const canEdit = user ? canEditCharacter(user, character, membership) : false;
   const isDMEditingOtherCharacter =
-    membership.role === 'DM' && character.userId !== user?.id;
+    membership?.role === 'DM' && character.userId !== user?.id;
 
   // Handle edit - open editor modal
   const handleEdit = () => {
@@ -215,7 +224,9 @@ export default function CharacterSheetViewerModal({
             )}
           </div>
 
-          {/* Actions */}
+          {/* Actions — close only. Edit lives on the sheet itself, which
+              receives handleEdit as onEdit below; rendering it here as well
+              produced two working Edit buttons on every character. */}
           <div className="flex items-center gap-2 ml-4">
             {!standalone && (
               <button
@@ -226,15 +237,6 @@ export default function CharacterSheetViewerModal({
               >
                 <ExternalLink className="h-4 w-4" />
                 New window
-              </button>
-            )}
-            {canEdit && (
-              <button
-                onClick={handleEdit}
-                className="flex items-center gap-2 px-4 py-2 bg-moss-green text-white rounded-lg hover:bg-moss-green/90 transition-colors"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
               </button>
             )}
             <button

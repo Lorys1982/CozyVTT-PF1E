@@ -244,9 +244,15 @@ export interface DnD5eCharacterData {
   inspiration?: boolean;
   savingThrows?: DnD5eSavingThrows;
   skills?: DnD5eSkills;
+  /** Total passive Perception: 10 + Perception bonus + `passivePerceptionBonus`. */
   passivePerception?: number;
+  /** Non-skill additions to passive Perception (Observant, items). */
+  passivePerceptionBonus?: number;
   armorClass?: number;
+  /** Total initiative modifier: Dexterity modifier plus `initiativeBonus`. */
   initiative?: number;
+  /** Non-Dexterity initiative bonuses (Alert, Jack of All Trades, subclasses). */
+  initiativeBonus?: number;
   speed?: number;
   hp?: DnD5eHitPoints;
   conditions?: string[];

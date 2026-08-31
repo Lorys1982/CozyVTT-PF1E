@@ -6,6 +6,8 @@
 import { useState, useEffect } from 'react';
 import { Mail, Loader2, Users } from 'lucide-react';
 import { api } from '@/services/api';
+import { useServerConfigQuery } from '@/hooks/queries';
+import { useToast } from '@/contexts/ToastContext';
 import type { User } from '@/types';
 import { Button, Modal, Field, Select } from '@/components/ui';
 
@@ -25,6 +27,14 @@ export default function InvitePlayerModal({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  // Opt-in, and deliberately not remembered between invitations: emailing
+  // someone is a decision worth making each time rather than a setting that
+  // quietly stays on.
+  const [sendEmail, setSendEmail] = useState(false);
+
+  const { showToast } = useToast();
+  const { data: serverConfig } = useServerConfigQuery();
+  const emailAvailable = serverConfig?.smtp?.configured ?? false;
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -50,7 +60,17 @@ export default function InvitePlayerModal({
     try {
       setSending(true);
       setError('');
-      await api.inviteUserToCampaign(campaignId, selectedUserId);
+      const { emailSent } = await api.inviteUserToCampaign(
+        campaignId,
+        selectedUserId,
+        sendEmail && emailAvailable
+      );
+      // Say what actually happened. Asking for an email and not getting one is
+      // worth knowing about, and the server is the only thing that can tell us.
+      showToast(
+        emailSent ? 'Invitation sent, and emailed to them.' : 'Invitation sent.',
+        'success'
+      );
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -121,6 +141,36 @@ export default function InvitePlayerModal({
               </Select>
             )}
           </Field>
+        )}
+
+        {/* Email is opt-in. The invitation shows up on the player's dashboard
+            regardless, so most of the time telling them yourself is enough.
+            Note the label cannot name their email address — the invitable-users
+            endpoint withholds addresses so a DM cannot harvest them. */}
+        {!loading && users.length > 0 && (
+          <label
+            className={`flex items-start gap-3 ${
+              emailAvailable ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'
+            }`}
+          >
+            <div className="mt-0.5">
+              <input
+                type="checkbox"
+                checked={sendEmail && emailAvailable}
+                onChange={(e) => setSendEmail(e.target.checked)}
+                disabled={sending || !emailAvailable}
+                className="w-4 h-4 rounded border-moss-green/30 text-brand-ink focus:ring-moss-green/50"
+              />
+            </div>
+            <div>
+              <span className="text-sm text-ink">Also email them an invitation</span>
+              <p className="text-xs text-warm-gray mt-0.5">
+                {emailAvailable
+                  ? "They'll see the invitation on their dashboard either way."
+                  : 'Email is not set up on this server, so only the dashboard invitation will appear.'}
+              </p>
+            </div>
+          </label>
         )}
       </div>
     </Modal>

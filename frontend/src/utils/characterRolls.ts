@@ -613,48 +613,12 @@ function extractCocRolls(data: any): CharacterRolls {
 // Public API
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Initiative expression helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Returns a dice expression suitable for an initiative roll for the given
- * game system and character data, or null if the system cannot be determined.
- *
- * D&D 5e   → 1d20 + initiative modifier (stored in combatStats.initiative)
- * PF2e     → 1d20 + perception bonus (most common default) or initiative.bonus
- * CoC 7e   → 1d10 + floor(DEX / 5)
- * Others   → null (caller should prompt for manual entry)
- */
-export function getInitiativeExpression(gameSystem: string | null, data: any): string | null {
-  if (!data) return null;
-
-  switch (gameSystem) {
-    case 'DND_5E': {
-      const mod = data?.combatStats?.initiative ?? 0;
-      return `1d20${fmt(mod)}`;
-    }
-    case 'PATHFINDER_1E': {
-      const bonus = data?.initiative?.total ?? pf1eAbilityModifier(data, 'dex') +
-        (data?.initiative?.miscModifier ?? 0)+(data?.initiative?.tempModifier??0);
-      return `1d20${fmt(bonus)}`;
-    }
-    case 'PATHFINDER_2E': {
-      // PF2e defaults to Perception for initiative, fall back to initiative.bonus
-      const perceptionBonus = data?.perception?.bonus ?? 0;
-      const initiativeBonus = data?.combatStats?.initiative?.bonus ?? 0;
-      const bonus = perceptionBonus !== 0 ? perceptionBonus : initiativeBonus;
-      return `1d20${fmt(bonus)}`;
-    }
-    case 'CALL_OF_CTHULHU_7E': {
-      const dex = data?.characteristics?.dex?.regular ?? data?.characteristics?.DEX?.regular ?? 0;
-      const dexMod = Math.floor(dex / 5);
-      return `1d10${fmt(dexMod)}`;
-    }
-    default:
-      return null;
-  }
-}
+// Initiative used to be worked out here, in a `getInitiativeExpression` that
+// nothing called and that was wrong on every branch: it read
+// `data.combatStats.initiative` for both D&D 5e and Pathfinder 2e, which neither
+// system stores, and invented a `1d10 + DEX/5` roll for Call of Cthulhu, which
+// has no initiative roll at all. It now lives in utils/rules/initiative.ts,
+// duplicated to the backend so the server can decide what is actually rolled.
 
 /**
  * Extract all rollable options from a character's data.

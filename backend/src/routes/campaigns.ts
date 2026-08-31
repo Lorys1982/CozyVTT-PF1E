@@ -644,7 +644,7 @@ router.get('/:campaignId/invitable-users', campaignDM, async (req: Authenticated
 router.post('/:campaignId/invite', campaignDM, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { campaignId } = req.params;
-    const { userId, expiresInDays } = req.body;
+    const { userId, expiresInDays, sendEmail } = req.body;
 
     if (!userId) {
       return res.status(400).json({
@@ -652,6 +652,13 @@ router.post('/:campaignId/invite', campaignDM, async (req: AuthenticatedRequest,
         message: 'User ID is required',
       });
     }
+
+    // Emailing is opt-in per invitation. The invitation itself is created
+    // either way — a player sees it on their dashboard — so an instance with no
+    // mail server, or a DM who would rather tell their player in person, loses
+    // nothing by leaving this off. Anything other than an explicit true means
+    // no email.
+    const wantsEmail = sendEmail === true;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -761,22 +768,51 @@ router.post('/:campaignId/invite', campaignDM, async (req: AuthenticatedRequest,
       // Don't fail the request if broadcast fails
     }
 
-    // Send invitation email if SMTP is configured
-    if (isSmtpConfigured()) {
-      sendCampaignInvitationEmail(
-        user.email,
-        user.displayName,
-        campaign!.name,
-        dmUser?.displayName ?? 'Your Dungeon Master',
-        campaign!.description ?? null
-      ).catch((err) => {
+    // Email only when the DM asked for it and the instance can actually send.
+    // Awaited rather than fire-and-forget, because the response reports whether
+    // it went out — the same shape POST /api/admin/users uses. A failure is
+    // logged and swallowed: the invitation is the thing that matters, and it
+    // already exists by this point.
+    let emailSent = false;
+    if (wantsEmail && isSmtpConfigured()) {
+      try {
+        // Bounded, because this is awaited inside the request. Nodemailer's own
+        // connection timeout runs to minutes, and the browser gives up after
+        // 30s — so a configured-but-unreachable mail server would surface a
+        // *successful* invitation as a failure, and the obvious retry would then
+        // be refused as a duplicate. The invitation is what matters; if the mail
+        // is slow it is reported as not sent rather than holding up the reply.
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([
+            sendCampaignInvitationEmail(
+              user.email,
+              user.displayName,
+              campaign!.name,
+              dmUser?.displayName ?? 'Your Dungeon Master',
+              campaign!.description ?? null
+            ),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error('SMTP send timed out')), 10000);
+            }),
+          ]);
+          emailSent = true;
+        } finally {
+          // Always clear it: a pending timer left behind by the winning branch
+          // keeps the event loop alive for its full duration.
+          if (timer) clearTimeout(timer);
+        }
+      } catch (err) {
         logger.error(`[campaigns] Failed to send invitation email to ${user.email}`, { err: err });
-      });
+      }
     }
 
     return res.status(201).json({
-      message: 'Invitation sent successfully',
+      message: emailSent
+        ? `Invitation sent, and emailed to ${user.displayName}.`
+        : 'Invitation sent successfully',
       invitation,
+      emailSent,
     });
   } catch (error) {
     logger.error('Error inviting user to campaign', { err: error });
@@ -1060,6 +1096,165 @@ router.get('/:campaignId/messages', campaignMember, async (req: AuthenticatedReq
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'Failed to fetch messages',
+    });
+  }
+});
+
+/**
+ * DELETE /api/campaigns/:campaignId/messages/join-leave
+ * Remove the legacy "X has joined / has left the campaign" system messages.
+ * Requires: Campaign DM role
+ *
+ * Those messages are no longer written — they fired on every refresh and every
+ * brief disconnect, and presence in the roster says the same thing better. Rows
+ * already in the database are left alone on upgrade rather than deleted behind
+ * the DM's back, since a chat log is a record of a session. This is how a DM
+ * clears the backlog when they want to.
+ *
+ * Matched on `metadata.action`, deliberately NOT on the message text: the
+ * wording is display copy and could reasonably change or be translated, while
+ * the action tag is what the writer actually meant.
+ */
+router.delete('/:campaignId/messages/join-leave', campaignDM, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { campaignId } = req.params;
+
+    const result = await prisma.message.deleteMany({
+      where: {
+        campaignId,
+        type: 'SYSTEM',
+        OR: [
+          { metadata: { path: ['action'], equals: 'user.joined' } },
+          { metadata: { path: ['action'], equals: 'user.left' } },
+        ],
+      },
+    });
+
+    logger.info('Cleared join/leave messages', { campaignId, count: result.count });
+
+    return res.status(200).json({
+      message:
+        result.count === 0
+          ? 'No join or leave messages to clear'
+          : `Cleared ${result.count} join and leave ${result.count === 1 ? 'message' : 'messages'}`,
+      deleted: result.count,
+    });
+  } catch (error) {
+    logger.error('Error clearing join/leave messages', { err: error });
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to clear join and leave messages',
+    });
+  }
+});
+
+/**
+ * GET /api/campaigns/:campaignId/dice-rolls
+ * Roll history for a campaign, newest first.
+ * Requires: Campaign member
+ *
+ * Rolls have always been written to the database; nothing read them back, so
+ * the dice panel started empty after every refresh. This is that read side.
+ *
+ * SECURITY: secret rolls are the reason this endpoint cannot be a plain
+ * "last N rolls for this campaign". The live socket path sends a secret roll
+ * only to the person who made it and to DMs; replaying history without the same
+ * restriction would hand every player the DM's hidden rolls the moment they
+ * pressed refresh — a worse bug than the one being fixed. The visibility filter
+ * is applied in the query below, server-side, and must stay there: filtering in
+ * the client would still ship the rolls over the wire.
+ */
+router.get('/:campaignId/dice-rolls', campaignMember, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { campaignId } = req.params;
+    const { limit = '50', offset = '0' } = req.query;
+
+    const limitNum = parseInt(limit as string, 10);
+    const offsetNum = parseInt(offset as string, 10);
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Limit must be between 1 and 100',
+      });
+    }
+
+    if (isNaN(offsetNum) || offsetNum < 0) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Offset must be a non-negative number',
+      });
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { rollHistoryClearedAt: true },
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Campaign not found',
+      });
+    }
+
+    // Role comes from the membership the campaignMember middleware loaded, not
+    // from campaign.ownerId — a co-DM by membership is a DM here too.
+    const isDM = req.campaignMembership?.role === 'DM';
+    const userId = req.session.userId!;
+
+    const where = {
+      campaignId,
+      // Rolls from before the DM last cleared the history stay in the table for
+      // audit, but are not served.
+      ...(campaign.rollHistoryClearedAt
+        ? { rolledAt: { gt: campaign.rollHistoryClearedAt } }
+        : {}),
+      // A DM sees everything. Everyone else sees public rolls plus their own
+      // secret ones — never someone else's.
+      ...(isDM ? {} : { OR: [{ secret: false }, { secret: true, userId }] }),
+    };
+
+    const [totalCount, rolls] = await Promise.all([
+      prisma.diceRoll.count({ where }),
+      prisma.diceRoll.findMany({
+        where,
+        include: { user: { select: { id: true, displayName: true } } },
+        orderBy: { rolledAt: 'desc' },
+        take: limitNum,
+        skip: offsetNum,
+      }),
+    ]);
+
+    // Shaped to match the `dice.rolled` socket payload so the panel can hold
+    // replayed and live rolls in one list without special-casing either.
+    const formattedRolls = rolls.map((roll) => ({
+      id: roll.id,
+      userId: roll.userId,
+      userName: roll.user?.displayName ?? null,
+      characterName: roll.characterName,
+      expression: roll.expression,
+      result: roll.result,
+      breakdown: roll.breakdown,
+      purpose: roll.purpose,
+      secret: roll.secret,
+      timestamp: roll.rolledAt.toISOString(),
+    }));
+
+    return res.status(200).json({
+      rolls: formattedRolls,
+      pagination: {
+        total: totalCount,
+        limit: limitNum,
+        offset: offsetNum,
+        hasMore: offsetNum + limitNum < totalCount,
+      },
+    });
+  } catch (error) {
+    logger.error('Error fetching dice rolls', { err: error });
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'Failed to fetch dice rolls',
     });
   }
 });

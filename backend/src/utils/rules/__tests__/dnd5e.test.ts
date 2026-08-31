@@ -152,4 +152,17 @@ describe('parity with the frontend copy', () => {
 
     expect(backendCopy).toBe(frontendCopy);
   });
+
+  // Same arrangement for the initiative rules, which the server uses to decide
+  // what is rolled while the sheets use it to decide what to display. If the two
+  // drift, a character shows one initiative and rolls another.
+  it('is byte-for-byte identical to frontend/src/utils/rules/initiative.ts', () => {
+    const backendCopy = readFileSync(path.resolve(__dirname, '../initiative.ts'), 'utf8');
+    const frontendCopy = readFileSync(
+      path.resolve(__dirname, '../../../../../frontend/src/utils/rules/initiative.ts'),
+      'utf8'
+    );
+
+    expect(backendCopy).toBe(frontendCopy);
+  });
 });

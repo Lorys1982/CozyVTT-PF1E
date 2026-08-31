@@ -254,8 +254,19 @@ export const dnd5eCharacterDataSchema = z.object({
   savingThrows: savingThrowsSchema.optional(),
   skills: skillsSchema.optional(),
   passivePerception: z.number().int().min(1).optional(),
+  // Additions to passive Perception that are not the Perception skill itself:
+  // the Observant feat's +5, and items that raise passive scores. Mirrors
+  // `initiativeBonus` below — the total above is derived from this plus the
+  // skill, and kept for exports.
+  passivePerceptionBonus: z.number().int().optional(),
   armorClass: z.number().int().min(1).optional(),
   initiative: z.number().int().optional(),
+  // Bonuses to initiative that are not Dexterity: the Alert feat's flat +5,
+  // Jack of All Trades / Remarkable Athlete, subclasses that add another
+  // ability. Too varied to derive, so the sheet keeps one manual number and
+  // adds it to the Dexterity modifier. `initiative` above is the resulting
+  // total, kept for exports and anything else reading the blob.
+  initiativeBonus: z.number().int().optional(),
   speed: z.number().int().min(0).optional(),
   hp: hitPointsSchema.optional(),
   conditions: z.array(z.string()).optional(),

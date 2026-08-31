@@ -12,6 +12,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface CharacterCardProps {
   character: Character;
   campaign?: Campaign | null;
+  /** Clicking the card body — opens the sheet to read. */
+  onView: (character: Character) => void;
   onEdit: (character: Character) => void;
   onCopy: (character: Character) => void;
   onDelete: (character: Character) => void;
@@ -22,6 +24,7 @@ interface CharacterCardProps {
 function CharacterCardInner({
   character,
   campaign,
+  onView,
   onEdit,
   onCopy,
   onDelete,
@@ -45,9 +48,10 @@ function CharacterCardInner({
     return `${Math.floor(diffDays / 365)} years ago`;
   };
 
-  // Handle card click (open character editor)
+  // Handle card click — opens the sheet to read, not to edit. Editing is a
+  // deliberate step from the Edit button on the sheet or in this card's menu.
   const handleCardClick = () => {
-    onEdit(character);
+    onView(character);
   };
 
   // Handle menu item click (prevent card click propagation)

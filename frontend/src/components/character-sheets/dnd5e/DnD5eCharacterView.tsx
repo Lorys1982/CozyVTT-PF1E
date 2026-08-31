@@ -27,6 +27,8 @@ import { AttacksList } from './components/AttacksList';
 import { InventoryList } from './components/InventoryList';
 import { SpellcastingBlock } from './components/SpellcastingBlock';
 import { withAdvantage, withDisadvantage } from '../../../utils/characterRolls';
+import { passiveScore } from '../../../utils/rules/dnd5e';
+import { dnd5eInitiativeModifier } from '../../../utils/rules/initiative';
 
 interface DnD5eCharacterViewProps {
   character: Character;
@@ -298,7 +300,17 @@ export const DnD5eCharacterView: React.FC<DnD5eCharacterViewProps> = ({ characte
           <div className="bg-stone-50 border border-stone-200 rounded-lg p-4">
             <SkillsList
               skills={data.skills}
-              passivePerception={data.passivePerception}
+              // Derived from the Perception bonus shown right above it rather
+              // than read from the stored `passivePerception` field. Nothing
+              // ever recalculated that field, so it kept whatever it was first
+              // given: a character with expertise in Perception showed +5 on
+              // the skill and a passive score that had counted proficiency only
+              // once. Deriving it here means the two cannot disagree, and
+              // characters saved before this release read correctly without
+              // needing to be re-saved.
+              passivePerception={passiveScore(
+                (data.skills.perception?.bonus ?? 0) + (data.passivePerceptionBonus ?? 0)
+              )}
               onRoll={onRoll ? (expr, purpose) => handleRoll(expr, purpose) : undefined}
               onRollContext={onRoll ? (e, expr, purpose) => showRollPopup(e, expr, purpose) : undefined}
             />
@@ -338,11 +350,16 @@ export const DnD5eCharacterView: React.FC<DnD5eCharacterViewProps> = ({ characte
             <div className="text-2xl font-bold text-stone-800">{data.armorClass}</div>
           </div>
         )}
-        {data.initiative !== undefined && (
+        {data.stats?.dexterity !== undefined && (
           <div className="bg-stone-50 border-2 border-stone-300 rounded-lg p-4 text-center">
             <Zap className="w-6 h-6 mx-auto mb-2 text-yellow-600" />
             <div className="text-xs text-stone-500 mb-1">Initiative</div>
-            <div className="text-2xl font-bold text-stone-800">{formatModifier(data.initiative)}</div>
+            {/* Derived from Dexterity and the sheet's other-bonus field rather
+                than read from the stored total, so this matches the editor and
+                matches what is actually rolled. */}
+            <div className="text-2xl font-bold text-stone-800">
+              {formatModifier(dnd5eInitiativeModifier(data))}
+            </div>
           </div>
         )}
         {data.speed !== undefined && (

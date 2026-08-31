@@ -180,7 +180,7 @@ Each token has:
 - **Size** — How many grid squares the token occupies (default 1×1)
 - **Display Mode** — **Pog** (circular), **Top-Down** (overhead art), or **Full-Art** (full rectangular image)
 - **Disposition** — Hostile (red), Friendly (green), or Neutral (blue) — affects the placeholder color
-- **Conditions** — Visual badge indicators for status effects (poisoned, stunned, etc.)
+- **Conditions** — Two-letter amber badges above the token for status effects (**PO**isoned, **ST**unned, and so on). Hover any token to read its conditions in full
 - **Spirit Layer Visibility** — Whether the token appears in the spirit layer view
 - **Stat Block** — NPC tokens can carry a stat block with AC, HP, speed, attacks, and abilities
 
@@ -202,7 +202,8 @@ The **Characters** page (accessible from the top nav or dashboard) shows all the
 
 From here you can:
 - **Create a new character**
-- **Edit** an existing character
+- **Click a character** to read its sheet — **Edit** is on the sheet when you want to change something
+- **Edit** an existing character directly, skipping the reading step
 - **Copy** a character (great for variants or backup sheets)
 - **Export** a character to JSON (for backups or sharing)
 - **Import** a character from a JSON file
@@ -223,7 +224,7 @@ The Character Editor is where you fill in every detail about your character — 
 
 *Screenshot pending — Character editor with D&D 5e sheet open.*
 
-Click **Save** (or use the keyboard shortcut) to save your progress. A timestamp in the header shows when your character was last saved. An unsaved changes indicator appears if you've made changes you haven't saved yet — don't close the tab without saving!
+Click **Save** to save your progress. A timestamp in the header shows when your character was last saved. If you try to leave with changes you haven't saved, you'll be asked to confirm first — that covers the back arrow and closing or reloading the browser tab. After a save, leaving is silent.
 
 You can also **Export to JSON** from the editor header at any time to grab a backup copy.
 

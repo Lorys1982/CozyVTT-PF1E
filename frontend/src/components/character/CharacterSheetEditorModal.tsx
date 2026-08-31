@@ -154,12 +154,18 @@ export default function CharacterSheetEditorModal({
         aria-labelledby="character-sheet-editor-title"
         className="bg-soft-cream border-2 border-moss-green/30 rounded-xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col"
       >
-        {/* Close Button */}
-        <div className="absolute top-4 right-4 z-10">
+        {/* Close button, in flow rather than absolute. It used to be
+            `absolute top-4 right-4`, but the dialog is not a positioned
+            ancestor — so it resolved against the full-viewport overlay and
+            floated outside the dialog entirely. Making the dialog `relative`
+            would fix that but drop it straight onto the sheet's own palette
+            button, which sits at the same offset inside the sheet header. A
+            flow row keeps it clear of the sheet's controls at every width. */}
+        <div className="flex justify-end px-3 py-2 border-b border-moss-green/20 flex-shrink-0">
           <button
             onClick={handleCancel}
             aria-label="Close dialog"
-            className="p-2 rounded-lg bg-soft-cream/90 hover:bg-stone-gray/10 transition-colors border border-moss-green/20"
+            className="p-2 rounded-lg hover:bg-stone-gray/10 transition-colors"
             disabled={saving}
           >
             <X className="w-5 h-5 text-stone-gray" />

@@ -17,6 +17,7 @@ import NewCharacterModal from '@/components/character/NewCharacterModal';
 import DeleteCharacterModal from '@/components/character/DeleteCharacterModal';
 import AssignCharacterModal from '@/components/character/AssignCharacterModal';
 import ImportCharacterModal from '@/components/character/ImportCharacterModal';
+import CharacterSheetViewerModal from '@/components/character/CharacterSheetViewerModal';
 import EmptyState from '@/components/common/EmptyState';
 import type { Character, Campaign } from '@/types';
 import Button from '@/components/ui/Button';
@@ -61,6 +62,16 @@ export default function CharactersPage() {
     setCharactersData((prev) => [newCharacter, ...prev]);
     showSuccess('Character created successfully!');
     // Note: For now we just close the modal.
+  };
+
+  const [viewingCharacter, setViewingCharacter] = useState<Character | null>(null);
+
+  // Clicking a card opens the sheet to READ. Editing is a deliberate second
+  // step from the Edit button on the sheet — the same shape as opening a
+  // character from the campaign roster, and it means glancing at your own
+  // character can no longer drop you into a form you have to back out of.
+  const handleView = (character: Character) => {
+    setViewingCharacter(character);
   };
 
   const handleEdit = (character: Character) => {
@@ -281,6 +292,7 @@ export default function CharactersPage() {
                     key={character.id}
                     character={character}
                     campaign={getCharacterCampaign(character)}
+                    onView={handleView}
                     onEdit={handleEdit}
                     onCopy={handleCopy}
                     onDelete={handleDeleteClick}
@@ -324,6 +336,13 @@ export default function CharactersPage() {
       </main>
 
       {/* Modals */}
+      {viewingCharacter && (
+        <CharacterSheetViewerModal
+          character={viewingCharacter}
+          onClose={() => setViewingCharacter(null)}
+        />
+      )}
+
       <NewCharacterModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}

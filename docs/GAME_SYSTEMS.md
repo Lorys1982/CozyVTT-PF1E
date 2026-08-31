@@ -108,6 +108,41 @@ question, and getting it wrong invents numbers the designers never intended.
   dice-pool systems have neither ability modifiers nor a proficiency bonus, so
   there is nothing to derive and nothing sensible to offer from this data.
 
+### Initiative — not every system rolls
+
+The same per-system care applies to initiative, and it is the clearest example of
+why forcing one shape onto every system produces wrong numbers. The maths lives
+in `frontend/src/utils/rules/initiative.ts` (duplicated at
+`backend/src/utils/rules/initiative.ts`; the parity test in
+`backend/src/utils/rules/__tests__/dnd5e.test.ts` fails on drift).
+
+| System | Rule | Shape |
+|---|---|---|
+| **D&D 5e** | `d20 +` Dexterity modifier `+ initiativeBonus` | `roll` |
+| **Pathfinder 2e** | `d20 +` the stat named by `initiative.usedStat` — Perception by default, or a skill the GM calls for | `roll` |
+| **Call of Cthulhu 7e** | **No roll.** Combatants are ranked in DEX order, highest first | `fixed` |
+| **Shadowrun 6e** | `derivedStats.initiative.meatspace`: its dice pool plus its base | `roll` |
+| Flexible / unknown | Nothing to derive | `null` — caller falls back to `1d20` |
+
+Two consequences worth understanding before changing this code:
+
+- **The return type admits a non-roll** (`{ kind: 'fixed', value }`) precisely
+  because Call of Cthulhu has no initiative die. An earlier version returned only
+  a dice expression, which forced someone to invent a `1d10 + DEX/5` roll for CoC
+  that appears nowhere in the rulebook. If a system does not roll, say so in the
+  type rather than fabricating dice.
+- **The server resolves it, not the client** — see
+  `backend/src/websocket/handlers/initiative.ts`. It is the only side holding the
+  character sheet, and a `fixed` result cannot be expressed as a dice expression
+  a client could send. Clients may pass an `expression` as a fallback for
+  combatants nothing can be derived for. The frontend uses the same module purely
+  to *display* what will happen.
+
+D&D 5e's `initiativeBonus` is a single manual field covering everything that is
+not Dexterity — the Alert feat, Jack of All Trades, Remarkable Athlete,
+subclasses that swap the ability. Those are too open-ended to enumerate, and
+inventing a toggle per feature would be the same mistake as inventing CoC's dice.
+
 ### Where creature code branches on system
 
 Four places, all plain conditionals:

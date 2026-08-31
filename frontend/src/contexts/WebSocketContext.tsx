@@ -344,3 +344,16 @@ export function useWebSocket() {
 
   return context;
 }
+
+/**
+ * The websocket context if there is one, otherwise undefined.
+ *
+ * The provider only wraps the campaign screens, so a component that can also be
+ * rendered outside one — the character sheet viewer, which opens both from the
+ * campaign roster and from the character gallery — cannot use `useWebSocket`
+ * without crashing in the second case. Live updates are a bonus there, not a
+ * requirement, so this lets such a component degrade instead of throwing.
+ */
+export function useOptionalWebSocket() {
+  return useContext(WebSocketContext);
+}

@@ -98,8 +98,8 @@ After selecting a system, you're taken to the **Character Editor**. This is your
 The sheet is split into sections depending on the system. Take your time — you can save partial work and come back. The header shows the last time you saved.
 
 **A few things to know:**
-- Click **Save** (or press the keyboard shortcut) regularly — look for the "Unsaved changes" indicator if you've made edits
-- If you close the tab without saving, your recent changes will be lost
+- Click **Save** regularly. There's no auto-save and no keyboard shortcut — the header shows the time of your last save
+- Leaving with unsaved changes asks you to confirm first, whether you use the back arrow or close the tab. Confirm and those changes are gone
 - You can **Export to JSON** from the header to save a local backup of your character
 
 ### Step 3: Add a Profile Image (Optional)
@@ -132,6 +132,7 @@ The page has three main areas:
 ### Left Sidebar — Campaign Info
 - Campaign name and description at the top
 - The **Party Roster** showing all players and their characters
+- A small dot beside each person shows whether they're **in session** right now — green if they're connected, grey if not. Handy for telling "thinking" apart from "their internet fell over"
 - If you're curious about your fellow adventurers, it's all here
 
 ### Center — The Map
@@ -202,6 +203,10 @@ Type directly into the expression input. Supported notation:
 
 **Why my roll showed up in chat:** Dice results are public by default. Everyone can see what you rolled. The DM may occasionally roll secretly — you'll see a "DM rolled secretly" message instead of the actual result.
 
+**Your roll history sticks around.** The arrows at the top of the panel step back through recent rolls, and that list is kept on the server — refreshing the page, closing the tab and coming back, or losing your connection for a minute won't wipe it. Your own secret rolls stay yours; nobody else's secret rolls ever appear in your history. Only the DM can clear it.
+
+One thing to know: if the DM has **paused** the session, your rolls are worked out in your own browser and aren't sent anywhere. Handy for messing about between scenes, but those rolls vanish if you refresh.
+
 ---
 
 ## Moving Your Token
@@ -265,11 +270,39 @@ You'll see:
 
 When it's your turn, your name is highlighted. Describe your actions in chat and move your token on the map.
 
+### Rolling Your Own Initiative
+
+Once the DM has added your token to the tracker, you roll for yourself — you don't have to wait for the DM to do it for you. There are two ways, and they do the same thing:
+
+- **In the tracker** — a dice icon 🎲 appears beside your own name. You'll only ever see it on your own row; you can't roll for other players or for the DM's monsters
+- **On the map** — right-click your token, choose **Roll...**, and pick **Roll Initiative** at the top of the menu
+
+Either way the result drops straight into the turn order and the roll appears in chat, so everyone can see what you got.
+
+**What you actually roll depends on your game system**, and it's worked out from your sheet:
+
+| System | Initiative |
+|---|---|
+| **D&D 5e** | `d20 +` your Dexterity modifier, plus the **other bonus** box on your sheet |
+| **Pathfinder 2e** | `d20 +` whichever stat the **Uses:** dropdown names — Perception unless your GM asks for something else |
+| **Call of Cthulhu 7e** | Nothing is rolled. Investigators act in DEX order, so the button reads **Set Initiative** and takes your DEX |
+| **Shadowrun 6e** | Your initiative dice plus your initiative base, both from your sheet |
+
+**D&D 5e players — the "other bonus" box.** Your Dexterity is added automatically, but plenty of things add to initiative beyond it: the **Alert** feat's flat +5, a Bard's Jack of All Trades or a Champion's Remarkable Athlete, subclasses that let you use a different ability. Put the total of those in **Initiative — other bonus** on the Combat tab and it's included every time. The Initiative number itself is worked out for you now, so there's nothing to keep in step by hand.
+
+If something gives you **advantage** on initiative (a Sentinel Shield, say), that isn't handled automatically yet — roll `2d20kh1` in the dice panel and ask your DM to enter it.
+
+**The option only appears once you're in the tracker.** If your token isn't in the turn order yet, there's nothing to roll for — ask your DM to add you. Rolling is how you take part in a fight you're already in; it isn't a way to add yourself to one.
+
+Your DM can still roll for you (and re-roll, or type a value in by hand) — handy if you're away from the keyboard when combat kicks off.
+
 **Watch the map, too.** Whoever's turn it is gets a pulsing gold ring around their token. That's the fastest way to tell which creature is acting when the DM has several of the same monster on the board — three identical wolves look alike in the list, but only one is ringed on the map.
 
 If a creature is hidden or somewhere you haven't explored, you won't see a ring for it — the tracker will show its turn passing, but its position stays a mystery.
 
 **Not sure which wolf is which?** Hover a name in the tracker and that creature's token lights up on the map with a thin white outline. It works the other way too — hover a token on the map and its row in the turn order tints. Hovering only points; it never selects or moves anything.
+
+**Reading conditions on the map.** A creature under a condition carries small amber badges above its token, each a two-letter code — **PA** for Paralyzed, **PO** for Poisoned, **PR** for Prone, and so on. If it has more than four, the extras collapse into a grey **+N** badge. Hover the token and the panel in the bottom-left names every condition in full, so you can tell a Paralyzed enemy from a merely Poisoned one before deciding what to do about it.
 
 ### Pointing at the Map
 
@@ -322,7 +355,8 @@ The **Characters** page shows all your characters across every campaign and syst
 
 **Things you can do from the Characters page:**
 
-- **Edit** — Open the character editor to update your sheet
+- **Click a character** — Open its sheet to read. **Edit** is on the sheet itself when you want to change something
+- **Edit** — Skip straight to the character editor
 - **Copy** — Duplicate a character (handy for making variants or backups)
 - **Export** — Download your character as a JSON file (great for backups or sharing builds)
 - **Import** — Load a previously exported character JSON
@@ -331,7 +365,11 @@ The **Characters** page shows all your characters across every campaign and syst
 
 ### Editing Your Character
 
-Click **Edit** on any character card to open the Character Editor. Make your changes and click **Save**. Changes take effect immediately.
+Clicking a character card opens its sheet to read; click **Edit** on the sheet to start changing it. The **Edit** action on the card itself skips the reading step and goes straight to the Character Editor. Either way, make your changes and click **Save** — they take effect immediately.
+
+If you leave the editor with changes you haven't saved, you'll be asked to confirm before they're discarded — whether you use the back arrow or close the tab. Once you've saved, backing out is silent; there's nothing left to lose. Simply opening a sheet and reading it never counts as a change.
+
+Renaming a character on its sheet renames it everywhere: the card in your library, the editor's title bar, and your DM's roster all follow.
 
 > **Tip:** Update your character after each session — update HP, spell slots, inventory, and anything that changed. Your DM will thank you.
 

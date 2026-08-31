@@ -1,13 +1,26 @@
-import { useState, useEffect, useRef, FormEvent, KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, FormEvent, KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dices, Send, AlertCircle, RotateCcw, ChevronLeft, ChevronRight, Trash2, EyeOff, X } from 'lucide-react';
 import { useWebSocket } from '@/contexts/WebSocketContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCampaign } from '@/contexts/CampaignContext';
+import { getDiceRolls } from '@/services/dice.service';
 import type { DiceRolledEvent, DiceRolledSecretEvent, DiceRollDetail } from '@/types';
 import { CampaignStatus } from '@/types';
 import DiceResult from './DiceResult';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+
+/**
+ * Stable identity for a roll, used to dedupe the live socket stream against
+ * history replayed from the server.
+ *
+ * Stored rolls carry their database id. A roll made while the session is paused
+ * never reaches the server and has none, so it falls back to the roller and
+ * timestamp — which is what the whole list keyed on before rolls had ids at all.
+ */
+function rollKey(roll: DiceRolledEvent): string {
+  return roll.id ?? `${roll.userId}-${roll.timestamp}`;
+}
 
 // ============================================
 // Local (offline) dice evaluator
@@ -120,7 +133,7 @@ const SPECIAL_ROLLS = [
  * Dice roller component with carousel navigation and secret rolls
  */
 export default function DiceRoller() {
-  const { socket } = useWebSocket();
+  const { socket, reconnectCount, status } = useWebSocket();
   const { user } = useAuth();
   const { userRole, campaign } = useCampaign();
   const isPaused = campaign?.status === CampaignStatus.PAUSED && userRole !== 'DM';
@@ -137,6 +150,37 @@ export default function DiceRoller() {
   const [currentRollIndex, setCurrentRollIndex] = useState(0);
   const [isRolling, setIsRolling] = useState(false);
 
+  /**
+   * Safety net for the "Rolling…" state.
+   *
+   * A roll is only ever ended by a message coming back from the server, so
+   * anything that loses that message leaves the button disabled until the user
+   * reloads. The listener bug that caused this in practice is fixed in the
+   * socket client, but a roll can still be lost if the connection drops between
+   * the emit and the reply — and a control that can wedge with no way out
+   * should always have one.
+   */
+  const rollTimeoutRef = useRef<number | null>(null);
+  const ROLL_TIMEOUT_MS = 10000;
+
+  const clearPendingRoll = useCallback(() => {
+    if (rollTimeoutRef.current !== null) {
+      clearTimeout(rollTimeoutRef.current);
+      rollTimeoutRef.current = null;
+    }
+    setIsRolling(false);
+  }, []);
+
+  // A pending roll cannot be answered while the socket is down, and drop the
+  // timer on unmount so it cannot fire against a gone component.
+  useEffect(() => {
+    if (status !== 'connected') clearPendingRoll();
+  }, [status, clearPendingRoll]);
+
+  useEffect(() => () => {
+    if (rollTimeoutRef.current !== null) clearTimeout(rollTimeoutRef.current);
+  }, []);
+
   // Confirm clear history
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -151,6 +195,49 @@ export default function DiceRoller() {
   // WebSocket Event Handlers
   // ============================================
 
+  /**
+   * Load roll history from the server on mount, and again after a reconnect.
+   *
+   * Rolls have always been stored server-side; nothing read them back, so this
+   * panel started empty after every refresh even though the rolls still
+   * existed. Mirrors ChatPanel's load-then-resync pattern.
+   *
+   * Secret rolls are dropped for anyone but the DM, matching how they behave
+   * live: your own secret roll appears in a popup rather than the history list,
+   * while a DM keeps them in history as audit entries. The server has already
+   * withheld other people's secret rolls before this point — this is only about
+   * presentation, not access.
+   */
+  useEffect(() => {
+    if (!campaign?.id) return;
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      try {
+        const fetched = await getDiceRolls(campaign.id, 50);
+        if (cancelled) return;
+        const visible = userRole === 'DM' ? fetched : fetched.filter((r) => !r.secret);
+
+        setRolls((prev) => {
+          // Merge rather than replace: a roll can land live between mount and
+          // this response, and it must not be lost or duplicated.
+          const seen = new Set(prev.map(rollKey));
+          const merged = [...prev, ...visible.filter((r) => !seen.has(rollKey(r)))];
+          merged.sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          return merged.slice(0, 50);
+        });
+      } catch (err) {
+        console.error('[DiceRoller] Failed to load roll history:', err);
+        // Non-fatal — live rolls still arrive over the socket.
+      }
+    };
+
+    loadHistory();
+    return () => { cancelled = true; };
+  }, [campaign?.id, userRole, reconnectCount]);
+
   useEffect(() => {
     if (!socket) return;
 
@@ -159,35 +246,37 @@ export default function DiceRoller() {
     const handleDiceRolled = (data: DiceRolledEvent) => {
       console.log('[DiceRoller] Received dice.rolled event:', data);
 
-      // Secret rolls only visible to the roller
-      if (data.secret && user && data.userId !== user.id) {
-        console.log('[DiceRoller] Secret roll from another user, ignoring');
-        return;
+      const isMine = !!user && data.userId === user.id;
+
+      // Any reply to my own roll ends the pending state, whatever kind of roll
+      // it was. Deciding this once up front closes a hole in the old branching:
+      // a secret roll arriving while `user` was momentarily unset matched none
+      // of the three branches, so the flag was never cleared and the button
+      // stayed on "Rolling…".
+      if (isMine) {
+        clearPendingRoll();
       }
 
-      // Handle secret rolls - show in popup, don't add to history
-      if (data.secret && user && data.userId === user.id) {
-        setSecretRollResult(data);
-        setIsRolling(false);
+      // Secret rolls stay out of the shared history: mine goes to a popup, and
+      // someone else's is not mine to see. The server does not send other
+      // people's secret rolls, but this stays as a second line of defence.
+      if (data.secret) {
+        if (isMine) {
+          setSecretRollResult(data);
+        }
         return;
       }
 
       // Add normal rolls to FRONT of array (newest first)
-      if (!data.secret) {
-        setRolls((prev) => {
-          const updated = [data, ...prev];
-          // Keep only last 50 rolls
-          if (updated.length > 50) {
-            return updated.slice(0, 50);
-          }
-          return updated;
-        });
+      setRolls((prev) => {
+        const updated = [data, ...prev];
+        // Keep only last 50 rolls
+        return updated.length > 50 ? updated.slice(0, 50) : updated;
+      });
 
-        // Stop rolling animation and jump to latest roll (index 0)
-        if (user && data.userId === user.id) {
-          setIsRolling(false);
-          setCurrentRollIndex(0);
-        }
+      // Jump to the latest roll when it was mine
+      if (isMine) {
+        setCurrentRollIndex(0);
       }
     };
 
@@ -241,7 +330,7 @@ export default function DiceRoller() {
       // Check if it's a rate limit error
       if (data.message.includes('Rate limit exceeded')) {
         setError(data.message);
-        setIsRolling(false);
+        clearPendingRoll();
         // Only set cooldown if not already in cooldown (prevent reset)
         if (!isInCooldown.current) {
           isInCooldown.current = true;
@@ -249,7 +338,7 @@ export default function DiceRoller() {
         }
       } else {
         setError(data.message);
-        setIsRolling(false);
+        clearPendingRoll();
       }
     };
 
@@ -353,7 +442,7 @@ export default function DiceRoller() {
       } else {
         setError('Could not evaluate expression locally');
       }
-      setIsRolling(false);
+      clearPendingRoll();
       return;
     }
 
@@ -375,6 +464,16 @@ export default function DiceRoller() {
 
     setError(null);
     setIsRolling(true);
+
+    // The roll is fire-and-forget, so nothing but a reply ends this state. If
+    // the connection drops in between, release the button rather than leaving
+    // it disabled until the user works out that a reload is the only way on.
+    if (rollTimeoutRef.current !== null) clearTimeout(rollTimeoutRef.current);
+    rollTimeoutRef.current = window.setTimeout(() => {
+      rollTimeoutRef.current = null;
+      setIsRolling(false);
+      setError("That roll didn't come back — check your connection and try again.");
+    }, ROLL_TIMEOUT_MS);
 
     console.log('[DiceRoller] Rolling dice:', expr, 'secret:', isSecret);
 
@@ -515,7 +614,7 @@ export default function DiceRoller() {
               <AnimatePresence mode="wait">
                 {currentRoll && (
                   <DiceResult
-                    key={`${currentRoll.userId}-${currentRoll.timestamp}`}
+                    key={rollKey(currentRoll)}
                     roll={currentRoll}
                     isCurrentUser={user?.id === currentRoll.userId}
                   />

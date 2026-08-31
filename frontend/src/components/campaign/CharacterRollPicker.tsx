@@ -19,6 +19,7 @@ import {
   type RollOption,
   type CharacterRolls,
 } from '@/utils/characterRolls';
+import { resolveCharacterInitiative } from '@/utils/rules/initiative';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,16 @@ interface CharacterRollPickerProps {
   characterId?: string;
   /** Called with the final dice expression and purpose when the player clicks a roll button */
   onRoll: (expression: string, purpose: string) => void;
+  /**
+   * Roll initiative for the token this picker was opened from, sending the
+   * result to the initiative tracker rather than only to the dice log.
+   *
+   * Omitted when initiative is not on offer — the token is not in the
+   * initiative order, or this viewer is not allowed to roll for it — in which
+   * case the section is not rendered at all. Whether a roll is permitted is
+   * decided by the server; this only controls what is shown.
+   */
+  onRollInitiative?: () => void;
   onClose: () => void;
   /** Position (from mouse event) — picker will flip if it would overflow viewport */
   anchorX: number;
@@ -100,6 +111,7 @@ export default function CharacterRollPicker({
   character: initialCharacter,
   characterId,
   onRoll,
+  onRollInitiative,
   onClose,
   anchorX,
   anchorY,
@@ -178,6 +190,12 @@ export default function CharacterRollPicker({
   const hasAdvantage = systemSupportsAdvantage(gameSystem);
   const modeLabels = getModeLabels(gameSystem);
 
+  // What initiative means for this character, purely so the entry can describe
+  // itself ("1d20+3", or "DEX 65" for a system that does not roll). The server
+  // works the same thing out from the same shared rules when the roll is
+  // actually made — this never decides the outcome.
+  const initiative = resolveCharacterInitiative(gameSystem, character?.data);
+
   const characterName = character?.name ?? 'Character';
   const hasAnyRolls = rolls && (
     rolls.abilities.length > 0 ||
@@ -255,6 +273,34 @@ export default function CharacterRollPicker({
 
         {error && (
           <div className="px-3 py-4 text-sm text-danger-ink text-center">{error}</div>
+        )}
+
+        {/* Initiative — offered only while this token is in the initiative
+            order, and only to someone allowed to roll for it. Kept outside the
+            block below so it still shows for a character whose sheet has
+            nothing else rollable on it: being in a fight does not depend on
+            having filled the sheet in. */}
+        {!loading && !error && onRollInitiative && (
+          <div className="border-b border-moss-green/10">
+            <div className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-warm-gray bg-parchment/40">
+              Initiative
+            </div>
+            <button
+              onClick={() => { onRollInitiative(); onClose(); }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-stone-gray hover:bg-moss-green/10 transition-colors text-left"
+            >
+              <Dices className="w-3 h-3 text-brand-ink flex-shrink-0" />
+              {/* The wording follows the system. Call of Cthulhu ranks
+                  combatants by Dexterity with no die involved, so offering to
+                  "roll" would promise something that does not happen. */}
+              <span className="flex-1">
+                {initiative?.kind === 'fixed' ? 'Set Initiative' : 'Roll Initiative'}
+              </span>
+              {initiative && (
+                <span className="text-xs text-warm-gray flex-shrink-0">{initiative.label}</span>
+              )}
+            </button>
+          </div>
         )}
 
         {!loading && !error && !hasAnyRolls && (

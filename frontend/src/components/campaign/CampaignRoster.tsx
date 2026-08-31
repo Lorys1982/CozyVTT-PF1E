@@ -43,6 +43,8 @@ export default function CampaignRoster() {
   const { user } = useAuth();
   const { toast, showToast, hideToast } = useToast();
   const [roster, setRoster] = useState<RosterMember[]>([]);
+  // User IDs with at least one live connection to this campaign.
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [editorCharacter, setEditorCharacter] = useState<Character | null>(null);
@@ -91,6 +93,31 @@ export default function CampaignRoster() {
 
     return () => {
       socket.off('roster.updated', handleRosterUpdate);
+    };
+  }, [socket, campaign?.id]);
+
+  // Who is connected right now, shown as a dot beside each member. This is what
+  // replaced the "X has joined / has left" chat messages.
+  //
+  // The server sends the whole set on every join and leave rather than deltas,
+  // so this cannot drift out of step after a missed event — and a user with two
+  // tabs open appears once and stays online until the last one closes.
+  useEffect(() => {
+    if (!socket || !campaign?.id) return;
+
+    const handlePresence = (data: { campaignId: string; onlineUserIds: string[] }) => {
+      if (data?.campaignId !== campaign.id) return;
+      setOnlineUserIds(new Set(data.onlineUserIds ?? []));
+    };
+
+    socket.onPresenceState(handlePresence);
+    // Ask for the current set: the push that accompanied our own connection may
+    // have happened before this component mounted, which would otherwise leave
+    // every member showing offline until somebody joined or left.
+    socket.requestPresence();
+
+    return () => {
+      socket.off('presence.state', handlePresence);
     };
   }, [socket, campaign?.id]);
 
@@ -280,7 +307,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.DM.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} isOnline={onlineUserIds.has(member.userId)} />
                 ))}
               </div>
             </div>
@@ -294,7 +321,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.PLAYER.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} isOnline={onlineUserIds.has(member.userId)} />
                 ))}
               </div>
             </div>
@@ -308,7 +335,7 @@ export default function CampaignRoster() {
               </h4>
               <div className="space-y-2">
                 {groupedRoster.SPECTATOR.map((member) => (
-                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} />
+                  <MemberCard key={member.userId} member={member} getRoleIcon={getRoleIcon} getSystemBadgeColor={getSystemBadgeColor} getSystemShortName={getSystemShortName} onCharacterClick={handleCharacterClick} onCharacterRightClick={handleCharacterRightClick} onNotesClick={handleOpenNotes} isDM={userRole === 'DM'} currentUserId={user?.id ?? ''} characterHpCache={characterHpCache} onHpDelta={handleHpDelta} isOnline={onlineUserIds.has(member.userId)} />
                 ))}
               </div>
             </div>
@@ -433,9 +460,11 @@ interface MemberCardProps {
   currentUserId: string;
   characterHpCache: Record<string, CharacterHpInfo>;
   onHpDelta: (characterId: string, delta: number) => void;
+  /** Has at least one live connection to this campaign right now. */
+  isOnline: boolean;
 }
 
-function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortName, onCharacterClick, onCharacterRightClick, onNotesClick, isDM, currentUserId, characterHpCache, onHpDelta }: MemberCardProps) {
+function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortName, onCharacterClick, onCharacterRightClick, onNotesClick, isDM, currentUserId, characterHpCache, onHpDelta, isOnline }: MemberCardProps) {
   const RoleIcon = getRoleIcon(member.role);
   const canViewMemberSheets = isDM || member.role !== 'DM';
 
@@ -443,14 +472,32 @@ function MemberCard({ member, getRoleIcon, getSystemBadgeColor, getSystemShortNa
     <div className="p-2 rounded-lg bg-parchment/50 hover:bg-parchment transition-colors">
       {/* Member Info */}
       <div className="flex items-center gap-2 mb-2">
-        <div
-          className={`p-1.5 rounded-full ${
-            member.role === 'DM' ? 'bg-moss-green/20' : 'bg-spirit-purple/20'
-          }`}
-        >
-          <RoleIcon
-            className={`w-4 h-4 ${
-              member.role === 'DM' ? 'text-brand-ink' : 'text-spirit-purple'
+        {/* Presence badge on the role icon. This replaces the "X has joined /
+            left the campaign" chat messages, which fired on every refresh and
+            every brief disconnect.
+
+            The dot is the ONLY thing carrying this meaning here — unlike the
+            header indicators, which sit next to the words "Live"/"Connected" —
+            so colour alone would fail WCAG 1.4.1. Hence the label. No pulse
+            either: a roster can show many of these at once. */}
+        <div className="relative flex-shrink-0">
+          <div
+            className={`p-1.5 rounded-full ${
+              member.role === 'DM' ? 'bg-moss-green/20' : 'bg-spirit-purple/20'
+            }`}
+          >
+            <RoleIcon
+              className={`w-4 h-4 ${
+                member.role === 'DM' ? 'text-brand-ink' : 'text-spirit-purple'
+              }`}
+            />
+          </div>
+          <span
+            role="img"
+            aria-label={`${member.userName} is ${isOnline ? 'in session' : 'not in session'}`}
+            title={isOnline ? 'In session' : 'Not in session'}
+            className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-parchment ${
+              isOnline ? 'bg-success' : 'bg-stone-gray/50'
             }`}
           />
         </div>
