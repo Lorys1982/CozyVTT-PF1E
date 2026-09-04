@@ -150,14 +150,6 @@ export interface NpcStatBlock {
   damageImmunities?: string;
   /** Condition immunities */
   conditionImmunities?: string;
-  /** Pathfinder 1e defensive abilities, such as evasion or channel resistance */
-  defensiveAbilities?: string;
-  /** Pathfinder 1e damage reduction, e.g. "10/cold iron" */
-  damageReduction?: string;
-  /** Pathfinder 1e spell resistance */
-  spellResistance?: string;
-  /** Pathfinder 1e weaknesses */
-  weaknesses?: string;
   /** Senses, e.g. "darkvision 60 ft., passive Perception 15" */
   senses?: string;
   /** Languages */
@@ -596,7 +588,6 @@ export interface Character {
  */
 export type CharacterData =
   | import('./game-systems').DnD5eCharacterData
-  | import('./game-systems').PF1eCharacterData
   | import('./game-systems').PF2eCharacterData
   | import('./game-systems').SR6CharacterData
   | import('./game-systems').CoC7eCharacterData;
@@ -647,10 +638,13 @@ export interface Token {
   showHpBar:   boolean;
   notes:       string;
   initiative:  number | null;
-  /** Sight radius in grid squares (0 = unlimited). Used by dynamic lighting. */
+  /** Sight radius in grid squares (3 = default D&D 5e, 0 = unlimited). Used by dynamic lighting. */
   sightRadius?: number;
   /** Outer dim-vision radius; defaults to sightRadius when omitted. */
   sightRadiusDim?: number;
+  /** Darkvision radius in grid squares (e.g. 12 = 60ft for D&D 5e). Areas revealed only by
+   *  darkvision (outside any enabled LightSource range) are rendered in grayscale. */
+  darkvisionRadius?: number;
   /** Display mode: pog (circular + border), top-down (circular, no border), full-art (rectangular, alpha). Default: pog */
   displayMode?: TokenDisplayMode;
   /** NPC stat block — populated when placing from creature library or entered manually. */
