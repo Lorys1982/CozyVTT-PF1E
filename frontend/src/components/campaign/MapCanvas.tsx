@@ -24,6 +24,7 @@ import type {
   VibeUpdatedBroadcast,
   Character,
   MapPingedBroadcast,
+  MapOverlay,
 } from '@/types';
 import { TokenLayer, TokenType } from '@/types';
 import type { WallSegment, FogState, WallType, LightSource } from '@/types/walls';
@@ -65,6 +66,7 @@ import DmFogControls, { type FogToolMode } from '@/components/campaign/DmFogCont
 import DmWallControls, { type WallToolMode } from '@/components/campaign/DmWallControls';
 import DmLightControls, { type LightToolMode, type LightPlacementDefaults } from '@/components/campaign/DmLightControls';
 import DmToolPanelContainer from '@/components/campaign/DmToolPanelContainer';
+import DmOverlayControls from '@/components/campaign/DmOverlayControls';
 import { useWallHistory } from '@/hooks/useWallHistory';
 import Toast, { useToast } from '@/components/Toast';
 import Button from '@/components/ui/Button';
@@ -145,6 +147,11 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   const [draggedToken, setDraggedToken] = useState<Token | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
   const [hoverToken, setHoverToken] = useState<Token | null>(null);
+  const [overlayImages, setOverlayImages] = useState<Map<string, HTMLImageElement>>(new Map());
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const [overlayPlacement, setOverlayPlacement] = useState<{ assetId: string; name: string } | null>(null);
+  const [overlayCursor, setOverlayCursor] = useState<string | undefined>(undefined);
+  const overlayDragRef = useRef<{ id: string; mode: 'move' | 'resize' | 'rotate'; offsetX: number; offsetY: number; edgeX?: -1 | 0 | 1; edgeY?: -1 | 0 | 1; startPointerX?: number; startPointerY?: number; startX?: number; startY?: number; anchorX?: number; anchorY?: number; startWidth?: number; startHeight?: number; centerX?: number; centerY?: number; startAngle?: number; startRotation?: number } | null>(null);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -753,6 +760,25 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     };
   }, [currentMap?.imageUrl]);
 
+  // Map-piece images are deliberately loaded independently of the base map so
+  // a single missing asset never prevents the board from rendering.
+  useEffect(() => {
+    const overlays = currentMap?.overlays ?? [];
+    let cancelled = false;
+    Promise.all(overlays.map((overlay) => new Promise<[string, HTMLImageElement] | null>((resolve) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => resolve([overlay.id, image]);
+      image.onerror = () => resolve(null);
+      image.src = overlay.imageUrl;
+    }))).then((loaded) => {
+      if (!cancelled) setOverlayImages(new Map(loaded.filter((item): item is [string, HTMLImageElement] => item !== null)));
+    });
+    return () => { cancelled = true; };
+  // Positions/properties change while dragging; only reload when the set of
+  // image sources changes, not on every pointer move.
+  }, [currentMap?.overlays?.map((overlay) => `${overlay.id}:${overlay.imageUrl}`).join('|')]);
+
   // ============================================
   // Spirit Layer Image Loading
   // ============================================
@@ -775,6 +801,16 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       img.onerror = null;
     };
   }, [currentMap?.spiritLayerUrl]);
+
+  useEffect(() => {
+    const socketInstance = socket?.getSocket();
+    if (!socketInstance) return;
+    const handleOverlays = (data: { mapId: string; overlays: MapOverlay[] }) => {
+      if (data.mapId === currentMap?.id && currentMap) setCurrentMap({ ...currentMap, overlays: data.overlays });
+    };
+    socketInstance.on('map:overlays:updated', handleOverlays);
+    return () => { socketInstance.off('map:overlays:updated', handleOverlays); };
+  }, [socket, currentMap, setCurrentMap]);
 
   // ============================================
   // Auto-Fit: Center and fit map when a new map image finishes loading
@@ -1437,6 +1473,19 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       dmViewBothPlanes,
     }, viewport);
 
+    // 1b. Placed map pieces. They are terrain: players see them, while tokens
+    // always remain above them for readable combat positioning.
+    for (const overlay of currentMap.overlays ?? []) {
+      const image = overlayImages.get(overlay.id);
+      if (!image || !overlay.visible) continue;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.translate(overlay.x + overlay.width / 2, overlay.y + overlay.height / 2);
+      ctx.rotate((overlay.rotation * Math.PI) / 180);
+      ctx.drawImage(image, -overlay.width / 2, -overlay.height / 2, overlay.width, overlay.height);
+      ctx.restore();
+    }
+
     // 2. Grid overlay
     if (showGrid) {
       drawGrid(ctx, { gridColor }, viewport);
@@ -1465,7 +1514,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     }
 
     ctx.restore();
-  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, campaign?.spiritLayerEnabled, playerSpiritVisible, dmViewBothPlanes, dmPreviewPlayerView, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity]);
+  }, [currentMap, imageLoaded, mapImage, mapControls.panOffset, mapControls.zoom, userRole, campaign?.spiritLayerEnabled, playerSpiritVisible, dmViewBothPlanes, dmPreviewPlayerView, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity, overlayImages]);
 
   /**
    * Draw the TOKENS layer (middle canvas): every token + the drag ghost.
@@ -1731,7 +1780,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // Terrain-only content.
   useEffect(() => {
     markDirty('terrain');
-  }, [markDirty, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity, dmPreviewPlayerView]);
+  }, [markDirty, showGrid, gridColor, fogState, revealedCells, spiritLayerImage, spiritLayerOpacity, dmPreviewPlayerView, overlayImages]);
 
   // Spirit flags affect the base/spirit images (terrain) and spirit-token
   // alpha (tokens).
@@ -1918,6 +1967,36 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     y: my * mapControls.zoom + mapControls.panOffset.y,
   });
 
+  const saveOverlays = useCallback(async (overlays: MapOverlay[]) => {
+    if (!campaign?.id || !currentMap) return;
+    setCurrentMap({ ...currentMap, overlays });
+    try {
+      await api.updateMap(campaign.id, currentMap.id, { overlays });
+    } catch {
+      showToast('Could not save map pieces.', 'error');
+    }
+  }, [campaign?.id, currentMap, setCurrentMap, showToast]);
+
+  const overlayBorderHit = (overlay: MapOverlay, px: number, py: number): { mode: 'resize' | 'rotate'; cursor: string; edgeX?: -1 | 0 | 1; edgeY?: -1 | 0 | 1 } | null => {
+    const angle = -(overlay.rotation * Math.PI) / 180;
+    const dx = px - (overlay.x + overlay.width / 2), dy = py - (overlay.y + overlay.height / 2);
+    const lx = dx * Math.cos(angle) - dy * Math.sin(angle) + overlay.width / 2;
+    const ly = dx * Math.sin(angle) + dy * Math.cos(angle) + overlay.height / 2;
+    const edge = 14 / mapControls.zoom;
+    if (lx >= -edge && lx <= overlay.width + edge && ly >= -edge && ly <= overlay.height + edge) {
+      const left = Math.abs(lx) <= edge, right = Math.abs(lx - overlay.width) <= edge;
+      const top = Math.abs(ly) <= edge, bottom = Math.abs(ly - overlay.height) <= edge;
+      if (left || right || top || bottom) {
+        const ex = left ? -1 : right ? 1 : 0, ey = top ? -1 : bottom ? 1 : 0;
+        const cursor = ex && ey ? 'nwse-resize' : ex ? 'ew-resize' : 'ns-resize';
+        return { mode: 'resize', cursor, edgeX: ex as -1 | 0 | 1, edgeY: ey as -1 | 0 | 1 };
+      }
+    }
+    const rotateY = overlay.y - 28 / mapControls.zoom;
+    if (Math.hypot(px - (overlay.x + overlay.width / 2), py - rotateY) <= edge) return { mode: 'rotate', cursor: 'grab' };
+    return null;
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current || !currentMap) return;
 
@@ -1937,6 +2016,37 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const gridCoords = mapControls.screenToGrid({ x: screenX, y: screenY });
+    const mapPx = screenToMapPx(screenX, screenY);
+
+    if (isDM && overlayPlacement) {
+      const size = currentMap.gridSize * 2;
+      const overlay: MapOverlay = { id: crypto.randomUUID(), imageUrl: `/api/assets/maps/${overlayPlacement.assetId}`, name: overlayPlacement.name, x: mapPx.x - size / 2, y: mapPx.y - size / 2, width: size, height: size, rotation: 0, opacity: 1, visible: true };
+      void saveOverlays([...(currentMap.overlays ?? []), overlay]);
+      setSelectedOverlayId(overlay.id);
+      setOverlayPlacement(null);
+      return;
+    }
+    if (isDM && !wallMode && !fogMode && !lightMode) {
+      const selected = currentMap.overlays?.find((overlay) => overlay.id === selectedOverlayId);
+      if (selected) {
+        const borderHit = overlayBorderHit(selected, mapPx.x, mapPx.y);
+        if (borderHit?.mode === 'rotate') {
+          overlayDragRef.current = { id: selected.id, mode: 'rotate', offsetX: 0, offsetY: 0, centerX: selected.x + selected.width / 2, centerY: selected.y + selected.height / 2, startAngle: Math.atan2(mapPx.y - (selected.y + selected.height / 2), mapPx.x - (selected.x + selected.width / 2)), startRotation: selected.rotation };
+          return;
+        }
+        if (borderHit?.mode === 'resize') {
+          overlayDragRef.current = { id: selected.id, mode: 'resize', offsetX: 0, offsetY: 0, edgeX: borderHit.edgeX, edgeY: borderHit.edgeY, startPointerX: mapPx.x, startPointerY: mapPx.y, startX: selected.x, startY: selected.y, startWidth: selected.width, startHeight: selected.height };
+          return;
+        }
+      }
+      const hit = [...(currentMap.overlays ?? [])].reverse().find((overlay) => overlay.visible && mapPx.x >= overlay.x && mapPx.x <= overlay.x + overlay.width && mapPx.y >= overlay.y && mapPx.y <= overlay.y + overlay.height);
+      if (hit) {
+        setSelectedOverlayId(hit.id);
+        overlayDragRef.current = { id: hit.id, mode: 'move', offsetX: mapPx.x - hit.x, offsetY: mapPx.y - hit.y };
+        return;
+      }
+      setSelectedOverlayId(null);
+    }
 
     // Wall-draw mode: place a point (or finish polyline on double-click)
     if (wallMode === 'wall-draw' && isDM) {
@@ -2321,6 +2431,24 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     // Track raw map-px position (unquantised) for accurate ghost line in free-draw mode
     hoverMapPxRef.current = screenToMapPx(screenX, screenY);
 
+    if (overlayDragRef.current && (e.buttons & 1)) {
+      const drag = overlayDragRef.current;
+      const next = (currentMap.overlays ?? []).map((overlay) => {
+        if (overlay.id !== drag.id) return overlay;
+        if (drag.mode === 'move') return { ...overlay, x: hoverMapPxRef.current!.x - drag.offsetX, y: hoverMapPxRef.current!.y - drag.offsetY };
+        if (drag.mode === 'resize') {
+          const dx = hoverMapPxRef.current!.x - drag.startPointerX!, dy = hoverMapPxRef.current!.y - drag.startPointerY!;
+          const width = drag.edgeX ? Math.max(12, drag.startWidth! + dx * drag.edgeX) : drag.startWidth!;
+          const height = drag.edgeY ? Math.max(12, drag.startHeight! + dy * drag.edgeY) : drag.startHeight!;
+          return { ...overlay, x: drag.edgeX === -1 ? drag.startX! + dx : drag.startX!, y: drag.edgeY === -1 ? drag.startY! + dy : drag.startY!, width, height };
+        }
+        const angle = Math.atan2(hoverMapPxRef.current!.y - drag.centerY!, hoverMapPxRef.current!.x - drag.centerX!);
+        return { ...overlay, rotation: (drag.startRotation! + (angle - drag.startAngle!) * 180 / Math.PI + 360) % 360 };
+      });
+      setCurrentMap({ ...currentMap, overlays: next });
+      return;
+    }
+
     // AoE aim and Alt state, refreshed on every move for the reasons given
     // where they are declared.
     aoeAimRef.current = hoverMapPxRef.current;
@@ -2535,6 +2663,11 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     if (e?.button === 2) {
       rightPanActiveRef.current = false;
       mapControls.stopDrag();
+      return;
+    }
+    if (overlayDragRef.current) {
+      overlayDragRef.current = null;
+      if (currentMap) void saveOverlays(currentMap.overlays ?? []);
       return;
     }
     // Commit wall endpoint drag or select endpoint for merge
@@ -2905,6 +3038,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           ref={canvasRef}
           width={canvasSize.width}
           height={canvasSize.height}
+          style={overlayCursor ? { cursor: overlayCursor } : undefined}
           className={`absolute inset-0 ${
             draggedToken ? 'cursor-grabbing' :
             wallMode === 'wall-draw' ? 'cursor-crosshair' :
@@ -3324,6 +3458,20 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
             placementDefaults={lightPlacementDefaults}
             tokens={tokens}
             onDefaultsChange={setLightPlacementDefaults}
+          />
+          <DmOverlayControls
+            campaignId={campaign!.id}
+            overlays={currentMap.overlays ?? []}
+            selected={currentMap.overlays?.find((overlay) => overlay.id === selectedOverlayId) ?? null}
+            placing={overlayPlacement !== null}
+            onPlaceAsset={(assetId, name) => setOverlayPlacement({ assetId, name })}
+            onPlacingChange={(placing) => { if (!placing) setOverlayPlacement(null); }}
+            onUpdate={(updated) => void saveOverlays((currentMap.overlays ?? []).map((overlay) => overlay.id === updated.id ? updated : overlay))}
+            onDelete={() => {
+              if (!selectedOverlayId) return;
+              void saveOverlays((currentMap.overlays ?? []).filter((overlay) => overlay.id !== selectedOverlayId));
+              setSelectedOverlayId(null);
+            }}
           />
         </DmToolPanelContainer>
       )}

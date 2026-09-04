@@ -20,6 +20,7 @@ import { Button } from '@/components/ui';
 
 const ASSET_DIR: Record<string, 'maps' | 'tokens' | 'audio' | 'avatars'> = {
   [AssetType.MAP]: 'maps',
+  [AssetType.MAP_PIECE]: 'maps',
   [AssetType.TOKEN]: 'tokens',
   [AssetType.AUDIO]: 'audio',
   [AssetType.AVATAR]: 'avatars',

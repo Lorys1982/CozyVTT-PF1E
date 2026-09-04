@@ -60,6 +60,29 @@ interface Token {
   creatureTemplateId?: string | null;
 }
 
+interface MapOverlay {
+  id: string;
+  imageUrl: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  visible: boolean;
+}
+
+function validOverlays(value: unknown): value is MapOverlay[] {
+  return Array.isArray(value) && value.length <= 200 && value.every((item) => {
+    const o = item as Record<string, unknown>;
+    return typeof o.id === 'string' && typeof o.imageUrl === 'string' && typeof o.name === 'string'
+      && ['x', 'y', 'width', 'height', 'rotation', 'opacity'].every((key) => typeof o[key] === 'number' && Number.isFinite(o[key]))
+      && (o.width as number) > 0 && (o.height as number) > 0 && (o.opacity as number) >= 0 && (o.opacity as number) <= 1
+      && typeof o.visible === 'boolean';
+  });
+}
+
 const VALID_TOKEN_TYPES = ['player', 'npc', 'object'];
 const VALID_TOKEN_DISPOSITIONS = ['friendly', 'neutral', 'hostile'];
 const VALID_DISPLAY_MODES = ['pog', 'top-down', 'full-art'];
@@ -456,7 +479,7 @@ router.get('/:id', campaignMember, async (req: AuthenticatedRequest, res: Respon
 router.put('/:id', campaignDM, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { campaignId, id } = req.params;
-    const { name, width, height, gridSize, imageUrl, spiritLayerUrl, feetPerSquare, diagonalRule, lightingEnabled } = req.body;
+    const { name, width, height, gridSize, imageUrl, spiritLayerUrl, feetPerSquare, diagonalRule, lightingEnabled, overlays } = req.body;
 
     // Fetch the map to verify it exists and belongs to campaign
     const existingMap = await prisma.map.findUnique({
@@ -578,6 +601,13 @@ router.put('/:id', campaignDM, async (req: AuthenticatedRequest, res: Response) 
       updateData.lightingEnabled = lightingEnabled;
     }
 
+    if (overlays !== undefined) {
+      if (!validOverlays(overlays)) {
+        return res.status(400).json({ error: 'Validation Error', message: 'Invalid map overlays' });
+      }
+      updateData.overlays = overlays;
+    }
+
     // Update the map
     const updatedMap = await prisma.map.update({
       where: { id },
@@ -592,6 +622,13 @@ router.put('/:id', campaignDM, async (req: AuthenticatedRequest, res: Response) 
           lightingEnabled: updatedMap.lightingEnabled,
         });
       } catch { /* non-fatal */ }
+    }
+    if (updateData.overlays !== undefined) {
+      // `updatedMap` is typed from the generated Prisma client. In Docker dev
+      // that client can lag the bind-mounted schema until Prisma regenerates;
+      // the JSON value itself is already validated above and persisted here.
+      const savedOverlays = (updatedMap as unknown as { overlays: MapOverlay[] }).overlays ?? updateData.overlays;
+      try { broadcastToCampaign(campaignId, 'map:overlays:updated', { mapId: id, overlays: savedOverlays }); } catch { /* non-fatal */ }
     }
 
     return res.status(200).json({ map: updatedMap });

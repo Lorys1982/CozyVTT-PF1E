@@ -108,6 +108,7 @@ export async function validateFileType(
 function getAllowedMimeTypesString(assetType: AssetType): string {
   const mimeTypes = {
     MAP: 'PNG, JPEG, WEBP, PDF',
+    MAP_PIECE: 'PNG, JPEG, WEBP',
     TOKEN: 'PNG, JPEG, WEBP, GIF',
     AUDIO: 'MP3, OGG, WAV',
     AVATAR: 'PNG, JPEG, WEBP',

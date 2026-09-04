@@ -52,6 +52,7 @@ interface MapData {
   spiritLayerUrl: string | null;
   tokens: unknown;
   annotations: unknown;
+  overlays?: unknown;
   wallSegments: unknown;
   fogData: unknown;
   lightingEnabled: boolean;

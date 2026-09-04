@@ -6,7 +6,7 @@ import logger from './logger';
 /**
  * Asset types supported by the application
  */
-export type AssetType = 'MAP' | 'TOKEN' | 'AUDIO' | 'AVATAR';
+export type AssetType = 'MAP' | 'MAP_PIECE' | 'TOKEN' | 'AUDIO' | 'AVATAR';
 
 /**
  * Asset scope - global (platform-wide), user (personal), or campaign-specific
@@ -19,12 +19,13 @@ export type AssetScope = 'GLOBAL' | 'USER' | 'CAMPAIGN';
  */
 export const DEFAULT_FILE_SIZE_LIMITS_MB: Record<AssetType, number> = {
   MAP: 50,
+  MAP_PIECE: 50,
   TOKEN: 5,
   AUDIO: 20,
   AVATAR: 2,
 };
 
-const ASSET_TYPES: AssetType[] = ['MAP', 'TOKEN', 'AUDIO', 'AVATAR'];
+const ASSET_TYPES: AssetType[] = ['MAP', 'MAP_PIECE', 'TOKEN', 'AUDIO', 'AVATAR'];
 
 /**
  * Resolve per-type upload limits (in bytes) from MAX_<TYPE>_SIZE_MB environment
@@ -85,6 +86,7 @@ export const MAX_UPLOAD_BYTES: number = Math.max(...Object.values(FILE_SIZE_LIMI
  */
 export const ALLOWED_MIME_TYPES = {
   MAP: ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'],
+  MAP_PIECE: ['image/png', 'image/jpeg', 'image/webp'],
   TOKEN: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   AUDIO: ['audio/mpeg', 'audio/ogg', 'audio/wav'],
   AVATAR: ['image/png', 'image/jpeg', 'image/webp'],
@@ -95,6 +97,7 @@ export const ALLOWED_MIME_TYPES = {
  */
 export const ALLOWED_EXTENSIONS = {
   MAP: ['.png', '.jpg', '.jpeg', '.webp', '.pdf'],
+  MAP_PIECE: ['.png', '.jpg', '.jpeg', '.webp'],
   TOKEN: ['.png', '.jpg', '.jpeg', '.webp', '.gif'],
   AUDIO: ['.mp3', '.ogg', '.wav'],
   AVATAR: ['.png', '.jpg', '.jpeg', '.webp'],
@@ -127,6 +130,7 @@ export function getFilePath(
 
   switch (assetType) {
     case 'MAP':
+    case 'MAP_PIECE':
       if (scope === 'GLOBAL') {
         return path.join(baseDir, 'maps', 'global');
       } else {

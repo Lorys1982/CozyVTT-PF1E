@@ -130,6 +130,7 @@ export default function AssetUploadModal({ isOpen, onClose, onSuccess, defaultTy
 
     const allowedTypes: Record<AssetType, string[]> = {
       [AssetType.MAP]: ['image/jpeg', 'image/png', 'image/webp'],
+      [AssetType.MAP_PIECE]: ['image/jpeg', 'image/png', 'image/webp'],
       [AssetType.TOKEN]: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
       [AssetType.AUDIO]: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'],
       [AssetType.AVATAR]: ['image/jpeg', 'image/png', 'image/webp'],
@@ -308,6 +309,7 @@ export default function AssetUploadModal({ isOpen, onClose, onSuccess, defaultTy
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { type: AssetType.MAP, icon: MapPin, label: 'Map' },
+                    { type: AssetType.MAP_PIECE, icon: MapPin, label: 'Map piece' },
                     { type: AssetType.TOKEN, icon: User, label: 'Token' },
                     { type: AssetType.AUDIO, icon: FileAudio, label: 'Audio' },
                     { type: AssetType.AVATAR, icon: User, label: 'Avatar' },
@@ -454,7 +456,7 @@ export default function AssetUploadModal({ isOpen, onClose, onSuccess, defaultTy
                   disabled={uploading}
                   className="hidden"
                   accept={
-                    assetType === AssetType.MAP || assetType === AssetType.TOKEN || assetType === AssetType.AVATAR
+                    assetType === AssetType.MAP || assetType === AssetType.MAP_PIECE || assetType === AssetType.TOKEN || assetType === AssetType.AVATAR
                       ? 'image/*'
                       : assetType === AssetType.AUDIO
                       ? 'audio/*'

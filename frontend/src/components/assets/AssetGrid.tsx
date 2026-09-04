@@ -20,6 +20,7 @@ import { AssetType } from '@/types';
 /** Serving sub-route for each asset type — see GET /api/assets/{dir}/:id. */
 const ASSET_DIR: Record<string, 'maps' | 'tokens' | 'audio' | 'avatars'> = {
   [AssetType.MAP]: 'maps',
+  [AssetType.MAP_PIECE]: 'maps',
   [AssetType.TOKEN]: 'tokens',
   [AssetType.AUDIO]: 'audio',
   [AssetType.AVATAR]: 'avatars',
@@ -67,25 +68,6 @@ const COLUMN_CLASS: Record<number, string> = {
   5: 'grid-cols-5',
 };
 
-/**
- * Broken-image fallback: swap the thumbnail for the asset's name.
- *
- * SECURITY: the name is written with textContent, never innerHTML, so a
- * maliciously-named asset like `<img onerror=...>` is rendered as literal
- * text rather than executed. Preserved verbatim from the original pickers —
- * do not "simplify" this into innerHTML.
- */
-function renderNameFallback(target: HTMLImageElement, name: string): void {
-  target.style.display = 'none';
-  const parent = target.parentElement;
-  if (!parent) return;
-  parent.classList.add('bg-moss-green/10', 'flex', 'items-center', 'justify-center');
-  const span = document.createElement('span');
-  span.className = 'text-xs text-stone-gray/50 p-1 text-center';
-  span.textContent = name;
-  parent.replaceChildren(span);
-}
-
 export default function AssetGrid({
   type,
   campaignId,
@@ -105,6 +87,11 @@ export default function AssetGrid({
 }: AssetGridProps) {
   const [fetched, setFetched] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
+  // Keep the fallback in React state. Directly replacing an image's parent
+  // children makes React's next reconciliation try to remove a node that no
+  // longer exists ("Node.removeChild is not a child"), especially when an
+  // asset picker is opened/closed quickly.
+  const [brokenAssetIds, setBrokenAssetIds] = useState<Set<string>>(() => new Set());
 
   const controlled = providedAssets !== undefined;
   const assets = controlled ? providedAssets : fetched;
@@ -163,6 +150,7 @@ export default function AssetGrid({
       {leadingItem}
       {filtered.map((asset) => {
         const isSelected = selectedId === asset.id;
+        const imageBroken = brokenAssetIds.has(asset.id);
         return (
           <button
             key={asset.id}
@@ -175,12 +163,18 @@ export default function AssetGrid({
                 : 'border-transparent hover:border-moss-green/40'
             }`}
           >
-            <img
-              src={api.getAssetUrl(asset.id, dir)}
-              alt={asset.name}
-              className="w-full h-full object-cover"
-              onError={(e) => renderNameFallback(e.target as HTMLImageElement, asset.name)}
-            />
+            {imageBroken ? (
+              <span className="flex h-full w-full items-center justify-center bg-moss-green/10 p-1 text-center text-xs text-stone-gray/50">
+                {asset.name}
+              </span>
+            ) : (
+              <img
+                src={api.getAssetUrl(asset.id, dir)}
+                alt={asset.name}
+                className="w-full h-full object-cover"
+                onError={() => setBrokenAssetIds((ids) => new Set(ids).add(asset.id))}
+              />
+            )}
             {isSelected && (
               <div className="absolute inset-0 bg-moss-green/25 flex items-center justify-center">
                 <Check className={`${checkSize} text-brand-ink drop-shadow`} />

@@ -37,6 +37,7 @@ enum CampaignRole {
 
 enum AssetType {
   MAP
+  MAP_PIECE
   TOKEN
   AUDIO
   AVATAR
@@ -376,6 +377,7 @@ model Map {
   // State
   tokens      Json // Array of token objects with positions
   annotations Json // Array of annotations (drawings, markers)
+  overlays    Json    @default("[]") // Placed map-piece image overlays
 
   // Walls & Fog of War (Phase 1/2 feature)
   wallSegments    Json    @default("[]") // Array of WallSegment objects

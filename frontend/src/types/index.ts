@@ -46,6 +46,7 @@ export enum InvitationStatus {
 
 export enum AssetType {
   MAP = 'MAP',
+  MAP_PIECE = 'MAP_PIECE',
   TOKEN = 'TOKEN',
   AUDIO = 'AUDIO',
   AVATAR = 'AVATAR',
@@ -619,12 +620,27 @@ export interface Map {
   diagonalRule: 'flat' | 'alternating';
   tokens: Token[];
   annotations: Annotation[];
+  overlays?: MapOverlay[];
   wallSegments?: import('./walls').WallSegment[];
   fogData?: import('./walls').FogState | null;
   lightingEnabled?: boolean;
   lights?: import('./walls').LightSource[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** A reusable image placed on top of a map, in map-pixel coordinates. */
+export interface MapOverlay {
+  id: string;
+  imageUrl: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  visible: boolean;
 }
 
 export interface Token {
@@ -905,6 +921,7 @@ export interface UpdateMapRequest {
   imageUrl?: string;
   spiritLayerUrl?: string | null;
   lightingEnabled?: boolean;
+  overlays?: MapOverlay[];
 }
 
 // Token

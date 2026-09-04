@@ -47,7 +47,7 @@ function AssetCardInner({ asset, viewMode, onView, onDelete }: AssetCardProps) {
 
   // Get asset thumbnail URL
   const getThumbnailUrl = (): string => {
-    if (asset.type === AssetType.MAP) {
+    if (asset.type === AssetType.MAP || asset.type === AssetType.MAP_PIECE) {
       return api.getAssetUrl(asset.id, 'maps');
     }
     if (asset.type === AssetType.TOKEN) {
@@ -64,6 +64,7 @@ function AssetCardInner({ asset, viewMode, onView, onDelete }: AssetCardProps) {
   const getAssetIcon = () => {
     switch (asset.type) {
       case AssetType.MAP:
+      case AssetType.MAP_PIECE:
         return <MapPin className="w-8 h-8 text-warm-amber" />;
       case AssetType.TOKEN:
         return <User className="w-8 h-8 text-brand-ink" />;

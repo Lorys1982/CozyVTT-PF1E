@@ -114,7 +114,7 @@ export default function AssetDetailPanel({ asset, onClose, onDelete, onUpdate }:
   };
 
   const getAssetUrl = (): string => {
-    if (currentAsset.type === AssetType.MAP) return api.getAssetUrl(currentAsset.id, 'maps');
+    if (currentAsset.type === AssetType.MAP || currentAsset.type === AssetType.MAP_PIECE) return api.getAssetUrl(currentAsset.id, 'maps');
     if (currentAsset.type === AssetType.TOKEN) return api.getAssetUrl(currentAsset.id, 'tokens');
     if (currentAsset.type === AssetType.AVATAR) return api.getAssetUrl(currentAsset.uploadedById, 'avatars');
     if (currentAsset.type === AssetType.AUDIO) return api.getAssetUrl(currentAsset.id, 'audio');
@@ -124,6 +124,7 @@ export default function AssetDetailPanel({ asset, onClose, onDelete, onUpdate }:
   const getTypeIcon = () => {
     switch (currentAsset.type) {
       case AssetType.MAP:
+      case AssetType.MAP_PIECE:
         return <MapPin className="w-5 h-5 text-warm-amber" />;
       case AssetType.TOKEN:
         return <User className="w-5 h-5 text-brand-ink" />;

@@ -259,14 +259,14 @@ router.post(
         });
       }
 
-      if (!['MAP', 'TOKEN', 'AUDIO', 'AVATAR'].includes(type)) {
+      if (!['MAP', 'MAP_PIECE', 'TOKEN', 'AUDIO', 'AVATAR'].includes(type)) {
         // Clean up uploaded file
         if (req.file?.path) {
           await deleteFile(req.file.path);
         }
         return res.status(400).json({
           error: 'Validation Error',
-          message: 'Invalid asset type. Must be MAP, TOKEN, AUDIO, or AVATAR',
+          message: 'Invalid asset type. Must be MAP, MAP_PIECE, TOKEN, AUDIO, or AVATAR',
         });
       }
 
@@ -395,7 +395,7 @@ router.post(
 
       // Generate thumbnail for images (MAP and TOKEN types)
       let thumbnailPath: string | null = null;
-      if ((req.assetType === 'MAP' || req.assetType === 'TOKEN') && file.mimetype.startsWith('image/')) {
+      if ((req.assetType === 'MAP' || req.assetType === 'MAP_PIECE' || req.assetType === 'TOKEN') && file.mimetype.startsWith('image/')) {
         try {
           const thumbnailFilename = `thumb_${file.filename}`;
           const thumbnailDir = path.dirname(file.path);
@@ -419,7 +419,9 @@ router.post(
       // paths stored during local dev also work in Linux Docker containers.
       const asset = await prisma.asset.create({
         data: {
-          type: req.assetType!,
+          // Cast keeps dev containers with an older generated Prisma enum
+          // compiling until their client is regenerated.
+          type: req.assetType! as any,
           scope: req.assetScope!,
           uploadedById: userId,
           campaignId: req.campaignId || null,
@@ -726,7 +728,7 @@ router.get('/maps/:id', authenticated, async (req: AuthenticatedRequest, res: Re
     const userId = req.session.userId!;
 
     const asset = await prisma.asset.findUnique({
-      where: { id, type: 'MAP' },
+      where: { id, type: { in: ['MAP', 'MAP_PIECE'] as any } },
     });
 
     if (!asset) {

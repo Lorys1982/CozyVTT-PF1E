@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Upload,
   Download,
+  Layers,
 } from 'lucide-react';
 import { useCampaign } from '@/contexts/CampaignContext';
 import { useWebSocket } from '@/contexts/WebSocketContext';
@@ -29,6 +30,9 @@ import EditMapModal from './EditMapModal';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Button from '@/components/ui/Button';
 import { extractAssetId } from '@/utils/assetUrl';
+import AssetGrid from '@/components/assets/AssetGrid';
+import AssetUploadModal from '@/components/assets/AssetUploadModal';
+import { AssetType, AssetScope } from '@/types';
 
 interface MapManagerProps {
   isOpen: boolean;
@@ -316,6 +320,8 @@ export default function MapManager({ isOpen, onClose }: MapManagerProps) {
   const uvttInputRef = useRef<HTMLInputElement>(null);
   const [isImportingUVTT, setIsImportingUVTT] = useState(false);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [libraryTab, setLibraryTab] = useState<'maps' | 'pieces'>('maps');
+  const [pieceUploadOpen, setPieceUploadOpen] = useState(false);
 
   // Fetch maps when the panel opens
   const fetchMaps = useCallback(async () => {
@@ -585,6 +591,10 @@ export default function MapManager({ isOpen, onClose }: MapManagerProps) {
                     </button>
                   </div>
                 </div>
+                <div className="mt-4 flex gap-1 rounded-lg bg-moss-green/10 p-1">
+                  <button type="button" onClick={() => setLibraryTab('maps')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${libraryTab === 'maps' ? 'bg-paper-white text-brand-ink shadow-sm' : 'text-stone-gray'}`}>Maps</button>
+                  <button type="button" onClick={() => setLibraryTab('pieces')} className={`flex-1 rounded-md px-3 py-2 text-sm font-medium ${libraryTab === 'pieces' ? 'bg-paper-white text-brand-ink shadow-sm' : 'text-stone-gray'}`}><Layers className="mr-1 inline h-4 w-4" />Map Pieces</button>
+                </div>
               </div>
 
               {/* Content */}
@@ -603,7 +613,15 @@ export default function MapManager({ isOpen, onClose }: MapManagerProps) {
                   </div>
                 )}
 
-                {isLoading ? (
+                {libraryTab === 'pieces' ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div><h3 className="font-semibold text-brand-ink">Map Piece Library</h3><p className="text-xs text-stone-gray/70">Upload and preview reusable pieces here, then place them from the map canvas.</p></div>
+                      <Button type="button" onClick={() => setPieceUploadOpen(true)} className="flex items-center gap-2 text-sm"><Upload className="h-4 w-4" /> Upload Piece</Button>
+                    </div>
+                    <AssetGrid type={AssetType.MAP_PIECE} campaignId={campaign.id} selectedId={null} onSelect={() => {}} columns={3} showNames maxHeightClass="max-h-[60vh]" emptyMessage="No map pieces yet. Upload one to get started." />
+                  </div>
+                ) : isLoading ? (
                   <div className="flex items-center justify-center py-20">
                     <Loader2 className="w-10 h-10 text-brand-ink animate-spin" />
                   </div>
@@ -688,6 +706,7 @@ export default function MapManager({ isOpen, onClose }: MapManagerProps) {
         onConfirm={handleConfirmDelete}
         onCancel={() => setMapToDelete(null)}
       />
+      <AssetUploadModal isOpen={pieceUploadOpen} onClose={() => setPieceUploadOpen(false)} onSuccess={() => setPieceUploadOpen(false)} defaultType={AssetType.MAP_PIECE} defaultScope={AssetScope.CAMPAIGN} defaultCampaignId={campaign.id} />
     </>
   );
 }

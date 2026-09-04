@@ -90,6 +90,7 @@ const fileFilter = (req: UploadRequest, file: Express.Multer.File, cb: FileFilte
 function getAllowedExtensionsString(assetType: AssetType): string {
   const extensions = {
     MAP: '.png, .jpg, .jpeg, .webp, .pdf',
+    MAP_PIECE: '.png, .jpg, .jpeg, .webp',
     TOKEN: '.png, .jpg, .jpeg, .webp, .gif',
     AUDIO: '.mp3, .ogg, .wav',
     AVATAR: '.png, .jpg, .jpeg, .webp',
