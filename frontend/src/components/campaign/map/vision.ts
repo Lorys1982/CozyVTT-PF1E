@@ -38,8 +38,6 @@ export interface VisionState {
    *  stays radius-capped while light visibility does not. */
   tokenLOS: VisionSource[];
   tokenDimVision: VisionSource[];
-  /** Unbounded line-of-sight polygons used to determine visible light sources. */
-  tokenLineOfSight: VisionSource[];
   /** One entry per enabled light source (dim radius applied). */
   lightVision: VisionSource[];
   /** Darkvision polygons for tokens that have darkvisionRadius set.
@@ -55,12 +53,11 @@ function tokenSource(token: Token, viewport: Viewport, dim = false): { cx: numbe
   return {
     cx: (token.position.x + token.size.width / 2) * viewport.gridSize,
     cy: gridYToCentrePx(token.position.y, token.size.height, viewport.mapHeight, viewport.gridSize),
-    // Use the outer range for the visibility boundary; the lighting pass can
-    // then treat the inner sightRadius as the bright/full-visibility range.
-    r: (dim ? (token.sightRadiusDim ?? token.sightRadius ?? 0) : (token.sightRadius ?? 0)) * viewport.gridSize,
     // Default sight radius of 3 grid squares (D&D 5e standard human vision).
     // 0 = unlimited (DM override).
-    r: (token.sightRadius ?? 3) * viewport.gridSize,
+    r: (dim
+      ? (token.sightRadiusDim ?? token.sightRadius ?? 3)
+      : (token.sightRadius ?? 3)) * viewport.gridSize,
   };
 }
 
@@ -101,11 +98,6 @@ export function computeVisionState(
     return { poly, cx: light.x, cy: light.y };
   });
 
-  const tokenLineOfSight = myTokens.map((token) => {
-    const { cx, cy } = tokenSource(token, viewport);
-    return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, 0), cx, cy };
-  });
-  return { tokenVision, tokenDimVision, tokenLineOfSight, lightVision, all: [...tokenVision, ...lightVision] };
   // Darkvision polygons — use the darkvision radius from the token, clipped
   // by walls. Darkvision does not extend beyond sightRadius, so clamp it.
   const darkvision: VisionSource[] = myTokens
@@ -121,7 +113,7 @@ export function computeVisionState(
       return { poly, cx, cy };
     });
 
-  return { tokenVision, tokenLOS, lightVision, darkvision, all: [...tokenVision, ...lightVision] };
+  return { tokenVision, tokenLOS, tokenDimVision, lightVision, darkvision, all: [...tokenVision, ...lightVision] };
 }
 
 /**
@@ -157,6 +149,7 @@ interface CachedSource {
 export function createVisionCache(): VisionCache {
   let lastWalls: readonly WallSegment[] | null = null;
   const tokenCache = new Map<string, CachedSource>();
+  const tokenDimCache = new Map<string, CachedSource>();
   const losCache = new Map<string, CachedSource>();
   const lightCache = new Map<string, CachedSource>();
   const darkvisionCache = new Map<string, CachedSource>();
@@ -168,6 +161,7 @@ export function createVisionCache(): VisionCache {
       // Any wall mutation (or a map switch) replaces the array reference.
       if (wallSegments !== lastWalls) {
         tokenCache.clear();
+        tokenDimCache.clear();
         losCache.clear();
         lightCache.clear();
         darkvisionCache.clear();
@@ -215,15 +209,18 @@ export function createVisionCache(): VisionCache {
       });
       for (const id of lightCache.keys()) if (!seenLights.has(id)) lightCache.delete(id);
 
-      const tokenLineOfSight = myTokens.map((token) => {
-        const { cx, cy } = tokenSource(token, viewport);
-        return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, 0), cx, cy };
-      });
+      const seenDimTokens = new Set<string>();
       const tokenDimVision: VisionSource[] = myTokens.map((token) => {
         const { cx, cy, r } = tokenSource(token, viewport, true);
-        return { poly: computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, r), cx, cy };
+        seenDimTokens.add(token.id);
+        const hit = tokenDimCache.get(token.id);
+        if (hit && hit.x === cx && hit.y === cy && hit.r === r) return hit.src;
+        const poly = computeVisibility({ x: cx, y: cy }, wallSegments as WallSegment[], mapWidthPx, mapHeightPx, r);
+        const src: VisionSource = { poly, cx, cy };
+        tokenDimCache.set(token.id, { x: cx, y: cy, r, src });
+        return src;
       });
-      return { tokenVision, tokenDimVision, tokenLineOfSight, lightVision, all: [...tokenVision, ...lightVision] };
+      for (const id of tokenDimCache.keys()) if (!seenDimTokens.has(id)) tokenDimCache.delete(id);
       // Darkvision polygons — cached per token id.
       const seenDv = new Set<string>();
       const darkvision: VisionSource[] = myTokens
@@ -245,7 +242,7 @@ export function createVisionCache(): VisionCache {
         });
       for (const id of darkvisionCache.keys()) if (!seenDv.has(id)) darkvisionCache.delete(id);
 
-      return { tokenVision, tokenLOS, lightVision, darkvision, all: [...tokenVision, ...lightVision] };
+      return { tokenVision, tokenLOS, tokenDimVision, lightVision, darkvision, all: [...tokenVision, ...lightVision] };
     },
   };
 }

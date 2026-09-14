@@ -56,6 +56,7 @@ describe('createVisionCache', () => {
     const second = cache.compute([token('a', 1, 1)], [light], walls, viewport);
     // Same wall ref + same positions → same VisionSource objects returned
     expect(second.tokenVision[0]).toBe(first.tokenVision[0]);
+    expect(second.tokenDimVision[0]).toBe(first.tokenDimVision[0]);
     expect(second.lightVision[0]).toBe(first.lightVision[0]);
   });
 

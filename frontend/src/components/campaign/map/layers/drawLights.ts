@@ -14,7 +14,6 @@ import { gridYToCentrePx } from '../coords';
 import type { LightToolMode } from '@/components/campaign/DmLightControls';
 import { mapSizePx, type Viewport } from './types';
 import type { VisionSource } from '../vision';
-import { isPointVisible } from '@/utils/raycasting';
 
 /** Mutable holder for a persistent offscreen canvas (a React ref works). */
 export interface CanvasHolder {
@@ -31,13 +30,16 @@ export interface LightingDrawState {
    *  visibility independently of tokenVision's capped sight radius. */
   tokenLOS: readonly VisionSource[];
   tokenDimVision?: readonly VisionSource[];
-  tokenLineOfSight?: readonly VisionSource[];
   lightVision: readonly VisionSource[];
   /** Darkvision polygons for tokens with darkvisionRadius set. */
   darkvision: readonly VisionSource[];
   /** Persistent offscreen canvases (fog composite + light coverage). */
   lightingCanvas: CanvasHolder;
   coverageCanvas: CanvasHolder;
+  visionMaskCanvas: CanvasHolder;
+  lightScratchCanvas: CanvasHolder;
+  darkvisionMaskCanvas: CanvasHolder;
+  darkvisionSnapshotCanvas: CanvasHolder;
 }
 
 function ensureCanvas(holder: CanvasHolder, w: number, h: number): HTMLCanvasElement {
@@ -125,10 +127,10 @@ export function drawDynamicLighting(
   // separately-rasterized alpha layers via 'destination-in' degrades
   // gracefully instead: partial overlap yields partial light, not a
   // blackout.
-  const visionMask = document.createElement('canvas');
-  visionMask.width = mapWidthPx;
-  visionMask.height = mapHeightPx;
+  const visionMask = ensureCanvas(state.visionMaskCanvas, mapWidthPx, mapHeightPx);
   const losMaskCtx = visionMask.getContext('2d')!;
+  losMaskCtx.clearRect(0, 0, mapWidthPx, mapHeightPx);
+  losMaskCtx.globalCompositeOperation = 'source-over';
   losMaskCtx.fillStyle = 'rgba(255, 255, 255, 1)';
   for (const { poly } of state.tokenLOS) {
     if (poly.points.length >= 3) {
@@ -145,19 +147,14 @@ export function drawDynamicLighting(
   // Light sources → own raycasted polygon for wall shadows, then masked
   // to the player's field of view. Dim circle at α 0.5; bright circle
   // adds another α 0.5 on top.
-  const lightScratch = document.createElement('canvas');
-  lightScratch.width = mapWidthPx;
-  lightScratch.height = mapHeightPx;
+  const lightScratch = ensureCanvas(state.lightScratchCanvas, mapWidthPx, mapHeightPx);
   const scratchCtx = lightScratch.getContext('2d')!;
 
   for (let li = 0; li < state.enabledLights.length; li++) {
     const light = state.enabledLights[li];
-    // A light cannot reveal itself (or illuminate the map) until its source
-    // lies inside one of the viewer's own token-vision polygons.
-    const inViewerFov = (state.tokenLineOfSight ?? state.tokenVision).some((source) =>
-      isPointVisible({ x: light.x, y: light.y }, { x: source.cx, y: source.cy }, source.poly)
-    );
-    if (!inViewerFov) continue;
+    // A light source itself need not be visible. Its own raycast polygon is
+    // still wall-clipped below, then tokenLOS limits the revealed portion to
+    // the viewer's walls-only line of sight.
     const poly = state.lightVision[li]?.poly;
     if (!poly || poly.points.length < 3) continue;
 
@@ -218,10 +215,10 @@ export function drawDynamicLighting(
   // overlay a desaturated copy of the fog onto the normal fog.
   if (state.darkvision.length > 0) {
     // Build mask: darkvision polygon minus light-covered area
-    const mask = document.createElement('canvas');
-    mask.width = mapWidthPx;
-    mask.height = mapHeightPx;
+    const mask = ensureCanvas(state.darkvisionMaskCanvas, mapWidthPx, mapHeightPx);
     const maskCtx = mask.getContext('2d')!;
+    maskCtx.clearRect(0, 0, mapWidthPx, mapHeightPx);
+    maskCtx.globalCompositeOperation = 'source-over';
 
     maskCtx.fillStyle = 'rgba(255, 255, 255, 1)';
     for (const { poly } of state.darkvision) {
@@ -241,21 +238,15 @@ export function drawDynamicLighting(
     maskCtx.globalCompositeOperation = 'source-over';
 
     // Make a desaturated copy of the fog
-    const fogSnapshot = document.createElement('canvas');
-    fogSnapshot.width = mapWidthPx;
-    fogSnapshot.height = mapHeightPx;
+    const fogSnapshot = ensureCanvas(state.darkvisionSnapshotCanvas, mapWidthPx, mapHeightPx);
     const snapCtx = fogSnapshot.getContext('2d')!;
+    snapCtx.clearRect(0, 0, mapWidthPx, mapHeightPx);
+    snapCtx.globalCompositeOperation = 'source-over';
+    // Let the browser apply the filter during compositing instead of copying
+    // and walking every pixel of a full-map ImageData buffer on each redraw.
+    snapCtx.filter = 'grayscale(1)';
     snapCtx.drawImage(offscreen, 0, 0);
-    // Desaturate via grayscale filter
-    const imageData = snapCtx.getImageData(0, 0, mapWidthPx, mapHeightPx);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      data[i]     = gray;
-      data[i + 1] = gray;
-      data[i + 2] = gray;
-    }
-    snapCtx.putImageData(imageData, 0, 0);
+    snapCtx.filter = 'none';
 
     // Clip desaturated copy to the darkvision-only mask
     snapCtx.globalCompositeOperation = 'destination-in';
@@ -294,8 +285,8 @@ export function drawDynamicLighting(
   // Two-zone light glow: bright inner + dim outer. Additive compositing
   // lets overlapping dim zones read as bright. Same raster-mask approach
   // as the coverage pass above: each light's bloom is drawn on the shared
-  // scratch canvas, clipped only to its own poly, then masked to the
-  // player's field of view via 'destination-in' before being composited
+  // scratch canvas, clipped only to its own poly, then masked to tokenLOS
+  // via 'destination-in' before being composited
   // onto the main canvas — never two chained clip() calls on one context.
   ctx.globalCompositeOperation = 'lighter';
 
@@ -303,13 +294,6 @@ export function drawDynamicLighting(
     const light = state.enabledLights[li];
     const lightPoly = state.lightVision[li]?.poly;
     if (!lightPoly || lightPoly.points.length < 3) continue;
-
-  for (let li = 0; li < state.enabledLights.length; li++) {
-    const light = state.enabledLights[li];
-    const inViewerFov = (state.tokenLineOfSight ?? state.tokenVision).some((source) =>
-      isPointVisible({ x: light.x, y: light.y }, { x: source.cx, y: source.cy }, source.poly)
-    );
-    if (!inViewerFov) continue;
     const brightPx = light.brightRadius * viewport.gridSize;
     const dimPx = light.dimRadius * viewport.gridSize;
     if (brightPx <= 0 && dimPx <= brightPx) continue;

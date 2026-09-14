@@ -123,6 +123,10 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   const layersRef = useRef<HTMLDivElement>(null);           // wraps the 3 canvases; CSS-transformed during pan
   // One vision-polygon cache for this map instance.
   const visionCacheRef = useRef(createVisionCache());
+  const visionMaskOffscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const lightScratchOffscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const darkvisionMaskOffscreenRef = useRef<HTMLCanvasElement | null>(null);
+  const darkvisionSnapshotOffscreenRef = useRef<HTMLCanvasElement | null>(null);
   // Lazily-created AudioContext for spirit layer transition sound
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -1590,11 +1594,14 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
           tokenVision: vision.tokenVision,
           tokenLOS: vision.tokenLOS,
           tokenDimVision: vision.tokenDimVision,
-          tokenLineOfSight: vision.tokenLineOfSight,
           lightVision: vision.lightVision,
           darkvision: vision.darkvision,
           lightingCanvas: lightingOffscreenRef,
           coverageCanvas: lightCoverageOffscreenRef,
+          visionMaskCanvas: visionMaskOffscreenRef,
+          lightScratchCanvas: lightScratchOffscreenRef,
+          darkvisionMaskCanvas: darkvisionMaskOffscreenRef,
+          darkvisionSnapshotCanvas: darkvisionSnapshotOffscreenRef,
         }, viewport);
       }
       // DM (not in preview) sees everything — skip fog entirely
