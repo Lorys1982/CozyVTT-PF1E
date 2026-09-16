@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import CharacterSheetViewerModal from './CharacterSheetViewerModal';
+import type { CampaignMembership, Character } from '@/types';
 
 vi.mock('@/contexts/AuthContext',()=>({useAuth:()=>({user:{id:'user-1'}})}));
 vi.mock('@/contexts/WebSocketContext',()=>({useWebSocket:()=>({socket:null})}));
@@ -17,14 +18,15 @@ describe('CharacterSheetViewerModal',()=>{
   const character={
     id:'character-1',userId:'user-1',campaignId:'campaign-1',gameSystem:null,name:'Hero',data:{},
     tokenImageUrl:null,createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z',
-  } as any;
+  } as Character;
+  const membership = { role: 'PLAYER' } as CampaignMembership;
 
   it('closes from the backdrop but stays open when the sheet is clicked',()=>{
     const onClose=vi.fn();
     const {container}=render(<CharacterSheetViewerModal
       character={character}
       campaignId="campaign-1"
-      membership={{role:'PLAYER'} as any}
+      membership={membership}
       onClose={onClose}
     />);
 
@@ -37,7 +39,7 @@ describe('CharacterSheetViewerModal',()=>{
 
   it('opens the sheet in a persistent standalone window',()=>{
     const open=vi.spyOn(window,'open').mockImplementation(()=>null);
-    render(<CharacterSheetViewerModal character={character} campaignId="campaign-1" membership={{role:'PLAYER'} as any} onClose={vi.fn()}/>);
+    render(<CharacterSheetViewerModal character={character} campaignId="campaign-1" membership={membership} onClose={vi.fn()}/>);
 
     fireEvent.click(screen.getByRole('button',{name:/New window/i}));
     expect(open).toHaveBeenCalledWith(
@@ -49,7 +51,7 @@ describe('CharacterSheetViewerModal',()=>{
   });
 
   it('uses page layout and does not offer another popup when already standalone',()=>{
-    const {container}=render(<CharacterSheetViewerModal standalone character={character} campaignId="campaign-1" membership={{role:'PLAYER'} as any} onClose={vi.fn()}/>);
+    const {container}=render(<CharacterSheetViewerModal standalone character={character} campaignId="campaign-1" membership={membership} onClose={vi.fn()}/>);
     expect(screen.queryByRole('button',{name:/New window/i})).not.toBeInTheDocument();
     expect(container.firstElementChild).toHaveClass('min-h-screen');
   });

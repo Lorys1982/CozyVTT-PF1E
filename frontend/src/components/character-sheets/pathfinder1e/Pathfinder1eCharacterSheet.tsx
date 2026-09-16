@@ -20,6 +20,7 @@ import { AssetType } from '../../../types';
 import { useServerConfigQuery } from '@/hooks/queries';
 import { formatUploadLimit, getUploadLimit } from '@/utils/uploadLimits';
 import type { SpellAoEConfig } from '@/utils/pathfinder1eSpellAoE';
+import { apiErrorMessage } from '@/utils/errors';
 
 type TabId = 'overview'|'combat'|'skills'|'spells'|'inventory'|'features';
 
@@ -293,10 +294,14 @@ function Pathfinder1eCharacterEditor({character,mode,onSave,onCancel,onRoll}:Pat
 
   const set=useCallback((path:string,value:unknown)=>{
     setData(previous=>{
-      const next:any=structuredClone(previous);
+      const next=structuredClone(previous) as PF1eCharacterData;
       const parts=path.split('.');
-      let current=next;
-      for(const part of parts.slice(0,-1)) current=current[part]??={};
+      let current=next as unknown as Record<string, unknown>;
+      for(const part of parts.slice(0,-1)) {
+        const existing=current[part];
+        if(!existing||typeof existing!=='object'||Array.isArray(existing)) current[part]={};
+        current=current[part] as Record<string, unknown>;
+      }
       current[parts[parts.length-1]]=value;
       return calculatePF1eDerived(next);
     });
@@ -335,8 +340,8 @@ function Pathfinder1eCharacterEditor({character,mode,onSave,onCancel,onRoll}:Pat
         try{
           const {asset}=await api.uploadAsset(formData);
           tokenImageUrl=`/api/assets/tokens/${asset.id}`;
-        }catch(error:any){
-          setTokenImageError(error.response?.data?.message||'Failed to upload token image.');
+        }catch(error){
+          setTokenImageError(apiErrorMessage(error)||'Failed to upload token image.');
           return;
         }
       }

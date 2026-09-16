@@ -294,7 +294,16 @@ export async function seedPf1eCreatureIndex(prisma: PrismaClient) {
   return { fetched: uniqueEntries.length, created: result.count, skipped: uniqueEntries.length - result.count, alreadyExisted: existing.length };
 }
 
-export async function hydratePf1eCreature(prisma: PrismaClient, creature: any) {
+interface HydratableCreature {
+  id: string;
+  source: string;
+  statBlock: unknown;
+  name: string;
+  challengeRating: string | null;
+  creatureType: string | null;
+}
+
+export async function hydratePf1eCreature(prisma: PrismaClient, creature: HydratableCreature) {
   const statBlock = creature.statBlock as Record<string, unknown>;
   if (creature.source !== PF1E_SOURCE) return creature;
   if (statBlock?._aonHydrated === true && Number(statBlock?._aonVersion) >= 3 && typeof statBlock?._aonItemName === 'string') return creature;
@@ -315,10 +324,11 @@ export async function hydratePf1eCreature(prisma: PrismaClient, creature: any) {
     await fetchHtml(`${AON_BASE_URL}/MonsterDisplay.aspx?ItemName=${encodeURIComponent(entry.itemName)}`),
     entry,
   );
-  const spellcasting = (parsed.statBlock as any).spellcasting as MonsterSpellcastingBlock[] | undefined;
+  const parsedStatBlock = parsed.statBlock as typeof parsed.statBlock & { spellcasting?: MonsterSpellcastingBlock[] };
+  const spellcasting = parsedStatBlock.spellcasting as MonsterSpellcastingBlock[] | undefined;
   if (spellcasting?.length) {
     const references = await resolveAonSpellNames(spellcasting.flatMap(block => block.spells.map(spell => spell.name)));
-    (parsed.statBlock as any).spellcasting = spellcasting.map(block => ({
+    parsedStatBlock.spellcasting = spellcasting.map(block => ({
       ...block,
       spells: block.spells.map(spell => ({
         ...spell,

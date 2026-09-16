@@ -4,6 +4,7 @@ import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
 import type { Character } from '@/types';
+import { apiErrorMessage } from '@/utils/errors';
 
 interface Props {
   character: Character;
@@ -28,8 +29,8 @@ export default function CharacterNotesModal({ character, onClose, onSaved }: Pro
       onSaved?.(response.character);
       showToast('Character notes saved.', 'success');
       onClose();
-    } catch (error: any) {
-      showToast(error.response?.data?.message || 'Failed to save character notes.', 'error');
+    } catch (error) {
+      showToast(apiErrorMessage(error) || 'Failed to save character notes.', 'error');
     } finally {
       setSaving(false);
     }

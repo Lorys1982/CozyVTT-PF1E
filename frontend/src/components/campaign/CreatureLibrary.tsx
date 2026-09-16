@@ -40,6 +40,7 @@ import { GAME_SYSTEM_SHORT_LABELS } from '@/constants/game-systems';
 import Button from '@/components/ui/Button';
 import AssetPicker from '@/components/assets/AssetPicker';
 import { extractAssetId } from '@/utils/assetUrl';
+import { apiErrorMessage, errorMessage } from '@/utils/errors';
 
 // ============================================
 // Constants
@@ -193,8 +194,8 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       setSrdCount((result.alreadyExisted || 0) + result.created);
       // Refresh the list
       fetchCreatures(true);
-    } catch (importError: any) {
-      setError(importError.response?.data?.message || 'Failed to import official creatures.');
+    } catch (importError) {
+      setError(apiErrorMessage(importError) || 'Failed to import official creatures.');
     } finally {
       setIsSeeding(false);
     }
@@ -244,8 +245,8 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       );
       useGameStore.getState().addToken(result.token);
       socket?.emitMapChange(currentMap.id);
-    } catch (placeError: any) {
-      setError(placeError.response?.data?.message || placeError.message || 'Failed to place creature on map');
+    } catch (placeError) {
+      setError(apiErrorMessage(placeError) || errorMessage(placeError) || 'Failed to place creature on map');
     } finally {
       setPlacingId(null);
     }
@@ -264,8 +265,8 @@ export default function CreatureLibrary({ isOpen, onClose }: CreatureLibraryProp
       const hydrated = await api.getCreature(campaign.id, creature.id);
       setCreatures((items) => items.map((item) => item.id === hydrated.id ? hydrated : item));
       setFavoriteCreatures((items) => items.map((item) => item.id === hydrated.id ? hydrated : item));
-    } catch (hydrateError: any) {
-      setError(hydrateError.response?.data?.message || 'Failed to load the official PF1e stat block.');
+    } catch (hydrateError) {
+      setError(apiErrorMessage(hydrateError) || 'Failed to load the official PF1e stat block.');
     }
   }, [campaign, expandedId]);
 

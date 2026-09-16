@@ -24,6 +24,7 @@ import { FlexibleCharacterSheetView } from '../character-sheets/flexible/Flexibl
 
 // Import editor modal
 import CharacterSheetEditorModal from './CharacterSheetEditorModal';
+import { apiErrorMessage } from '@/utils/errors';
 
 interface CharacterSheetViewerModalProps {
   character: Character;
@@ -159,12 +160,12 @@ export default function CharacterSheetViewerModal({
     }
   };
 
-  const handleQuickDataChange = async (data:any) => {
+  const handleQuickDataChange = async (data: import('@/types/game-systems/pathfinder1e').PF1eCharacterData) => {
     try {
       const {character:updatedCharacter}=await api.updateCharacter(character.id,{data});
       setCharacter(updatedCharacter);
-    } catch (error:any) {
-      showToast(error.response?.data?.message||'Failed to update the character.','error');
+    } catch (error) {
+      showToast(apiErrorMessage(error) || 'Failed to update the character.', 'error');
     }
   };
 

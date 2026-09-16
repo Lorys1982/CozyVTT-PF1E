@@ -37,7 +37,7 @@ describe('Pathfinder1eCharacterSheet', () => {
   });
 
   it('uploads and saves a PF1e token image',async()=>{
-    const upload=vi.spyOn(api,'uploadAsset').mockResolvedValue({asset:{id:'asset-1'}} as any);
+    const upload=vi.spyOn(api,'uploadAsset').mockResolvedValue({asset:{id:'asset-1'}} as unknown as Awaited<ReturnType<typeof api.uploadAsset>>);
     const onSave=vi.fn().mockResolvedValue(undefined);
     const user=userEvent.setup();
     render(<Pathfinder1eCharacterSheet character={character} mode="edit" onSave={onSave}/>);

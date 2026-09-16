@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateImportedCharacter } from '../character-export';
+import type { PF1eCharacterData, PF1eSkill } from '@/types/game-systems/pathfinder1e';
 
 describe('CharacterSheet.co.uk Pathfinder import',()=>{
   it('detects and converts the native PF1 export shape',()=>{
@@ -23,6 +24,7 @@ describe('CharacterSheet.co.uk Pathfinder import',()=>{
     expect(result.valid).toBe(true);
     expect(result.character?.gameSystem).toBe('PATHFINDER_1E');
     expect(result.character?.importSource).toBe('CharacterSheet.co.uk');
+    const imported = result.character?.data as PF1eCharacterData | undefined;
     expect(result.character?.data).toMatchObject({
       characterName:'Merisiel',classAndLevel:'Rogue 7',race:'Elf',
       abilities:{dex:{score:20,tempScore:22}},
@@ -34,30 +36,31 @@ describe('CharacterSheet.co.uk Pathfinder import',()=>{
       melee:[{weapon:'Rapier',attackBonus:'+12'}],
       gear:[{name:'Rope',quantity:2}],
     });
-    expect(result.character?.data.skills).toEqual(expect.arrayContaining([
+    expect(imported?.skills).toEqual(expect.arrayContaining([
       expect.objectContaining({name:'Acrobatics',ability:'dex',ranks:7}),
       expect.objectContaining({name:'Appraise',ability:'int'}),
       expect.objectContaining({name:'Craft (Traps)',ability:'int',ranks:4}),
     ]));
-    expect(result.character?.data.skills).toHaveLength(36);
-    expect(result.character?.data.ac.overrideTotal).toBeUndefined();
-    expect(result.character?.data.saves.reflex.overrideTotal).toBeUndefined();
-    expect(result.character?.data.skills.find((skill:any)=>skill.name==='Acrobatics').overrideTotal).toBeUndefined();
-    expect(result.character?.data.spells[1].dcOverride).toBeUndefined();
-    expect(result.character?.data.spells[1].slotted[0]).toMatchObject({name:'Vanish',level:'1',prepared:1});
+    expect(imported?.skills).toHaveLength(36);
+    expect(imported?.ac?.overrideTotal).toBeUndefined();
+    expect(imported?.saves?.reflex?.overrideTotal).toBeUndefined();
+    expect(imported?.skills?.find((skill: PF1eSkill)=>skill.name==='Acrobatics')?.overrideTotal).toBeUndefined();
+    expect(imported?.spells?.[1]?.dcOverride).toBeUndefined();
+    expect(imported?.spells?.[1]?.slotted?.[0]).toMatchObject({name:'Vanish',level:'1',prepared:1});
   });
 
   it('fills every standard skill when omitted fields are absent from the export',()=>{
     const result=validateImportedCharacter({_id:'sparse',name:'Sparse Hero',abilities:{str:'12'}});
 
     expect(result.valid).toBe(true);
-    expect(result.character?.data.skills).toHaveLength(35);
-    expect(result.character?.data.skills).toEqual(expect.arrayContaining([
+    const imported = result.character?.data as PF1eCharacterData | undefined;
+    expect(imported?.skills).toHaveLength(35);
+    expect(imported?.skills).toEqual(expect.arrayContaining([
       expect.objectContaining({name:'Acrobatics',ability:'dex'}),
       expect.objectContaining({name:'Use Magic Device',ability:'cha'}),
     ]));
-    expect(result.character?.data.abilities.dex).toMatchObject({tempScore:null});
-    expect(result.character?.data.spells).toHaveLength(10);
+    expect(imported?.abilities?.dex).toMatchObject({tempScore:null});
+    expect(imported?.spells).toHaveLength(10);
   });
 
   it('does not apply aggregate armor or shield bonuses before equipment is equipped',()=>{
@@ -68,9 +71,10 @@ describe('CharacterSheet.co.uk Pathfinder import',()=>{
     });
 
     expect(result.valid).toBe(true);
-    expect(result.character?.data.ac).toMatchObject({total:10,touch:10,flatFooted:10,items:[]});
-    expect(result.character?.data.ac.armorBonus).toBeUndefined();
-    expect(result.character?.data.ac.shieldBonus).toBeUndefined();
+    const imported = result.character?.data as PF1eCharacterData | undefined;
+    expect(imported?.ac).toMatchObject({total:10,touch:10,flatFooted:10,items:[]});
+    expect(imported?.ac?.armorBonus).toBeUndefined();
+    expect(imported?.ac?.shieldBonus).toBeUndefined();
   });
 
   it('does not mistake arbitrary JSON for a CharacterSheet.co.uk export',()=>{

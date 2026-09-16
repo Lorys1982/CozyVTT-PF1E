@@ -98,10 +98,14 @@ export default function Pathfinder1eCharacterView({character,onEdit,onRoll,onDat
   const noop=()=>undefined;
   const updateData=(path:string,value:unknown)=>{
     if(!onDataChange)return;
-    const next:any=structuredClone(data);
+    const next=structuredClone(data) as PF1eCharacterData;
     const parts=path.split('.');
-    let current=next;
-    for(const part of parts.slice(0,-1))current=current[part]??={};
+    let current=next as unknown as Record<string, unknown>;
+    for(const part of parts.slice(0,-1)) {
+      const existing=current[part];
+      if(!existing||typeof existing!=='object'||Array.isArray(existing)) current[part]={};
+      current=current[part] as Record<string, unknown>;
+    }
     current[parts[parts.length-1]]=value;
     void onDataChange(next);
   };

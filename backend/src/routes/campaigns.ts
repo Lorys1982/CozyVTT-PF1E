@@ -1,10 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import { Prisma } from '@prisma/client';
 import { AuthenticatedRequest } from '../middleware/rbac';
 import { authenticated, campaignMember, campaignDM, adminOnly } from '../middleware/compose';
 import { prisma } from '../config/database';
 import { canDeleteCampaign } from '../services/permissions';
-import { captureGameState, restoreGameState, getNextSessionNumber, getLastSession } from '../services/sessionState';
+import { captureGameState, restoreGameState, getNextSessionNumber, getLastSession, type GameState } from '../services/sessionState';
 import { sendSystemMessage, broadcastToUser, broadcastToCampaign } from '../websocket/utils';
 import { isSmtpConfigured, sendCampaignInvitationEmail } from '../services/email';
 import { DEFAULT_VIBE_SETTINGS, validateVibeSettings, findVibePeriod, VibeSettings } from '../utils/vibe-presets';
@@ -13,6 +14,7 @@ import { exportCampaign } from '../services/campaignExporter';
 import { previewCampaignImport, importCampaign } from '../services/campaignImporter';
 import { CreateCampaignSchema } from '../validators/campaigns';
 import logger from '../utils/logger';
+import { errorMessage } from '../utils/errors';
 
 const router = Router();
 
@@ -125,7 +127,7 @@ router.post('/', authenticated, async (req: AuthenticatedRequest, res: Response)
         name,
         description: description || '',
         ownerId: userId,
-        vibeSettings: DEFAULT_VIBE_SETTINGS as any,
+        vibeSettings: DEFAULT_VIBE_SETTINGS as unknown as Prisma.InputJsonValue,
         gameSystem: gameSystem || null,
       },
     });
@@ -290,8 +292,10 @@ function extractCharacterHp(
   data: unknown
 ): { current: number; max: number; temp: number } | null {
   if (!data || !gameSystem) return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const d = data as any;
+  const d = data as {
+    hp?: { maximum?: unknown; current?: unknown; temporary?: unknown };
+    derivedStats?: { hp?: { maximum?: unknown; current?: unknown } };
+  };
   switch (gameSystem) {
     case 'DND_5E':
     case 'PATHFINDER_2E':
@@ -407,7 +411,7 @@ router.put('/:campaignId', campaignDM, async (req: AuthenticatedRequest, res: Re
     const { campaignId } = req.params;
     const { name, description, status, vibeSettings, spiritLayerEnabled, spiritLayerStyle, gameSystem, chatCooldownEnabled, chatCooldownSeconds } = req.body;
 
-    const updateData: any = {};
+    const updateData: Prisma.CampaignUpdateInput = {};
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (status !== undefined) updateData.status = status;
@@ -505,7 +509,9 @@ router.put('/:campaignId/vibe', campaignDM, async (req: AuthenticatedRequest, re
       select: { currentVibe: true },
     });
 
-    const updateData: any = { vibeSettings };
+    const updateData: Prisma.CampaignUpdateInput = {
+      vibeSettings: vibeSettings as Prisma.InputJsonValue,
+    };
 
     // Reset currentVibe if current period no longer exists in new settings
     if (campaign?.currentVibe) {
@@ -1376,7 +1382,7 @@ router.put('/:campaignId/sessions/:sessionId/pause', campaignDM, async (req: Aut
     const gameState = await captureGameState(campaignId, sessionId);
     await prisma.session.update({
       where: { id: sessionId },
-      data: { savedState: gameState as any },
+      data: { savedState: gameState as unknown as Prisma.InputJsonValue },
     });
 
     // Update campaign status to PAUSED
@@ -1456,7 +1462,7 @@ router.put('/:campaignId/sessions/:sessionId/end', campaignDM, async (req: Authe
       where: { id: sessionId },
       data: {
         endedAt: new Date(),
-        savedState: savedState as any,
+        savedState: savedState as unknown as Prisma.InputJsonValue,
         ...(notes ? { notes: String(notes).slice(0, 2000) } : {}),
       },
     });
@@ -1527,7 +1533,7 @@ router.put('/:campaignId/resume', campaignDM, async (req: AuthenticatedRequest, 
     }
 
     // Restore game state
-    await restoreGameState(campaignId, lastSession.savedState as any);
+    await restoreGameState(campaignId, lastSession.savedState as unknown as GameState);
 
     // Clear endedAt to "reopen" the session
     await prisma.session.update({
@@ -1604,10 +1610,11 @@ router.get('/:campaignId/export', campaignDM, async (req: AuthenticatedRequest, 
     res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
     res.setHeader('Content-Length', result.buffer.length);
     return res.send(result.buffer);
-  } catch (error: any) {
-    logger.error('Campaign export failed', { campaignId: req.params.campaignId, error: error.message });
+  } catch (error) {
+    const message = errorMessage(error);
+    logger.error('Campaign export failed', { campaignId: req.params.campaignId, error: message });
 
-    if (error.message === 'Campaign not found') {
+    if (message === 'Campaign not found') {
       return res.status(404).json({ error: 'Not Found', message: 'Campaign not found' });
     }
 
@@ -1648,11 +1655,12 @@ router.post('/import/preview', authenticated, (req: Request, res: Response, next
 
     const preview = await previewCampaignImport(req.file.buffer);
     return res.status(200).json({ preview });
-  } catch (error: any) {
-    logger.warn('Campaign import preview failed', { error: error.message });
+  } catch (error) {
+    const message = errorMessage(error);
+    logger.warn('Campaign import preview failed', { error: message });
     return res.status(400).json({
       error: 'Invalid Archive',
-      message: error.message || 'Could not read archive.',
+      message: message || 'Could not read archive.',
     });
   }
 });
@@ -1709,11 +1717,12 @@ router.post('/import', authenticated, (req: Request, res: Response, next: NextFu
       message: 'Campaign imported successfully',
       ...result,
     });
-  } catch (error: any) {
-    logger.error('Campaign import failed', { error: error.message, userId: req.session?.userId });
+  } catch (error) {
+    const message = errorMessage(error);
+    logger.error('Campaign import failed', { error: message, userId: req.session?.userId });
     return res.status(400).json({
       error: 'Import Failed',
-      message: error.message || 'Failed to import campaign.',
+      message: message || 'Failed to import campaign.',
     });
   }
 });
