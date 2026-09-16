@@ -52,6 +52,7 @@ import {
   type Viewport,
 } from './map/layers';
 import { createVisionCache, type VisionSource } from './map/vision';
+import { pickTokenAt, pickMovableTokenAt } from './map/tokenHitTest';
 import { fogRectFromDrag, fogCellsInRect } from './map/fogSelection';
 import { useTokenAnimation, useFogRevealAnimation, useCanvasTicker, pulsePhaseAt } from './map/useMapAnimations';
 import { playerColor } from '@/utils/playerColor';
@@ -1778,40 +1779,25 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
   // Token Hit Testing
   // ============================================
 
-  /**
-   * Check if a grid coordinate is within a token's bounds
-   */
+  const isOwnToken = useCallback(
+    (token: Token): boolean =>
+      token.controlledBy === user?.id ||
+      !!(token.characterId && campaign?.characters?.find((character) => character.id === token.characterId && character.userId === user?.id)),
+    [user?.id, campaign?.characters]
+  );
+
+  const tokenView = useMemo(
+    () => ({ isDM: userRole === 'DM', revealedCells, isOwnToken, dmShowSpiritTokens, mapWidth: currentMap?.width ?? 0, mapHeight: currentMap?.height ?? 0 }),
+    [userRole, revealedCells, isOwnToken, dmShowSpiritTokens, currentMap?.width, currentMap?.height]
+  );
+
+  /** Check the same visibility rules used by the renderer before picking. */
   const getTokenAtPosition = useCallback(
     (gridX: number, gridY: number): Token | null => {
       if (!currentMap) return null;
-
-      // Check tokens in reverse order (top to bottom in z-order)
-      for (let i = tokens.length - 1; i >= 0; i--) {
-        const token = tokens[i];
-        // Hidden tokens are still rendered for the DM, so they must remain
-        // pickable there as well. Players should not be able to interact with
-        // tokens hidden from them.
-        if (!token.visible && !isDM) continue;
-
-        const tokenX = token.position.x;
-        const tokenY = token.position.y;
-        const tokenWidth = token.size.width;
-        const tokenHeight = token.size.height;
-
-        // Check if click is within token bounds
-        if (
-          gridX >= tokenX &&
-          gridX < tokenX + tokenWidth &&
-          gridY >= tokenY &&
-          gridY < tokenY + tokenHeight
-        ) {
-          return token;
-        }
-      }
-
-      return null;
+      return pickTokenAt(tokens, gridX, gridY, tokenView);
     },
-    [tokens, currentMap, isDM]
+    [tokens, currentMap, tokenView]
   );
 
   /**
@@ -1847,6 +1833,14 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
       return false;
     },
     [campaign, userRole, user?.id]
+  );
+
+  const getMovableTokenAtPosition = useCallback(
+    (gridX: number, gridY: number): Token | null => {
+      if (!currentMap) return null;
+      return pickMovableTokenAt(tokens, gridX, gridY, canMoveToken, tokenView);
+    },
+    [tokens, currentMap, canMoveToken, tokenView]
   );
 
   const saveTokenVision = async (token: Token) => {
@@ -2280,7 +2274,7 @@ export default function MapCanvas({ onEditToken }: MapCanvasProps) {
     }
 
     // Check if clicked on a token to pick it up
-    const token = getTokenAtPosition(gridCoords.x, gridCoords.y);
+    const token = getMovableTokenAtPosition(gridCoords.x, gridCoords.y);
     console.log('🔍 Token at click position:', token?.name || 'none');
 
     if (token && canMoveToken(token)) {

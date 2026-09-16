@@ -1,3 +1,34 @@
+import type { CharacterData } from '@/types';
+import { readCustomSkills, dnd5eCustomSkillBonus } from '@/utils/rules/dnd5e';
+import type {
+  DnD5eCharacterData,
+  DnD5eStats,
+  DnD5eSkills,
+  DnD5eSavingThrows,
+  PF2eCharacterData,
+  PF2eAttributes,
+  PF2eSavingThrows,
+  PF2eSkills,
+  CoC7eCharacterData,
+  CoC7eCharacteristics,
+} from '@/types/game-systems';
+import type { PF1eCharacterData } from '@/types/game-systems/pathfinder1e';
+
+/**
+ * A skill entry as this file probes it.
+ *
+ * The Call of Cthulhu skills object mixes shapes: most entries are a skill,
+ * `fighting` and `firearms` hold a group of them, and two hold arrays. Rather
+ * than discriminate, the extractor checks for `currentValue` and skips what
+ * does not have one — so what it needs is a shape that says "this may or may
+ * not be a leaf".
+ */
+interface CoC7eSkillLike {
+  currentValue?: number;
+  name?: string;
+  /** `fighting` holds a group rather than a leaf; the extractor checks for it. */
+  brawl?: { currentValue?: number };
+}
 /**
  * characterRolls.ts
  * Extracts rollable dice expressions from character data for any supported game system.
@@ -6,8 +37,6 @@
  *  - Click-to-roll elements inside character sheet views
  *  - CharacterRollPicker modal (right-click context menus on roster/tokens)
  */
-
-import { resolveCharacterInitiative } from './rules/initiative';
 
 export interface RollOption {
   /** Short label shown in menus / tooltips */
@@ -36,11 +65,6 @@ export interface CharacterRolls {
 
 function fmt(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`;
-}
-
-export function getInitiativeExpression(gameSystem: string | null, data: any): string | null {
-  const resolution = resolveCharacterInitiative(gameSystem, data);
-  return resolution?.kind === 'roll' ? resolution.expression : null;
 }
 
 /** Returns true if the string looks like a valid dice expression the server can evaluate. */
@@ -99,7 +123,7 @@ const DND5E_SKILL_NAMES: Record<string, string> = {
   survival:       'Survival',
 };
 
-function extractDnd5eRolls(data: any): CharacterRolls {
+function extractDnd5eRolls(data: DnD5eCharacterData): CharacterRolls {
   const abilities: RollOption[] = [];
   const skills:    RollOption[] = [];
   const saves:     RollOption[] = [];
@@ -108,7 +132,7 @@ function extractDnd5eRolls(data: any): CharacterRolls {
   // Ability checks
   if (data.stats) {
     for (const [key, name] of Object.entries(DND5E_ABILITY_NAMES)) {
-      const mod = data.stats[key]?.modifier ?? 0;
+      const mod = data.stats[key as keyof DnD5eStats]?.modifier ?? 0;
       const expr = `1d20${fmt(mod)}`;
       abilities.push({
         label:             `${name.slice(0, 3).toUpperCase()} ${fmt(mod)}`,
@@ -122,7 +146,7 @@ function extractDnd5eRolls(data: any): CharacterRolls {
   // Saving throws
   if (data.savingThrows) {
     for (const [key, name] of Object.entries(DND5E_ABILITY_NAMES)) {
-      const save = data.savingThrows[key];
+      const save = data.savingThrows[key as keyof DnD5eSavingThrows];
       if (!save) continue;
       const bonus = save.bonus ?? 0;
       const expr = `1d20${fmt(bonus)}`;
@@ -138,7 +162,7 @@ function extractDnd5eRolls(data: any): CharacterRolls {
   // Skills
   if (data.skills) {
     for (const [key, name] of Object.entries(DND5E_SKILL_NAMES)) {
-      const skill = data.skills[key];
+      const skill = data.skills[key as keyof DnD5eSkills];
       if (!skill) continue;
       const bonus = skill.bonus ?? 0;
       const expr = `1d20${fmt(bonus)}`;
@@ -149,6 +173,19 @@ function extractDnd5eRolls(data: any): CharacterRolls {
         supportsAdvantage: true,
       });
     }
+  }
+
+  // Skills of the player's own — tool proficiencies and anything homebrew.
+  // The bonus is derived from the sheet rather than stored, so it follows the
+  // character's ability scores and level without being re-entered.
+  for (const custom of readCustomSkills(data)) {
+    const bonus = dnd5eCustomSkillBonus(data, custom);
+    skills.push({
+      label:             `${custom.name} ${fmt(bonus)}`,
+      expression:        `1d20${fmt(bonus)}`,
+      purpose:           `${custom.name} Check`,
+      supportsAdvantage: true,
+    });
   }
 
   // Attacks / weapons
@@ -173,6 +210,21 @@ function extractDnd5eRolls(data: any): CharacterRolls {
           supportsAdvantage: false,
         });
       }
+
+      // Further damage lines — a versatile weapon's two-handed die, a spell's
+      // higher-level damage. The sheet makes these rollable; the picker has to
+      // as well, or a spear is one-handed everywhere except the sheet itself.
+      for (const extra of atk.additionalDamage ?? []) {
+        const roll = extra.damageRoll?.trim();
+        if (!roll || !isValidDiceExpression(roll)) continue;
+        const label = extra.label?.trim() || 'Alternate';
+        combat.push({
+          label:             `${atk.name} — ${label} (${roll})`,
+          expression:        roll,
+          purpose:           `${atk.name} Damage (${label})`,
+          supportsAdvantage: false,
+        });
+      }
     }
   }
 
@@ -183,94 +235,41 @@ function extractDnd5eRolls(data: any): CharacterRolls {
 // Pathfinder 1e
 // ---------------------------------------------------------------------------
 
-const PF1E_ABILITY_NAMES: Record<string, string> = {
-  str: 'Strength',
-  dex: 'Dexterity',
-  con: 'Constitution',
-  int: 'Intelligence',
-  wis: 'Wisdom',
-  cha: 'Charisma',
-};
+const PF1E_ABILITY_NAMES: Record<string, string> = { str: 'Strength', dex: 'Dexterity', con: 'Constitution', int: 'Intelligence', wis: 'Wisdom', cha: 'Charisma' };
 
-function pf1eAbilityModifier(data: any, key: string): number {
-  const ability = data.abilities?.[key];
-  const score = ability?.tempScore ?? ability?.score ?? 10;
-  return Math.floor((score - 10) / 2);
+function pf1eAbilityModifier(data: PF1eCharacterData, key: string): number {
+  const ability = data.abilities?.[key as keyof typeof data.abilities];
+  return Math.floor(((ability?.tempScore ?? ability?.score ?? 10) - 10) / 2);
 }
 
-function extractPf1eRolls(data: any): CharacterRolls {
-  const abilities: RollOption[] = [];
-  const skills: RollOption[] = [];
-  const saves: RollOption[] = [];
-  const combat: RollOption[] = [];
-
+function extractPf1eRolls(data: PF1eCharacterData): CharacterRolls {
+  const abilities: RollOption[] = [], skills: RollOption[] = [], saves: RollOption[] = [], combat: RollOption[] = [];
   for (const [key, name] of Object.entries(PF1E_ABILITY_NAMES)) {
-    const ability=data.abilities?.[key];
-    const bonus = pf1eAbilityModifier(data, key)+(ability?.checkMiscModifier??0)+(ability?.checkTempModifier??0);
-    abilities.push({
-      label: `${name.slice(0, 3).toUpperCase()} ${fmt(bonus)}`,
-      expression: `1d20${fmt(bonus)}`,
-      purpose: `${name} Check`,
-      supportsAdvantage: true,
-    });
+    const ability = data.abilities?.[key as keyof typeof data.abilities];
+    const bonus = pf1eAbilityModifier(data, key) + (ability?.checkMiscModifier ?? 0) + (ability?.checkTempModifier ?? 0);
+    abilities.push({ label: `${name.slice(0, 3).toUpperCase()} ${fmt(bonus)}`, expression: `1d20${fmt(bonus)}`, purpose: `${name} Check`, supportsAdvantage: true });
   }
-
-  const saveAbilities: Record<string, string> = { fort: 'con', reflex: 'dex', will: 'wis' };
-  const saveNames: Record<string, string> = { fort: 'Fortitude', reflex: 'Reflex', will: 'Will' };
+  const saveAbilities: Record<string, string> = { fort: 'con', reflex: 'dex', will: 'wis' }, saveNames: Record<string, string> = { fort: 'Fortitude', reflex: 'Reflex', will: 'Will' };
   for (const [key, abilityKey] of Object.entries(saveAbilities)) {
-    const save = data.saves?.[key];
+    const save = data.saves?.[key as keyof typeof data.saves];
     if (!save) continue;
-    const bonus = typeof save.total === 'number'
-      ? save.total
-      : (save.base ?? 0) + pf1eAbilityModifier(data, abilityKey) +
-        (save.magicModifier ?? 0) + (save.miscModifier ?? 0) + (save.tempModifier ?? 0);
-    saves.push({
-      label: `${saveNames[key]} ${fmt(bonus)}`,
-      expression: `1d20${fmt(bonus)}`,
-      purpose: `${saveNames[key]} Save`,
-      supportsAdvantage: true,
-    });
+    const bonus = typeof save.total === 'number' ? save.total : (save.base ?? 0) + pf1eAbilityModifier(data, abilityKey) + (save.magicModifier ?? 0) + (save.miscModifier ?? 0) + (save.tempModifier ?? 0);
+    saves.push({ label: `${saveNames[key]} ${fmt(bonus)}`, expression: `1d20${fmt(bonus)}`, purpose: `${saveNames[key]} Save`, supportsAdvantage: true });
   }
-
-  if (Array.isArray(data.skills)) {
-    for (const skill of data.skills) {
-      if (!skill?.name) continue;
-      const bonus = typeof skill.total === 'number'
-        ? skill.total
-        : (skill.ranks ?? 0) + (skill.classSkill && (skill.ranks ?? 0) > 0 ? 3 : 0) +
-          pf1eAbilityModifier(data, skill.ability) + (skill.racial ?? 0) +
-          (skill.trait ?? 0) + (skill.misc ?? 0) + (skill.temp ?? 0);
-      skills.push({
-        label: `${skill.name} ${fmt(bonus)}`,
-        expression: `1d20${fmt(bonus)}`,
-        purpose: `${skill.name} Check`,
-        supportsAdvantage: true,
-      });
-    }
+  for (const skill of data.skills ?? []) {
+    if (!skill.name) continue;
+    const bonus = typeof skill.total === 'number' ? skill.total : (skill.ranks ?? 0) + (skill.classSkill && (skill.ranks ?? 0) > 0 ? 3 : 0) + pf1eAbilityModifier(data, skill.ability) + (skill.racial ?? 0) + (skill.trait ?? 0) + (skill.misc ?? 0) + (skill.temp ?? 0);
+    skills.push({ label: `${skill.name} ${fmt(bonus)}`, expression: `1d20${fmt(bonus)}`, purpose: `${skill.name} Check`, supportsAdvantage: true });
   }
-
   for (const attack of [...(data.melee ?? []), ...(data.ranged ?? [])]) {
-    if (!attack?.weapon) continue;
-    const attackBonus = String(attack.attackBonus ?? '').match(/[+-]?\d+/)?.[0];
+    if (!attack.weapon) continue;
+    const attackBonus = String(attack.attackBonus ?? '').match(/[+-]?\\d+/)?.[0];
     if (attackBonus !== undefined) {
       const bonus = Number(attackBonus);
-      combat.push({
-        label: `${attack.weapon} Attack ${fmt(bonus)}`,
-        expression: `1d20${fmt(bonus)}`,
-        purpose: `${attack.weapon} Attack`,
-        supportsAdvantage: true,
-      });
+      combat.push({ label: `${attack.weapon} Attack ${fmt(bonus)}`, expression: `1d20${fmt(bonus)}`, purpose: `${attack.weapon} Attack`, supportsAdvantage: true });
     }
-    if (typeof attack.damage === 'string' && isValidDiceExpression(attack.damage)) {
-      combat.push({
-        label: `${attack.weapon} Damage (${attack.damage})`,
-        expression: attack.damage,
-        purpose: `${attack.weapon} Damage`,
-        supportsAdvantage: false,
-      });
-    }
+    if (typeof attack.damage === 'string' && isValidDiceExpression(attack.damage)) combat.push({ label: `${attack.weapon} Damage (${attack.damage})`, expression: attack.damage, purpose: `${attack.weapon} Damage`, supportsAdvantage: false });
   }
-
   return { abilities, skills, savingThrows: saves, combat };
 }
 
@@ -312,7 +311,7 @@ const PF2E_SKILL_NAMES: Record<string, string> = {
   thievery:       'Thievery',
 };
 
-function extractPf2eRolls(data: any): CharacterRolls {
+function extractPf2eRolls(data: PF2eCharacterData): CharacterRolls {
   const abilities: RollOption[] = [];
   const skills:    RollOption[] = [];
   const saves:     RollOption[] = [];
@@ -321,7 +320,7 @@ function extractPf2eRolls(data: any): CharacterRolls {
   // Ability checks
   if (data.attributes) {
     for (const [key, name] of Object.entries(PF2E_ABILITY_NAMES)) {
-      const mod = data.attributes[key]?.modifier ?? 0;
+      const mod = data.attributes[key as keyof PF2eAttributes]?.modifier ?? 0;
       const expr = `1d20${fmt(mod)}`;
       abilities.push({
         label:             `${name.slice(0, 3).toUpperCase()} ${fmt(mod)}`,
@@ -335,7 +334,7 @@ function extractPf2eRolls(data: any): CharacterRolls {
   // Saving throws
   if (data.savingThrows) {
     for (const [key, name] of Object.entries(PF2E_SAVE_NAMES)) {
-      const save = data.savingThrows[key];
+      const save = data.savingThrows[key as keyof PF2eSavingThrows];
       if (!save) continue;
       const bonus = save.bonus ?? 0;
       const expr = `1d20${fmt(bonus)}`;
@@ -362,9 +361,9 @@ function extractPf2eRolls(data: any): CharacterRolls {
   // Skills
   if (data.skills) {
     for (const [key, name] of Object.entries(PF2E_SKILL_NAMES)) {
-      const skill = data.skills[key];
+      const skill = data.skills[key as keyof PF2eSkills];
       if (!skill) continue;
-      const total = skill.total ?? 0;
+      const total = skill.bonus ?? 0;
       const expr = `1d20${fmt(total)}`;
       skills.push({
         label:             `${name} ${fmt(total)}`,
@@ -373,18 +372,19 @@ function extractPf2eRolls(data: any): CharacterRolls {
         supportsAdvantage: true,
       });
     }
-    // Lore skills (dynamic)
-    if (Array.isArray(data.skills.loreSkills)) {
-      for (const lore of data.skills.loreSkills) {
-        if (!lore.name) continue;
-        const total = lore.total ?? 0;
-        skills.push({
-          label:             `${lore.name} Lore ${fmt(total)}`,
-          expression:        `1d20${fmt(total)}`,
-          purpose:           `${lore.name} Lore Check`,
-          supportsAdvantage: true,
-        });
-      }
+  }
+
+  // Lore skills, which the sheet keeps beside `skills` rather than inside it.
+  if (Array.isArray(data.loreSkills)) {
+    for (const lore of data.loreSkills) {
+      if (!lore.name) continue;
+      const total = lore.bonus ?? 0;
+      skills.push({
+        label:             `${lore.name} Lore ${fmt(total)}`,
+        expression:        `1d20${fmt(total)}`,
+        purpose:           `${lore.name} Lore Check`,
+        supportsAdvantage: true,
+      });
     }
   }
 
@@ -420,15 +420,18 @@ function extractPf2eRolls(data: any): CharacterRolls {
 // Call of Cthulhu 7e
 // ---------------------------------------------------------------------------
 
-const COC_CHARACTERISTIC_NAMES: Record<string, string> = {
-  str: 'STR',
-  con: 'CON',
-  siz: 'SIZ',
-  dex: 'DEX',
-  app: 'APP',
-  int: 'INT',
-  pow: 'POW',
-  edu: 'EDU',
+// Keyed by what a sheet actually stores. These were lowercase, which is half
+// of why characteristic rolls never appeared: `characteristics.str` is
+// undefined when the sheet holds `characteristics.STR`.
+const COC_CHARACTERISTIC_NAMES: Record<keyof CoC7eCharacteristics, string> = {
+  STR: 'STR',
+  CON: 'CON',
+  SIZ: 'SIZ',
+  DEX: 'DEX',
+  APP: 'APP',
+  INT: 'INT',
+  POW: 'POW',
+  EDU: 'EDU',
 };
 
 const COC_SKILL_DISPLAY: Record<string, string> = {
@@ -479,7 +482,7 @@ const COC_SKILL_DISPLAY: Record<string, string> = {
   track:                 'Track',
 };
 
-function extractCocRolls(data: any): CharacterRolls {
+function extractCocRolls(data: CoC7eCharacterData): CharacterRolls {
   const abilities: RollOption[] = [];   // characteristics
   const skills:    RollOption[] = [];
   const saves:     RollOption[] = [];   // (empty for CoC)
@@ -487,8 +490,8 @@ function extractCocRolls(data: any): CharacterRolls {
 
   // Characteristics
   if (data.characteristics) {
-    for (const [key, label] of Object.entries(COC_CHARACTERISTIC_NAMES)) {
-      const val = data.characteristics[key]?.value;
+    for (const [key, label] of Object.entries(COC_CHARACTERISTIC_NAMES) as [keyof CoC7eCharacteristics, string][]) {
+      const val = data.characteristics[key]?.regular;
       if (typeof val !== 'number') continue;
       abilities.push({
         label:             `${label} (target: ${val}%)`,
@@ -501,7 +504,7 @@ function extractCocRolls(data: any): CharacterRolls {
 
   // Skills
   if (data.skills && typeof data.skills === 'object') {
-    for (const [key, skill] of Object.entries(data.skills as Record<string, any>)) {
+    for (const [key, skill] of Object.entries(data.skills as unknown as Record<string, CoC7eSkillLike>)) {
       if (key === 'customSkills') continue;
 
       // Handle specializations (fighting, firearms, languageOther, science)
@@ -519,7 +522,7 @@ function extractCocRolls(data: any): CharacterRolls {
       }
 
       if (key === 'firearms' && typeof skill === 'object' && !('currentValue' in skill)) {
-        for (const [sub, subSkill] of Object.entries(skill as Record<string, any>)) {
+        for (const [sub, subSkill] of Object.entries(skill as Record<string, CoC7eSkillLike>)) {
           if (!subSkill?.currentValue) continue;
           const val = subSkill.currentValue as number;
           const subName = sub.charAt(0).toUpperCase() + sub.slice(1);
@@ -577,20 +580,23 @@ function extractCocRolls(data: any): CharacterRolls {
     // Custom skills
     if (Array.isArray(data.skills.customSkills)) {
       for (const cs of data.skills.customSkills) {
-        if (!cs?.name || typeof cs.currentValue !== 'number') continue;
+        // A custom skill carries its own label. Declared by neither the type
+        // nor the schema, but it round-trips — see SkillsList for why.
+        const named = cs as { name?: string; currentValue?: number };
+        if (!named.name || typeof named.currentValue !== 'number') continue;
         skills.push({
-          label:             `${cs.name} — target: ${cs.currentValue}%`,
+          label:             `${named.name} — target: ${named.currentValue}%`,
           expression:        '1d100',
-          purpose:           `${cs.name} — target: ${cs.currentValue}%`,
+          purpose:           `${named.name} — target: ${named.currentValue}%`,
           supportsAdvantage: false,
         });
       }
     }
   }
 
-  // Weapons
-  if (Array.isArray(data.weapons)) {
-    for (const w of data.weapons) {
+  // Weapons, which the sheet keeps under `combat`.
+  if (Array.isArray(data.combat?.weapons)) {
+    for (const w of data.combat.weapons) {
       if (!w.name) continue;
       // Skill check to hit
       if (typeof w.skillValue === 'number') {
@@ -634,18 +640,20 @@ function extractCocRolls(data: any): CharacterRolls {
  * @param data        The raw `character.data` JSON object
  * @returns           Structured roll options grouped by category
  */
-export function getCharacterRolls(gameSystem: string | null, data: any): CharacterRolls {
+export function getCharacterRolls(gameSystem: string | null, data: CharacterData | null | undefined): CharacterRolls {
   if (!data) return { abilities: [], skills: [], savingThrows: [], combat: [] };
 
+  // The system decides which shape `data` is in, which is exactly what the
+  // switch below is establishing — so each branch asserts the one it selected.
   switch (gameSystem) {
     case 'DND_5E':
-      return extractDnd5eRolls(data);
+      return extractDnd5eRolls(data as DnD5eCharacterData);
     case 'PATHFINDER_1E':
-      return extractPf1eRolls(data);
+      return extractPf1eRolls(data as PF1eCharacterData);
     case 'PATHFINDER_2E':
-      return extractPf2eRolls(data);
+      return extractPf2eRolls(data as PF2eCharacterData);
     case 'CALL_OF_CTHULHU_7E':
-      return extractCocRolls(data);
+      return extractCocRolls(data as CoC7eCharacterData);
     default:
       return { abilities: [], skills: [], savingThrows: [], combat: [] };
   }

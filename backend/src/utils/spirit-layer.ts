@@ -2,6 +2,7 @@ import { prisma } from '../config/database';
 import { computeVisibility, isPointVisible } from './serverRaycasting';
 import type { WallSegment, LightSource } from '../types/walls';
 import logger from './logger';
+import type { Token } from '../websocket/shared';
 
 /**
  * Spirit Layer Utility Functions
@@ -11,31 +12,9 @@ import logger from './logger';
  * Spirit layer tokens and data are never sent to players — only DMs see them.
  */
 
-// Token interface
-interface Token {
-  id: string;
-  characterId?: string | null;
-  name: string;
-  imageUrl: string;
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  layer: 'token' | 'spirit';
-  visible: boolean;
-  controlledBy?: string | null;
-  rotation: number;
-  conditions: string[];
-  metadata: Record<string, any>;
-  type?: string;
-  disposition?: string | null;
-  hp?: { current: number; max: number; temp: number } | null;
-  showHpBar?: boolean;
-  notes?: string;
-  initiative?: number | null;
-  sightRadius?: number;
-  displayMode?: 'pog' | 'top-down' | 'full-art';
-  statBlock?: Record<string, any> | null;
-  creatureTemplateId?: string | null;
-}
+// The token shape lives in websocket/shared.ts — this file used to keep a third
+// copy of it, looser than both others (`type` and `disposition` as bare
+// strings). See the note there.
 
 // Map data as returned from Prisma
 interface MapData {
@@ -279,16 +258,15 @@ export function filterTokensByLighting(
 
   const wallSegs = (Array.isArray(walls) ? walls : []) as unknown as WallSegment[];
   const lightSources = (Array.isArray(lights) ? lights : []) as unknown as LightSource[];
-  // Light sources illuminate areas that the player can reach with line of
-  // sight. Their radius can extend beyond the token's normal sight radius,
-  // but a light source hidden behind a wall cannot reveal anything.
   const enabledLights = lightSources.filter((l) => l.enabled);
 
   // Find all tokens controlled by this player
   const myTokens = tokens.filter((t) => t.controlledBy === playerUserId);
 
+  // Nobody on the map to look through: the only thing to send is what the DM
+  // has left visible. Lights deliberately do not help here — a light is not a
+  // viewer, and treating one as a viewer is exactly the bug fixed below.
   if (myTokens.length === 0) {
-    // No controlled tokens and no lights — only return tokens explicitly marked visible
     return tokens.filter((t) => t.visible);
   }
 
@@ -296,45 +274,38 @@ export function filterTokensByLighting(
   const mapWidthPx = mapWidth * gridSize;
   const mapHeightPx = mapHeight * gridSize;
 
-  // Compute combined visibility polygons from all controlled tokens.
-  // Token grid coords use Y=0 at bottom (VTT standard); wall pixel coords use Y=0 at top.
-  // Apply the Y-flip so both are in the same canvas pixel coordinate space.
-  const visPolygons = myTokens.map((t) => {
+  /**
+   * One line-of-sight polygon per controlled token, deliberately **unbounded**
+   * by the token's sight radius.
+   *
+   * The radius governs how far you can make something out in the dark, not how
+   * far away you can notice something that is lit — you can see a bonfire
+   * across a field. So the radius is applied as a distance test below rather
+   * than baked into the polygon, and the polygon answers only "is there a wall
+   * in the way".
+   */
+  const sights = myTokens.map((t) => {
+    // Token grid coords use Y=0 at bottom (VTT standard); wall pixel coords use
+    // Y=0 at top. Apply the Y-flip so both are in the same pixel space.
     const cx = (t.position.x + (t.size?.width ?? 1) / 2) * gridSize;
     const cy = (mapHeight - 1 - t.position.y + (t.size?.height ?? 1) / 2) * gridSize;
-    const radiusPx = (t.sightRadius ?? 0) * gridSize;
-    return computeVisibility({ x: cx, y: cy }, wallSegs, mapWidthPx, mapHeightPx, radiusPx);
+    return {
+      poly: computeVisibility({ x: cx, y: cy }, wallSegs, mapWidthPx, mapHeightPx, 0),
+      cx,
+      cy,
+      // 0 means unlimited, which is what a token with no sight radius set has.
+      radiusPx: (t.sightRadius ?? 0) * gridSize,
+    };
   });
 
-  // A light extends the player's visibility after its source itself is
-  // reachable from one of their tokens. Reuse the existing token polygons;
-  // computing an extra unlimited-radius polygon here is prohibitively
-  // expensive on large maps.
-  const lightPolygons = enabledLights.flatMap((light) => {
-    const attachedToken = light.attachedTokenId
-      ? tokens.find((t) => t.id === light.attachedTokenId)
-      : undefined;
-    const lightX = attachedToken
-      ? (attachedToken.position.x + attachedToken.size.width / 2) * gridSize
-      : light.x;
-    const lightY = attachedToken
-      ? (mapHeight - attachedToken.position.y - attachedToken.size.height / 2) * gridSize
-      : light.y;
-
-    // An attached light is carried by its token, so its source is available
-    // at that token's current position even while the token is moving. This
-    // prevents the light from disappearing between movement updates.
-    const attachedLight = !!attachedToken;
-    if (!attachedLight && !visPolygons.some((poly) => isPointVisible({ x: lightX, y: lightY }, poly))) {
-      return [];
-    }
-    return [computeVisibility(
-      { x: lightX, y: lightY },
-      wallSegs,
-      mapWidthPx,
-      mapHeightPx,
-      light.dimRadius * gridSize
-    )];
+  // What each light reaches, bounded by its own walls. Light positions are
+  // already in map-space pixels (Y=0 at top), so no flip is needed.
+  const litAreas = enabledLights.map((light) => {
+    const dimRadiusPx = (light.dimRadius ?? light.brightRadius ?? 3) * gridSize;
+    const attachedToken = light.attachedTokenId ? tokens.find((token) => token.id === light.attachedTokenId) : undefined;
+    const x = attachedToken ? (attachedToken.position.x + (attachedToken.size?.width ?? 1) / 2) * gridSize : light.x;
+    const y = attachedToken ? (mapHeight - attachedToken.position.y - (attachedToken.size?.height ?? 1) / 2) * gridSize : light.y;
+    return computeVisibility({ x, y }, wallSegs, mapWidthPx, mapHeightPx, dimRadiusPx);
   });
 
   const elapsed = Date.now() - startMs;
@@ -342,16 +313,32 @@ export function filterTokensByLighting(
     logger.warn(`[lighting] filterTokensByLighting took ${elapsed}ms for userId=${playerUserId} (${myTokens.length} tokens, ${enabledLights.length} lights)`);
   }
 
-  const visibilityPolygons = visPolygons.concat(lightPolygons);
-
-  // Keep tokens that are inside any of the visibility polygons (token or light)
   return tokens.filter((t) => {
     // Always include the player's own tokens
     if (t.controlledBy === playerUserId) return true;
 
     const cx = (t.position.x + (t.size?.width ?? 1) / 2) * gridSize;
     const cy = (mapHeight - 1 - t.position.y + (t.size?.height ?? 1) / 2) * gridSize;
-    return visibilityPolygons.some((poly) => isPointVisible({ x: cx, y: cy }, poly));
+    const point = { x: cx, y: cy };
+
+    // Line of sight is required, always.
+    //
+    // Each light's polygon used to be pushed onto this same list and the test
+    // was "inside ANY of them", so a light could stand in for the player's own
+    // eyes: a creature in a lit room was sent to every player on the map,
+    // through walls, at any distance. A light reveals what you could already
+    // have seen; it never sees on your behalf.
+    const withLineOfSight = sights.filter((s) => isPointVisible(point, s.poly));
+    if (withLineOfSight.length === 0) return false;
+
+    // Inside a viewer's own vision radius: made out whether or not it is lit.
+    const seenUnaided = withLineOfSight.some(
+      (s) => s.radiusPx <= 0 || Math.hypot(cx - s.cx, cy - s.cy) <= s.radiusPx
+    );
+    if (seenUnaided) return true;
+
+    // Further off than that, it has to be standing in light.
+    return litAreas.some((poly) => isPointVisible(point, poly));
   });
 }
 
@@ -374,7 +361,16 @@ export function filterMapData(
   mapData: MapData,
   userRole: string,
   spiritVisible: boolean,
-  userId?: string
+  /**
+   * Who is asking. Required — pass `undefined` deliberately if there is
+   * genuinely no user, never by leaving it off.
+   *
+   * This gates the dynamic lighting filter below, and while it was optional one
+   * of the three call sites simply omitted it: the REST map fetch handed a
+   * player every token on a lit map, silently, because a missing argument reads
+   * exactly like "this user has no lighting restrictions".
+   */
+  userId: string | undefined
 ): MapData & { tokens: Token[] } {
   let filteredTokens = filterTokensByRole(mapData.tokens, userRole, spiritVisible);
 

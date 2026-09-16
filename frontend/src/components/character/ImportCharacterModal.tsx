@@ -11,13 +11,16 @@ import { readJSONFile, validateImportedCharacter } from '@/utils/character-expor
 import GameSystemBadge from '@/components/common/GameSystemBadge';
 import type { GameSystem } from '@/types';
 import { Button, Modal } from '@/components/ui';
+import { apiErrorMessage, errorMessage } from '@/utils/errors';
+import type { CharacterData } from '@/types';
 
 interface ImportCharacterModalProps {
   onClose: () => void;
   onImport: (data: {
     name: string;
     gameSystem: string | null;
-    data: any;
+    data: CharacterData;
+    importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
     description?: string;
   }) => Promise<void>;
   existingCharacterNames: string[];
@@ -49,8 +52,7 @@ export default function ImportCharacterModal({
   const [previewData, setPreviewData] = useState<{
     name: string;
     gameSystem: string | null;
-    data: any;
-    importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
+    data: CharacterData;
   } | null>(null);
   const [nameConflict, setNameConflict] = useState(false);
   const [importName, setImportName] = useState('');
@@ -85,8 +87,8 @@ export default function ImportCharacterModal({
           setImportName(characterName);
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to read file');
+    } catch (err: unknown) {
+      setError(errorMessage(err) || 'Failed to read file');
     } finally {
       setIsLoading(false);
     }
@@ -139,10 +141,10 @@ export default function ImportCharacterModal({
       });
 
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(
-        err.response?.data?.message ||
-          err.message ||
+        apiErrorMessage(err) ||
+          errorMessage(err) ||
           `Failed to import ${noun.toLowerCase()}`
       );
     } finally {
@@ -187,7 +189,7 @@ export default function ImportCharacterModal({
             <p className="text-sm text-ink mb-4">
               Drag and drop a JSON file, or click to browse
             </p>
-            {!isTemplate&&<p className="mb-4 text-xs text-ink-muted">
+            {!isTemplate && <p className="mb-4 text-xs text-ink-muted">
               Supports CozyVTT character exports and CharacterSheet.co.uk Pathfinder exports.
             </p>}
             <input
@@ -243,11 +245,6 @@ export default function ImportCharacterModal({
                       ? 'Review the details below, then publish it as a template.'
                       : 'Review the character details below before importing.'}
                   </p>
-                  {previewData.importSource==='CharacterSheet.co.uk'&&(
-                    <p className="mt-1 text-xs text-ink-secondary">
-                      CharacterSheet.co.uk Pathfinder export detected and converted to CozyVTT PF1e.
-                    </p>
-                  )}
                 </div>
               </div>
             </div>
