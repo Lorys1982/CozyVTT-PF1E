@@ -191,7 +191,7 @@ export function convertCharacterSheetCoUkExport(value:JsonObject):{name:string;d
         maxDexBonus:numberValue(item.maxDexBonus),equipped:item.equipped===true,weight:stringValue(item.weight),properties:stringValue(item.properties),
       })).filter(item=>item.name.length>0),
     },
-    hp:{total:numberValue(hp.total),current:numberValue(hp.current??hp.wounds),temporary:numberValue(hp.temporary),nonLethal:numberValue(hp.nonLethal)},
+    hp:{maximum:numberValue(hp.total),current:numberValue(hp.current??hp.wounds),temporary:numberValue(hp.temporary),nonLethal:numberValue(hp.nonLethal)},
     damageReduction:stringValue(value.damageReduction),spellResistance:stringValue(value.spellResistance),
     saves:{fort:mapModifier(saves.fort),reflex:mapModifier(saves.reflex),will:mapModifier(saves.will)},
     resistances:stringValue(value.resistances),immunities:stringValue(value.immunities),

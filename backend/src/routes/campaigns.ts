@@ -306,10 +306,10 @@ function extractCharacterHp(
       return null;
     }
     case 'PATHFINDER_1E': {
-      if (d.hp && typeof d.hp.total === 'number' && d.hp.total > 0) {
+      if (d.hp && typeof d.hp.maximum === 'number' && d.hp.maximum > 0) {
         return {
-          current: typeof d.hp.current === 'number' ? d.hp.current : d.hp.total,
-          max: d.hp.total,
+          current: typeof d.hp.current === 'number' ? d.hp.current : d.hp.maximum,
+          max: d.hp.maximum,
           temp: typeof d.hp.temporary === 'number' ? d.hp.temporary : 0,
         };
       }

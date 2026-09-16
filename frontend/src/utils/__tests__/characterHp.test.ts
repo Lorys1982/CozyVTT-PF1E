@@ -54,17 +54,17 @@ describe('extractCharacterHp', () => {
   // ---- PATHFINDER_1E ----
 
   describe('PATHFINDER_1E', () => {
-    it('extracts hp from the PF1 total/current shape', () => {
+    it('extracts hp from the PF1 maximum/current shape', () => {
       const result = extractCharacterHp('PATHFINDER_1E', {
-        hp: { total: 32, current: 19, temporary: 6, nonLethal: 4 },
+        hp: { maximum: 32, current: 19, temporary: 6, nonLethal: 4 },
       });
       expect(result).toEqual({ current: 19, max: 32, temp: 6 });
     });
 
     it('defaults current to total and rejects a zero total', () => {
-      expect(extractCharacterHp('PATHFINDER_1E', { hp: { total: 32 } }))
+      expect(extractCharacterHp('PATHFINDER_1E', { hp: { maximum: 32 } }))
         .toEqual({ current: 32, max: 32, temp: 0 });
-      expect(extractCharacterHp('PATHFINDER_1E', { hp: { total: 0 } })).toBeNull();
+      expect(extractCharacterHp('PATHFINDER_1E', { hp: { maximum: 0 } })).toBeNull();
     });
   });
 

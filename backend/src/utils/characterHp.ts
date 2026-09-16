@@ -80,12 +80,11 @@ function readHp(hp: Record<string, unknown> | null, ignoreTemporary: boolean): C
   };
 }
 
-/** PF1e calls its maximum HP `total`, unlike the other sheet systems. */
 function readPf1Hp(hp: Record<string, unknown> | null): CharacterHpInfo | null {
-  if (!hp || typeof hp.total !== 'number' || !(hp.total > 0)) return null;
+  if (!hp || typeof hp.maximum !== 'number' || !(hp.maximum > 0)) return null;
   return {
-    current: typeof hp.current === 'number' ? hp.current : hp.total,
-    max: hp.total,
+    current: typeof hp.current === 'number' ? hp.current : hp.maximum,
+    max: hp.maximum,
     temp: typeof hp.temporary === 'number' ? hp.temporary : 0,
   };
 }

@@ -173,7 +173,7 @@ export const pathfinder1eCharacterDataSchema = z.object({
   }).optional(),
 
   hp: z.object({
-    total: z.number().int().optional(),
+    maximum: z.number().int().optional(),
     current: z.number().int().optional(),
     temporary: z.number().int().min(0).optional(),
     nonLethal: z.number().int().min(0).optional(),

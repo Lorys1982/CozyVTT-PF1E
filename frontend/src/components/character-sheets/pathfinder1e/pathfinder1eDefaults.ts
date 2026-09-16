@@ -60,7 +60,7 @@ export function createPF1eSheetData(input:Partial<PF1eCharacterData>,fallbackNam
     characterName: input.characterName || fallbackName || 'New Character',
     abilities,
     ac: {...input.ac,items:input.ac?.items ?? []},
-    hp: {total:0,current:0,temporary:0,nonLethal:0,...input.hp},
+    hp: {maximum:0,current:0,temporary:0,nonLethal:0,...input.hp},
     saves: {
       fort:{...input.saves?.fort},reflex:{...input.saves?.reflex},will:{...input.saves?.will},
     },

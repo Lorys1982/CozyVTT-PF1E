@@ -206,7 +206,7 @@ export interface PF1eCharacterData {
     items?: PF1eACItem[];
   };
 
-  hp?: { total?: number; current?: number; temporary?: number; nonLethal?: number; longRestRestore?: number };
+  hp?: { maximum?: number; current?: number; temporary?: number; nonLethal?: number; longRestRestore?: number };
   damageReduction?: string;
   spellResistance?: string;
   saves?: { fort?: PF1eSave; reflex?: PF1eSave; will?: PF1eSave };

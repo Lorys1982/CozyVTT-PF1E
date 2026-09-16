@@ -49,7 +49,7 @@ export const pf1eCurrentSpellSlots = (level:PF1eSpellLevel):number =>
 export function applyPF1eLongRest(input:PF1eCharacterData):PF1eCharacterData {
   const data=structuredClone(input);
   const hp=data.hp??{};
-  hp.current=Math.min(hp.total??0,(hp.current??0)+(hp.longRestRestore??0));
+  hp.current=Math.min(hp.maximum??0,(hp.current??0)+(hp.longRestRestore??0));
   hp.temporary=0;
   hp.nonLethal=0;
   data.hp=hp;

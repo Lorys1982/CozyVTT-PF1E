@@ -27,7 +27,7 @@ describe('CharacterSheet.co.uk Pathfinder import',()=>{
       characterName:'Merisiel',classAndLevel:'Rogue 7',race:'Elf',
       abilities:{dex:{score:20,tempScore:22}},
       ac:{total:16,items:[{name:'Leather armor',bonus:2,equipped:false}]},
-      hp:{total:52,current:41,nonLethal:3},
+      hp:{maximum:52,current:41,nonLethal:3},
       saves:{reflex:{total:14,base:8}},
       feats:[{name:'Dodge',type:'Combat',description:'Gain a dodge bonus.'}],
       specialAbilities:[{name:'Sneak Attack',description:'+4d6 damage.'}],

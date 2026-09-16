@@ -78,18 +78,6 @@ export function registerCharacterHandlers(io: Server, socket: AuthenticatedSocke
 
       switch (character.gameSystem) {
         case 'PATHFINDER_1E': {
-          if (!charData.hp || typeof charData.hp.total !== 'number') {
-            socket.emit('error', { message: 'Character does not have HP tracking' });
-            return;
-          }
-          max = charData.hp.total;
-          temp = typeof charData.hp.temporary === 'number' ? charData.hp.temporary : 0;
-          current = Math.max(0, Math.min(max, (typeof charData.hp.current === 'number' ? charData.hp.current : max) + delta));
-          charData.hp.current = current;
-          break;
-        }
-        case 'DND_5E':
-        case 'PATHFINDER_2E': {
           if (!charData.hp || typeof charData.hp.maximum !== 'number') {
             socket.emit('error', { message: 'Character does not have HP tracking' });
             return;
@@ -100,8 +88,28 @@ export function registerCharacterHandlers(io: Server, socket: AuthenticatedSocke
           charData.hp.current = current;
           break;
         }
+        case 'DND_5E':
+        case 'PATHFINDER_2E': {
+          if (!charData.hp) {
+            socket.emit('error', { message: 'Character does not have HP tracking' });
+            return;
+          }
+          if (typeof charData.hp.maximum !== 'number') {
+            socket.emit('error', { message: 'Character does not have HP tracking' });
+            return;
+          }
+          max = charData.hp.maximum;
+          temp = typeof charData.hp.temporary === 'number' ? charData.hp.temporary : 0;
+          current = Math.max(0, Math.min(max, (typeof charData.hp.current === 'number' ? charData.hp.current : max) + delta));
+          charData.hp.current = current;
+          break;
+        }
         case 'CALL_OF_CTHULHU_7E': {
-          if (!charData.derivedStats?.hp || typeof charData.derivedStats.hp.maximum !== 'number') {
+          if (!charData.derivedStats?.hp) {
+            socket.emit('error', { message: 'Character does not have HP tracking' });
+            return;
+          }
+          if (typeof charData.derivedStats.hp.maximum !== 'number') {
             socket.emit('error', { message: 'Character does not have HP tracking' });
             return;
           }

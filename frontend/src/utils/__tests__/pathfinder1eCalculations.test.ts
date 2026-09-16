@@ -5,7 +5,7 @@ describe('PF1e derived calculations', () => {
   it('treats legacy spell slots as rested and applies long-rest recovery',()=>{
     expect(pf1eCurrentSpellSlots({totalPerDay:3,bonusSpells:1})).toBe(4);
     const rested=applyPF1eLongRest({
-      characterName:'Ezren',hp:{total:30,current:12,longRestRestore:8,temporary:4,nonLethal:3},
+      characterName:'Ezren',hp:{maximum:30,current:12,longRestRestore:8,temporary:4,nonLethal:3},
       spells:[{totalPerDay:3,bonusSpells:1,currentPerDay:0,slotted:[{name:'Magic Missile',prepared:2,cast:1}]}],
     });
     expect(rested.hp).toMatchObject({current:20,temporary:0,nonLethal:0});

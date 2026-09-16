@@ -84,10 +84,10 @@ function d20With(modifier: number): InitiativeResolution {
 
 function pf1eInitiativeBonus(data: unknown): number {
   const d = rec(data);
-  const dex = rec(rec(d)?.abilities)?.dex;
+  const dex = rec(rec(rec(d)?.abilities)?.dex);
   const score = num(dex?.tempScore ?? dex?.score, 10);
   const dexMod = Math.floor((score - 10) / 2);
-  const initiative = rec(d)?.initiative;
+  const initiative = rec(rec(d)?.initiative);
   if (typeof initiative?.total === 'number' && Number.isFinite(initiative.total)) return initiative.total;
   return dexMod + num(initiative?.miscModifier) + num(initiative?.tempModifier);
 }

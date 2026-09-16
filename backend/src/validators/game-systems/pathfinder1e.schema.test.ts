@@ -5,7 +5,7 @@ describe('Pathfinder 1e character validation',()=>{
     const result=pathfinder1eCharacterDataSchema.safeParse({
       characterName:'Ezren',
       abilities:{str:{score:10,checkTempModifier:2},dex:{score:14},con:{score:12},int:{score:18},wis:{score:10},cha:{score:8}},
-      hp:{total:24,current:19,temporary:5,longRestRestore:8},
+      hp:{maximum:24,current:19,temporary:5,longRestRestore:8},
       ac:{tempModifier:2,overrideTouch:18,items:[{name:'Chain shirt',type:'Armor',bonus:4,maxDexBonus:4,armorCheckPenalty:-2,equipped:true}]},
       saves:{fort:{base:3,tempModifier:1},reflex:{overrideTotal:12}},
       initiative:{tempModifier:2},
