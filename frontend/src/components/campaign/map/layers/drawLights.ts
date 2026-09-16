@@ -29,10 +29,12 @@ export interface LightingDrawState {
   /** Walls-only line of sight (no distance cap) — gates light-source
    *  visibility independently of tokenVision's capped sight radius. */
   tokenLOS: readonly VisionSource[];
+  /** @deprecated Compatibility alias for older callers. */
+  tokenSight?: readonly VisionSource[];
   tokenDimVision?: readonly VisionSource[];
   lightVision: readonly VisionSource[];
   /** Darkvision polygons for tokens with darkvisionRadius set. */
-  darkvision: readonly VisionSource[];
+  darkvision?: readonly VisionSource[];
   /** Persistent offscreen canvases (fog composite + light coverage). */
   lightingCanvas: CanvasHolder;
   coverageCanvas: CanvasHolder;
@@ -40,6 +42,8 @@ export interface LightingDrawState {
   lightScratchCanvas: CanvasHolder;
   darkvisionMaskCanvas: CanvasHolder;
   darkvisionSnapshotCanvas: CanvasHolder;
+  /** @deprecated Compatibility alias for older callers. */
+  lightCanvas?: CanvasHolder;
 }
 
 function ensureCanvas(holder: CanvasHolder, w: number, h: number): HTMLCanvasElement {
@@ -213,7 +217,8 @@ export function drawDynamicLighting(
   // should appear desaturated (black & white). We compute a mask of
   // "darkvision polygon minus light coverage", then use that mask to
   // overlay a desaturated copy of the fog onto the normal fog.
-  if (state.darkvision.length > 0) {
+  const darkvision = state.darkvision ?? [];
+  if (darkvision.length > 0) {
     // Build mask: darkvision polygon minus light-covered area
     const mask = ensureCanvas(state.darkvisionMaskCanvas, mapWidthPx, mapHeightPx);
     const maskCtx = mask.getContext('2d')!;
@@ -221,7 +226,7 @@ export function drawDynamicLighting(
     maskCtx.globalCompositeOperation = 'source-over';
 
     maskCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-    for (const { poly } of state.darkvision) {
+    for (const { poly } of darkvision) {
       if (poly.points.length >= 3) {
         maskCtx.beginPath();
         maskCtx.moveTo(poly.points[0].x, poly.points[0].y);

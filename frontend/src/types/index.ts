@@ -151,6 +151,11 @@ export interface NpcStatBlock {
   damageImmunities?: string;
   /** Condition immunities */
   conditionImmunities?: string;
+  /** Additional system-specific defensive traits. */
+  defensiveAbilities?: string;
+  damageReduction?: string;
+  spellResistance?: string;
+  weaknesses?: string;
   /** Senses, e.g. "darkvision 60 ft., passive Perception 15" */
   senses?: string;
   /** Languages */

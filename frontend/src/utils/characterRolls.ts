@@ -633,6 +633,22 @@ function extractCocRolls(data: CoC7eCharacterData): CharacterRolls {
 // has no initiative roll at all. It now lives in utils/rules/initiative.ts,
 // duplicated to the backend so the server can decide what is actually rolled.
 
+/** Build the legacy Pathfinder 1e initiative expression used by imported sheets. */
+export function getInitiativeExpression(gameSystem: string, data: unknown): string {
+  if (gameSystem !== 'PATHFINDER_1E' || !data || typeof data !== 'object') return '1d20';
+  const pfData = data as {
+    abilities?: { dex?: { score?: number; tempScore?: number; checkMiscModifier?: number; checkTempModifier?: number } };
+    initiative?: { miscModifier?: number; tempModifier?: number };
+  };
+  const dex = pfData.abilities?.dex;
+  const score = dex?.tempScore ?? dex?.score;
+  const modifier = typeof score === 'number' ? Math.floor((score - 10) / 2) : 0;
+  const misc = pfData.initiative?.miscModifier ?? 0;
+  const temporary = pfData.initiative?.tempModifier ?? 0;
+  const total = modifier + misc + temporary;
+  return `1d20${total >= 0 ? `+${total}` : total}`;
+}
+
 /**
  * Extract all rollable options from a character's data.
  *
@@ -640,7 +656,7 @@ function extractCocRolls(data: CoC7eCharacterData): CharacterRolls {
  * @param data        The raw `character.data` JSON object
  * @returns           Structured roll options grouped by category
  */
-export function getCharacterRolls(gameSystem: string | null, data: CharacterData | null | undefined): CharacterRolls {
+export function getCharacterRolls(gameSystem: string | null, data: CharacterData | Record<string, unknown> | null | undefined): CharacterRolls {
   if (!data) return { abilities: [], skills: [], savingThrows: [], combat: [] };
 
   // The system decides which shape `data` is in, which is exactly what the

@@ -606,11 +606,14 @@ describe('drawDynamicLighting', () => {
       myTokens: [token],
       enabledLights: opts.withLight ? [light] : [],
       tokenVision: vision.tokenVision,
-      tokenSight: vision.tokenSight,
+      tokenLOS: vision.tokenLOS,
       lightVision: vision.lightVision,
       lightingCanvas: holderFor(lighting.ctx, W, H),
       coverageCanvas: holderFor(coverage.ctx, W, H),
-      lightCanvas: holderFor(lightOnly.ctx, W, H),
+      lightScratchCanvas: holderFor(lightOnly.ctx, W, H),
+      visionMaskCanvas: holderFor(makeOpRecorder().ctx, W, H),
+      darkvisionMaskCanvas: holderFor(makeOpRecorder().ctx, W, H),
+      darkvisionSnapshotCanvas: holderFor(makeOpRecorder().ctx, W, H),
     }, viewport);
 
     return { lightOnly, coverage };

@@ -14,7 +14,7 @@ export interface ExportMetadata {
   character: {
     name: string;
     gameSystem: string | null;
-    data: CharacterData;
+    data: CharacterData & Record<string, any>;
     importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
     createdAt?: string;
     updatedAt?: string;
@@ -72,7 +72,8 @@ export function validateImportedCharacter(data: unknown): {
   character?: {
     name: string;
     gameSystem: string | null;
-    data: CharacterData;
+    data: CharacterData & Record<string, any>;
+    importSource?: 'CozyVTT' | 'CharacterSheet.co.uk';
   };
 } {
   // Check basic structure
